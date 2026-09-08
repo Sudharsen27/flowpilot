@@ -1,6 +1,6 @@
 # Frontend
 
-Next.js application for the AI Business Automation Platform.
+Next.js application for FlowPilot.
 
 From this directory:
 

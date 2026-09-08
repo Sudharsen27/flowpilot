@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -12,20 +13,23 @@ import {
 
 import { apiGet, apiPost } from "@/lib/api/client";
 import {
+  AUTH_SESSION_INVALIDATED_EVENT,
   clearAccessToken,
   getAccessToken,
   setAccessToken,
 } from "@/lib/auth/storage";
 import type {
   AuthResponse,
+  MembershipPublic,
   MeResponse,
   OrganizationPublic,
   UserPublic,
 } from "@/types/api";
 
-type Session = {
+export type Session = {
   user: UserPublic;
   organization: OrganizationPublic;
+  membership: MembershipPublic;
 };
 
 type AuthContextValue = {
@@ -44,6 +48,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -52,7 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (token) {
         setAccessToken(token);
       }
-      setSession({ user: auth.user, organization: auth.organization });
+      setSession({
+        user: auth.user,
+        organization: auth.organization,
+        membership: auth.membership,
+      });
     },
     [],
   );
@@ -81,8 +90,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     void restoreSession();
+
+    function invalidateSession() {
+      setSession(null);
+      setIsLoading(false);
+    }
+
+    window.addEventListener(AUTH_SESSION_INVALIDATED_EVENT, invalidateSession);
     return () => {
       cancelled = true;
+      window.removeEventListener(
+        AUTH_SESSION_INVALIDATED_EVENT,
+        invalidateSession,
+      );
     };
   }, [applyAuth]);
 
@@ -116,9 +136,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(() => {
-    clearAccessToken();
     setSession(null);
-  }, []);
+    clearAccessToken();
+    router.replace("/login");
+    router.refresh();
+  }, [router]);
 
   const value = useMemo(
     () => ({ session, isLoading, signIn, signUp, signOut }),

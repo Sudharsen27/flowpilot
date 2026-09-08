@@ -10,9 +10,11 @@ export type OrganizationPublic = {
   slug: string;
 };
 
+export type MembershipRole = "OWNER" | "ADMIN" | "MEMBER";
+
 export type MembershipPublic = {
   id: string;
-  role: string;
+  role: MembershipRole;
   organization_id: string;
   user_id: string;
 };

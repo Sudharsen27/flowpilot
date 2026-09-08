@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Automation",
-    template: "%s · Automation",
+    default: "FlowPilot",
+    template: "%s · FlowPilot",
   },
   description:
     "AI that understands your business, works across your tools, and gets work done.",

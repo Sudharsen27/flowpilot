@@ -2,7 +2,7 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository is in **Phase 1 (tenant and identity)**. Product features (agents, leads, RAG, workflows) are not implemented yet.
+This repository has completed **Phase 2, Slice 1 (authenticated app shell)**. Product features (agents, leads, RAG, workflows) are not implemented yet.
 
 ## Requirements
 

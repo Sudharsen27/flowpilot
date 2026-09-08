@@ -26,7 +26,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
   return (
     <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
       <div className="px-5 py-5">
-        <p className="text-sm font-semibold tracking-tight">Automation</p>
+        <p className="text-sm font-semibold tracking-tight">FlowPilot</p>
         <p className="text-muted-foreground mt-0.5 text-xs">
           Business workspace
         </p>

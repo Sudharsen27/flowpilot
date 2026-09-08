@@ -1,6 +1,6 @@
 # Architecture
 
-Living record of decisions for the AI Business Automation Platform. Update this file when a decision changes.
+Living record of decisions for FlowPilot. Update this file when a decision changes.
 
 ## Product
 
@@ -47,6 +47,9 @@ Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `
 - Access tokens are JWTs issued after register/login. Token handling lives in `app/core/security.py`.
 - `SECRET_KEY` may use a development default only when `ENVIRONMENT` is `development` or `test`. Other environments require a unique secret of at least 32 characters.
 - Dependencies: `get_current_user`, `get_current_membership`, `get_current_organization`.
+- The frontend waits for `/api/v1/users/me` before rendering product routes. Guests are redirected to `/login`; authenticated users are redirected away from login and registration.
+- Frontend session state preserves the current user, organization, and membership. Roles inform presentation only; the backend remains authoritative for authorization.
+- Browser localStorage is retained only as a development foundation. Production authentication requires a safer session mechanism, such as secure httpOnly cookies, before release.
 
 ### Repository conventions
 
@@ -81,3 +84,7 @@ Metrics come from real execution traces (latency, tokens, cost, approvals, outco
 ## Phase 1 (tenant and identity)
 
 PostgreSQL/SQLAlchemy/Alembic, Organization/User/Membership, Argon2 passwords, JWT auth, tenant-safe membership lookups, register/login/me/current-org APIs, and tests including tenant isolation. No agents, leads, RAG, or workflows.
+
+## Phase 2, Slice 1 (authenticated app shell)
+
+Product routes are guarded by a client-side authentication boundary that waits for session restoration before rendering the shell. Login and registration are guest-only routes. The session preserves user, organization, and membership context; logout clears both in-memory and stored authentication state before redirecting to login. This remains a development-only localStorage session architecture.
