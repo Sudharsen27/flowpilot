@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/hooks/use-auth";
 import { NAV_ITEMS, SETTINGS_ITEM } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ type AppSidebarProps = {
 
 export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
+  const { session } = useAuth();
 
   return (
     <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
@@ -57,6 +59,11 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
       </nav>
       <div className="px-3 pb-4">
         <Separator className="mb-3" />
+        {session ? (
+          <p className="text-muted-foreground mb-2 truncate px-3 text-xs">
+            {session.organization.name}
+          </p>
+        ) : null}
         <Link
           href={SETTINGS_ITEM.href}
           onClick={onNavigate}

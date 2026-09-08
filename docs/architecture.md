@@ -25,9 +25,34 @@ AI path (later phases):
 
 The model never writes to the database. Tools call application services.
 
-## Multi-tenancy
+## Multi-tenancy and identity
 
-Every business-owned row carries `organization_id`. Repositories always filter by tenant. Cross-organization access is a defect.
+Every business-owned row carries `organization_id`. Repositories that load tenant resources take `organization_id` first:
+
+`get_resource(organization_id, resource_id)`
+
+Do not authorize from a client-supplied organization id. Tenant context comes from the authenticated membership in the JWT (`org` and `membership` claims), then is re-loaded from the database.
+
+### Models
+
+- **Organization** — `id`, `name`, unique `slug`, timestamps.
+- **User** — `id`, unique `email`, `name`, `password_hash`, timestamps. Users can belong to multiple organizations via memberships.
+- **Membership** — `id`, `organization_id`, `user_id`, `role`, `created_at`. Unique on `(organization_id, user_id)`.
+
+Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `OWNER` membership.
+
+### Authentication
+
+- Passwords are hashed with Argon2. `password_hash` is never returned by the API.
+- Access tokens are JWTs issued after register/login. Token handling lives in `app/core/security.py`.
+- `SECRET_KEY` may use a development default only when `ENVIRONMENT` is `development` or `test`. Other environments require a unique secret of at least 32 characters.
+- Dependencies: `get_current_user`, `get_current_membership`, `get_current_organization`.
+
+### Repository conventions
+
+- `UserRepository` is global (email uniqueness is global).
+- `OrganizationRepository` looks up organizations by id or slug.
+- `MembershipRepository` scopes membership reads by `organization_id`. Listing members is always `list_for_organization(organization_id)`.
 
 ## Safety
 
@@ -53,6 +78,6 @@ Metrics come from real execution traces (latency, tokens, cost, approvals, outco
 
 `infra/docker-compose.yml` runs PostgreSQL 16 with pgvector, and Redis. Application containers are not part of the foundation scaffold.
 
-## Phase 0 (this scaffold)
+## Phase 1 (tenant and identity)
 
-Git, environment templates, Compose, FastAPI `/health`, Next.js app shell with primary navigation, lint/format/typecheck. No auth, agents, models, or product features.
+PostgreSQL/SQLAlchemy/Alembic, Organization/User/Membership, Argon2 passwords, JWT auth, tenant-safe membership lookups, register/login/me/current-org APIs, and tests including tenant isolation. No agents, leads, RAG, or workflows.
