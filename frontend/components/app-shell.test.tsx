@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -20,6 +21,7 @@ vi.mock("@/hooks/use-auth", () => ({
         role: "OWNER",
       },
     },
+    signOut: vi.fn(),
   }),
 }));
 
@@ -39,6 +41,7 @@ describe("mobile application navigation", () => {
 
     const drawer = screen.getByRole("dialog", { name: "Primary navigation" });
     expect(drawer).toHaveAttribute("id", "mobile-navigation");
+    expect(document.body.style.overflow).toBe("hidden");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Close menu" })).toHaveFocus(),
     );
@@ -48,6 +51,7 @@ describe("mobile application navigation", () => {
     expect(
       screen.queryByRole("dialog", { name: "Primary navigation" }),
     ).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
     await waitFor(() => expect(openButton).toHaveFocus());
   });
 });

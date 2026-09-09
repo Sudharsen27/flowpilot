@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { ApplicationTopBar } from "@/components/layout/application-top-bar";
 import { PageContainer } from "@/components/layout/page-container";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +35,8 @@ export function AppShell({ children }: AppShellProps) {
     }
 
     closeButtonRef.current?.focus();
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -61,12 +64,21 @@ export function AppShell({ children }: AppShellProps) {
     }
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+    };
   }, [closeMobileNav, mobileNavOpen]);
 
   return (
-    <div className="bg-background flex min-h-full">
-      <aside className="border-sidebar-border hidden w-60 shrink-0 border-r lg:block">
+    <div className="bg-background flex min-h-screen">
+      <a
+        href="#main"
+        className="focus:bg-background focus:shadow-overlay sr-only z-[60] focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:rounded-md focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Skip to content
+      </a>
+      <aside className="border-sidebar-border sticky top-0 hidden h-screen w-64 shrink-0 border-r lg:block">
         <AppSidebar />
       </aside>
 
@@ -84,7 +96,7 @@ export function AppShell({ children }: AppShellProps) {
             role="dialog"
             aria-modal="true"
             aria-label="Primary navigation"
-            className="border-sidebar-border bg-sidebar relative z-50 h-full w-64 border-r shadow-none"
+            className="border-sidebar-border bg-sidebar shadow-overlay relative z-50 h-full w-72 max-w-[85vw] border-r"
           >
             <div className="flex justify-end p-2">
               <Button
@@ -103,26 +115,21 @@ export function AppShell({ children }: AppShellProps) {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-border flex items-center gap-3 border-b px-4 py-3 lg:hidden">
-          <Button
-            ref={menuButtonRef}
-            variant="ghost"
-            size="icon-sm"
-            aria-expanded={mobileNavOpen}
-            aria-controls="mobile-navigation"
-            aria-label="Open menu"
-            onClick={() => setMobileNavOpen(true)}
-          >
-            <Menu />
-          </Button>
-          <p className="text-sm font-medium">FlowPilot</p>
-        </header>
-        <a
-          href="#main"
-          className="focus:bg-background sr-only focus:not-sr-only focus:absolute focus:m-3 focus:rounded-md focus:px-3 focus:py-2 focus:text-sm"
-        >
-          Skip to content
-        </a>
+        <ApplicationTopBar
+          mobileNavigationTrigger={
+            <Button
+              ref={menuButtonRef}
+              variant="ghost"
+              size="icon-sm"
+              aria-expanded={mobileNavOpen}
+              aria-controls="mobile-navigation"
+              aria-label="Open menu"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu />
+            </Button>
+          }
+        />
         <main id="main" className="flex-1 py-6 sm:py-8">
           <PageContainer size="wide">{children}</PageContainer>
         </main>
