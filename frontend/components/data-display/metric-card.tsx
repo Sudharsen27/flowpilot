@@ -19,6 +19,7 @@ type MetricCardProps = {
   trend?: MetricTrend;
   loading?: boolean;
   unavailableLabel?: string;
+  headingLevel?: 2 | 3;
   className?: string;
 };
 
@@ -36,16 +37,20 @@ export function MetricCard({
   trend,
   loading = false,
   unavailableLabel = "No data yet",
+  headingLevel = 2,
   className,
 }: MetricCardProps) {
   const hasValue = value !== undefined && value !== null && value !== "";
   const TrendIcon = trend ? trendIcons[trend.direction] : null;
+  const Heading = headingLevel === 3 ? "h3" : "h2";
 
   return (
     <Card as="article" className={className} aria-busy={loading || undefined}>
       <CardContent className="flex min-h-36 flex-col justify-between">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-muted-foreground text-sm font-medium">{label}</h2>
+          <Heading className="text-muted-foreground text-sm font-medium">
+            {label}
+          </Heading>
           {icon ? (
             <span
               className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md [&_svg]:size-4"
