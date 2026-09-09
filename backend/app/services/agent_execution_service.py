@@ -20,7 +20,11 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, AgentStatus
-from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.agent_execution import (
+    AgentExecution,
+    AgentExecutionStatus,
+    ExecutionFailureCategory,
+)
 from app.models.tool_invocation import ToolInvocation, ToolInvocationRecordStatus
 from app.repositories.agent_execution_repository import (
     EXECUTION_LIST_DEFAULT_LIMIT,
@@ -42,12 +46,20 @@ from app.schemas.agents import (
     ToolInvocationListItem,
     ToolInvocationListResponse,
 )
+from app.services.observability import duration_ms
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
 from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLevel
 
 logger = logging.getLogger(__name__)
+
+
+class ExecutionFailure(Exception):
+    def __init__(self, detail: str, category: ExecutionFailureCategory) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.category = category
 
 
 class AgentExecutionService:
@@ -124,12 +136,21 @@ class AgentExecutionService:
             return self._fail(
                 execution,
                 sanitize_provider_error(exc.detail),
+                category=ExecutionFailureCategory.CONFIGURATION_ERROR,
                 configured=False,
+            )
+        except ExecutionFailure as exc:
+            return self._fail(
+                execution,
+                sanitize_provider_error(exc.detail),
+                category=exc.category,
+                configured=True,
             )
         except ProviderError as exc:
             return self._fail(
                 execution,
                 sanitize_provider_error(exc.detail),
+                category=ExecutionFailureCategory.PROVIDER_ERROR,
                 configured=True,
             )
         except Exception:
@@ -138,7 +159,12 @@ class AgentExecutionService:
                 execution.id,
                 agent.id,
             )
-            return self._fail(execution, "AI provider request failed", configured=True)
+            return self._fail(
+                execution,
+                "AI provider request failed",
+                category=ExecutionFailureCategory.EXECUTION_ERROR,
+                configured=True,
+            )
 
     def _run_provider_loop(
         self,
@@ -167,7 +193,10 @@ class AgentExecutionService:
             if not generated.tool_calls:
                 break
             if round_index >= self.max_tool_iterations:
-                raise ProviderError("Maximum tool-call iterations exceeded")
+                raise ExecutionFailure(
+                    "Maximum tool-call iterations exceeded",
+                    ExecutionFailureCategory.EXECUTION_ERROR,
+                )
 
             history.append(
                 ConversationMessage(
@@ -193,9 +222,16 @@ class AgentExecutionService:
                     )
                 )
                 if not result.success:
-                    raise ProviderError(result.error or "Tool execution failed")
+                    raise ExecutionFailure(
+                        result.error or "Tool execution failed",
+                        result.failure_category
+                        or ExecutionFailureCategory.TOOL_ERROR,
+                    )
         if generated is None:
-            raise ProviderError("AI provider request failed")
+            raise ExecutionFailure(
+                "AI provider request failed",
+                ExecutionFailureCategory.PROVIDER_ERROR,
+            )
         return generated, tool_results
 
     def _complete(
@@ -206,6 +242,7 @@ class AgentExecutionService:
     ) -> AgentExecutionResult:
         execution.status = AgentExecutionStatus.COMPLETED
         execution.error = None
+        execution.failure_category = None
         execution.provider = generated.provider
         execution.model = generated.model
         execution.output = {
@@ -231,11 +268,13 @@ class AgentExecutionService:
         execution: AgentExecution,
         error: str,
         *,
+        category: ExecutionFailureCategory,
         configured: bool,
     ) -> AgentExecutionResult:
         error = sanitize_provider_error(error)
         execution.status = AgentExecutionStatus.FAILED
         execution.error = error
+        execution.failure_category = category
         execution.output = None
         execution.completed_at = datetime.now(UTC)
         try:
@@ -330,6 +369,17 @@ class AgentExecutionService:
         )
 
 
+def _failure_category(execution: AgentExecution) -> ExecutionFailureCategory | None:
+    if AgentExecutionStatus(execution.status) != AgentExecutionStatus.FAILED:
+        return None
+    if not execution.failure_category:
+        return None
+    try:
+        return ExecutionFailureCategory(execution.failure_category)
+    except ValueError:
+        return None
+
+
 def _json_text(value: Any, key: str) -> str | None:
     if not isinstance(value, dict):
         return None
@@ -373,6 +423,8 @@ def _to_list_item(execution: AgentExecution) -> AgentExecutionListItem:
         created_at=execution.created_at,
         input_preview=_preview(_json_text(execution.input, "text")),
         error_preview=_preview(execution.error),
+        duration_ms=duration_ms(execution.started_at, execution.completed_at),
+        failure_category=_failure_category(execution),
     )
 
 
@@ -392,6 +444,8 @@ def _to_detail(execution: AgentExecution) -> AgentExecutionDetail:
         completed_at=execution.completed_at,
         created_at=execution.created_at,
         initiated_by_user_id=execution.initiated_by_user_id,
+        duration_ms=duration_ms(execution.started_at, execution.completed_at),
+        failure_category=_failure_category(execution),
     )
 
 
@@ -410,4 +464,5 @@ def _to_invocation_item(invocation: ToolInvocation) -> ToolInvocationListItem:
         started_at=invocation.started_at,
         completed_at=invocation.completed_at,
         created_at=invocation.created_at,
+        duration_ms=duration_ms(invocation.started_at, invocation.completed_at),
     )

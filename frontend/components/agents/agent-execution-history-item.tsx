@@ -1,4 +1,4 @@
-import { ExecutionStatusBadge, formatTimestamp } from "@/components/agents/execution-status";
+import { ExecutionStatusBadge, formatDuration, formatFailureCategory, formatTimestamp } from "@/components/agents/execution-status";
 import { cn } from "@/lib/utils";
 import type { AgentExecutionListItem } from "@/types/api";
 
@@ -14,6 +14,17 @@ export function AgentExecutionHistoryItem({
   onSelect,
 }: AgentExecutionHistoryItemProps) {
   const created = formatTimestamp(item.created_at);
+  const duration = formatDuration(item.duration_ms);
+  const failure = formatFailureCategory(item.failure_category);
+  const statusLabel =
+    item.status === "COMPLETED"
+      ? "Completed"
+      : item.status === "FAILED"
+        ? "Failed"
+        : item.status === "RUNNING"
+          ? "Running"
+          : "Queued";
+  const summary = [statusLabel, failure, duration].filter(Boolean).join(" · ");
   return (
     <li>
       <button
@@ -29,7 +40,12 @@ export function AgentExecutionHistoryItem({
         )}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <ExecutionStatusBadge status={item.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ExecutionStatusBadge status={item.status} />
+            {summary ? (
+              <p className="text-muted-foreground text-xs">{summary}</p>
+            ) : null}
+          </div>
           {created ? (
             <time
               className="text-muted-foreground text-xs"

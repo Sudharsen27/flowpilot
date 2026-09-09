@@ -1,6 +1,10 @@
 import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
 import { ApiError } from "@/lib/api/client";
-import type { AgentExecutionStatus, ToolInvocationStatus } from "@/types/api";
+import type {
+  AgentExecutionStatus,
+  ExecutionFailureCategory,
+  ToolInvocationStatus,
+} from "@/types/api";
 
 const executionPresentation: Record<
   AgentExecutionStatus,
@@ -47,6 +51,34 @@ export function ToolInvocationStatusBadge({
 export function formatTimestamp(value: string | null) {
   if (!value) return null;
   return value.replace("T", " ").replace(/\.\d+Z$/, " UTC").replace(/Z$/, " UTC");
+}
+
+export function formatDuration(ms: number | null | undefined) {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) {
+    return null;
+  }
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+  const seconds = ms / 1000;
+  const formatted = seconds >= 10 ? seconds.toFixed(0) : seconds.toFixed(1);
+  return `${formatted.replace(/\.0$/, "")}s`;
+}
+
+const failureCategoryLabels: Record<ExecutionFailureCategory, string> = {
+  PROVIDER_ERROR: "Provider error",
+  TOOL_ERROR: "Tool error",
+  POLICY_ERROR: "Policy error",
+  VALIDATION_ERROR: "Validation error",
+  EXECUTION_ERROR: "Execution error",
+  CONFIGURATION_ERROR: "Configuration error",
+};
+
+export function formatFailureCategory(
+  category: ExecutionFailureCategory | null | undefined,
+) {
+  if (!category) return null;
+  return failureCategoryLabels[category] ?? null;
 }
 
 export function historyErrorMessage(

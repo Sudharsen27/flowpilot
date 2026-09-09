@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.provider import TokenUsage
 from app.models.agent import AgentStatus, AgentType
-from app.models.agent_execution import AgentExecutionStatus
+from app.models.agent_execution import AgentExecutionStatus, ExecutionFailureCategory
 from app.models.tool_invocation import ToolInvocationRecordStatus
 from app.tools.schema import PolicyDecision, ToolRiskLevel
 
@@ -71,6 +71,8 @@ class AgentExecutionListItem(BaseModel):
     created_at: datetime
     input_preview: str | None = None
     error_preview: str | None = None
+    duration_ms: int | None = None
+    failure_category: ExecutionFailureCategory | None = None
 
 
 class AgentExecutionListResponse(BaseModel):
@@ -98,6 +100,8 @@ class AgentExecutionDetail(BaseModel):
     completed_at: datetime | None = None
     created_at: datetime
     initiated_by_user_id: str | None = None
+    duration_ms: int | None = None
+    failure_category: ExecutionFailureCategory | None = None
 
 
 class ToolInvocationListItem(BaseModel):
@@ -116,6 +120,7 @@ class ToolInvocationListItem(BaseModel):
     started_at: datetime
     completed_at: datetime
     created_at: datetime
+    duration_ms: int | None = None
 
 
 class ToolInvocationListResponse(BaseModel):

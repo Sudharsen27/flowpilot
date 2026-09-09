@@ -191,6 +191,8 @@ describe("Agent API client", () => {
         created_at: "2026-09-09T10:00:00Z",
         input_preview: "Qualify this lead",
         error_preview: null,
+        duration_ms: 2000,
+        failure_category: null,
       },
     ],
     limit: 20,
@@ -212,6 +214,8 @@ describe("Agent API client", () => {
     completed_at: null,
     created_at: "2026-09-09T11:00:00Z",
     initiated_by_user_id: null,
+    duration_ms: null,
+    failure_category: "PROVIDER_ERROR",
   };
 
   const invocations: ToolInvocationListResponse = {
@@ -230,6 +234,7 @@ describe("Agent API client", () => {
         started_at: "2026-09-09T10:00:01Z",
         completed_at: "2026-09-09T10:00:01Z",
         created_at: "2026-09-09T10:00:01Z",
+        duration_ms: 0,
       },
       {
         id: "inv-2",
@@ -245,6 +250,7 @@ describe("Agent API client", () => {
         started_at: "2026-09-09T10:00:02Z",
         completed_at: "2026-09-09T10:00:02Z",
         created_at: "2026-09-09T10:00:02Z",
+        duration_ms: 0,
       },
     ],
     limit: 20,
@@ -342,6 +348,8 @@ describe("Agent API client", () => {
       error: null,
       completed_at: "2026-09-09T11:00:02Z",
       initiated_by_user_id: "user-1",
+      duration_ms: 2000,
+      failure_category: null,
     };
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(completed), {

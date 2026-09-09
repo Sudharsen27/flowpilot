@@ -16,7 +16,11 @@ from app.core.exceptions import (
 )
 from app.main import app
 from app.models.agent import Agent, AgentStatus, AgentType
-from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.agent_execution import (
+    AgentExecution,
+    AgentExecutionStatus,
+    ExecutionFailureCategory,
+)
 from app.models.membership import MembershipRole
 from app.models.tool_invocation import ToolInvocation
 from app.services.agent_execution_service import AgentExecutionService
@@ -178,6 +182,8 @@ def test_successful_execution_records_completed_result(
     assert execution.output["text"] == "Hello from the agent"
     assert execution.started_at is not None
     assert execution.completed_at is not None
+    assert execution.failure_category is None
+    assert execution.error is None
     assert fake_provider.calls[0].system_instructions == "You are a concise sales assistant."
 
 
@@ -199,6 +205,7 @@ def test_missing_api_key_records_failed_execution(
     assert execution is not None
     assert execution.status == AgentExecutionStatus.FAILED
     assert execution.error == "OPENAI_API_KEY is not configured"
+    assert execution.failure_category == ExecutionFailureCategory.CONFIGURATION_ERROR
 
 
 def test_failed_provider_call_is_recorded(
@@ -218,6 +225,9 @@ def test_failed_provider_call_is_recorded(
     assert execution is not None
     assert execution.status == AgentExecutionStatus.FAILED
     assert execution.error == "upstream timeout"
+    assert execution.failure_category == ExecutionFailureCategory.PROVIDER_ERROR
+    assert execution.completed_at is not None
+    assert execution.started_at is not None
 
 
 def test_missing_agent_is_not_found(
@@ -404,6 +414,7 @@ def test_runtime_max_tool_iterations_enforced(db: Session, client: TestClient) -
     execution = db.query(AgentExecution).one()
     assert execution.status == AgentExecutionStatus.FAILED
     assert execution.error == "Maximum tool-call iterations exceeded"
+    assert execution.failure_category == ExecutionFailureCategory.EXECUTION_ERROR
 
 
 def test_ready_agent_can_execute(
@@ -441,6 +452,7 @@ def test_unexpected_exception_records_failed_execution(
     assert execution.status == AgentExecutionStatus.FAILED
     assert execution.status != AgentExecutionStatus.RUNNING
     assert execution.error == "AI provider request failed"
+    assert execution.failure_category == ExecutionFailureCategory.EXECUTION_ERROR
     assert execution.output is None
     assert execution.completed_at is not None
     assert "sk-secretvalue123" not in (execution.error or "")
@@ -475,6 +487,7 @@ def test_tool_failure_fails_parent_and_finalizes_invocation(
     execution = db.query(AgentExecution).one()
     assert execution.status == AgentExecutionStatus.FAILED
     assert execution.error == "boom"
+    assert execution.failure_category == ExecutionFailureCategory.TOOL_ERROR
     invocation = db.query(ToolInvocation).one()
     assert invocation.status == "FAILED"
     assert invocation.error == "boom"

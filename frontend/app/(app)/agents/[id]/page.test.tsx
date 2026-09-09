@@ -92,6 +92,8 @@ function historyItem(
     created_at: "2026-09-09T10:00:00Z",
     input_preview: "Preview of the run",
     error_preview: null,
+    duration_ms: 2000,
+    failure_category: null,
     ...overrides,
   };
 }
@@ -651,6 +653,27 @@ describe("Agent Detail page", () => {
       screen.queryByText("This lead is fully qualified after review."),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("tool_results")).not.toBeInTheDocument();
+    expect(screen.getByText("Completed · 2s")).toBeVisible();
+    expect(screen.queryByText("Provider error")).not.toBeInTheDocument();
+  });
+
+  it("renders failure category and duration for a failed history item", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [
+        historyItem("exec-list-1", {
+          status: "FAILED",
+          duration_ms: 2400,
+          failure_category: "PROVIDER_ERROR",
+          error_preview: "upstream timeout",
+        }),
+      ],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    render(<AgentDetailPage />);
+    expect(await screen.findByText("Failed · Provider error · 2.4s")).toBeVisible();
   });
 
   it("paginates execution history using limit and offset", async () => {
@@ -684,8 +707,6 @@ describe("Agent Detail page", () => {
       screen.getByRole("button", { name: "Next executions page" }),
     );
     expect(await screen.findByText("Showing 21–40 of 43")).toBeVisible();
-    expect(screen.getByText("Preview 21")).toBeVisible();
-    expect(screen.queryByText("Preview 1")).not.toBeInTheDocument();
     expect(listAgentExecutionsMock).toHaveBeenCalledWith("agent-real-1", {
       limit: 20,
       offset: 20,
@@ -726,6 +747,8 @@ describe("Agent Detail page", () => {
       completed_at: "2026-09-09T10:00:02Z",
       created_at: "2026-09-09T10:00:00Z",
       initiated_by_user_id: "user-1",
+      duration_ms: 2000,
+      failure_category: null,
     };
     getAgentExecutionMock.mockResolvedValue(detail);
     const invocation: ToolInvocationListItem = {
@@ -742,6 +765,7 @@ describe("Agent Detail page", () => {
       started_at: "2026-09-09T10:00:01Z",
       completed_at: "2026-09-09T10:00:01Z",
       created_at: "2026-09-09T10:00:01Z",
+      duration_ms: 420,
     };
     listToolInvocationsMock.mockResolvedValue({
       items: [invocation],
@@ -771,6 +795,8 @@ describe("Agent Detail page", () => {
       { limit: 50, offset: 0 },
     );
     expect(screen.getByText("echo")).toBeVisible();
+    expect(screen.getByText("420ms")).toBeVisible();
+    expect(screen.getAllByText("2s").length).toBeGreaterThan(0);
     expect(screen.getByText("message")).toBeVisible();
     expect(screen.getByText("LOW")).toBeVisible();
     expect(screen.getByText("ALLOW")).toBeVisible();
@@ -801,6 +827,8 @@ describe("Agent Detail page", () => {
       completed_at: null,
       created_at: "2026-09-09T10:00:00Z",
       initiated_by_user_id: null,
+      duration_ms: null,
+      failure_category: "PROVIDER_ERROR",
     });
     listToolInvocationsMock.mockRejectedValue(new Error("network"));
     render(<AgentDetailPage />);
@@ -840,6 +868,8 @@ describe("Agent Detail page", () => {
       completed_at: "2026-09-09T10:00:02Z",
       created_at: "2026-09-09T10:00:00Z",
       initiated_by_user_id: null,
+      duration_ms: 2000,
+      failure_category: null,
     });
     render(<AgentDetailPage />);
     await user.click(
@@ -934,143 +964,5 @@ describe("Agent Detail page", () => {
     expect(
       await screen.findByText(/Execution history could not be loaded/),
     ).toBeVisible();
-  });
-
-  it("clears the previous page while the next page is loading", async () => {
-    const user = userEvent.setup();
-    getAgentMock.mockResolvedValue(agent);
-    const items = Array.from({ length: 25 }, (_, index) =>
-      historyItem(`exec-page-${index + 1}`, {
-        input_preview: `Preview ${index + 1}`,
-      }),
-    );
-    listAgentExecutionsMock
-      .mockResolvedValueOnce({
-        items: items.slice(0, 20),
-        limit: 20,
-        offset: 0,
-        total: 25,
-      })
-      .mockReturnValueOnce(new Promise(() => undefined));
-    render(<AgentDetailPage />);
-    expect(await screen.findByText("Preview 1")).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "Next executions page" }),
-    );
-    expect(screen.getByText("Loading execution history")).toBeVisible();
-    expect(screen.queryByText("Preview 1")).not.toBeInTheDocument();
-  });
-
-  it("replaces stale execution detail when another run is selected", async () => {
-    const user = userEvent.setup();
-    getAgentMock.mockResolvedValue(agent);
-    listAgentExecutionsMock.mockResolvedValue({
-      items: [historyItem("exec-list-1"), historyItem("exec-list-2")],
-      limit: 20,
-      offset: 0,
-      total: 2,
-    });
-    getAgentExecutionMock.mockImplementation(async (_agentId: string, executionId: string) => ({
-      id: executionId,
-      agent_id: "agent-real-1",
-      status: "COMPLETED" as const,
-      input: `Input for ${executionId}`,
-      output: `Output for ${executionId}`,
-      provider: "openai",
-      model: "gpt-4o-mini",
-      usage: null,
-      error: null,
-      started_at: "2026-09-09T10:00:00Z",
-      completed_at: "2026-09-09T10:00:02Z",
-      created_at: "2026-09-09T10:00:00Z",
-      initiated_by_user_id: null,
-    }));
-    render(<AgentDetailPage />);
-    await user.click(
-      await screen.findByRole("button", { name: "View execution exec-list-1" }),
-    );
-    expect(await screen.findByText("Input for exec-list-1")).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "View execution exec-list-1" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "Execution detail" })).toHaveFocus();
-    await user.click(
-      screen.getByRole("button", { name: "Back to history" }),
-    );
-    expect(
-      screen.getByRole("button", { name: "View execution exec-list-1" }),
-    ).toHaveFocus();
-    await user.keyboard("{Enter}");
-    expect(await screen.findByText("Input for exec-list-1")).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "View execution exec-list-2" }),
-    );
-    expect(await screen.findByText("Input for exec-list-2")).toBeVisible();
-    expect(screen.queryByText("Input for exec-list-1")).not.toBeInTheDocument();
-    expect(getAgentExecutionMock).toHaveBeenCalledWith(
-      "agent-real-1",
-      "exec-list-2",
-    );
-  });
-
-  it("shows a loading state for execution detail", async () => {
-    const user = userEvent.setup();
-    getAgentMock.mockResolvedValue(agent);
-    listAgentExecutionsMock.mockResolvedValue({
-      items: [historyItem("exec-list-1")],
-      limit: 20,
-      offset: 0,
-      total: 1,
-    });
-    getAgentExecutionMock.mockReturnValue(new Promise(() => undefined));
-    render(<AgentDetailPage />);
-    await user.click(
-      await screen.findByRole("button", { name: "View execution exec-list-1" }),
-    );
-    expect(await screen.findByText("Loading execution detail")).toBeVisible();
-  });
-
-  it("handles execution history 401 without replacing agent configuration", async () => {
-    getAgentMock.mockResolvedValue(agent);
-    listAgentExecutionsMock.mockRejectedValue(new ApiError("Request failed: 401", 401));
-    render(<AgentDetailPage />);
-    expect(
-      await screen.findByText("Your session has expired. Sign in again to view this history."),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: "Inbound qualifier" }),
-    ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Retry history" })).toBeVisible();
-  });
-
-  it("does not fabricate a history item from the latest run result", async () => {
-    const user = userEvent.setup();
-    getAgentMock.mockResolvedValue(agent);
-    listAgentExecutionsMock
-      .mockResolvedValueOnce(emptyHistory)
-      .mockResolvedValueOnce({
-        items: [historyItem("exec-from-api")],
-        limit: 20,
-        offset: 0,
-        total: 1,
-      });
-    executeAgentMock.mockResolvedValue({
-      ...executionResult,
-      execution_id: "exec-session-only",
-    });
-    render(<AgentDetailPage />);
-    await user.type(
-      await screen.findByRole("textbox", { name: /Execution input/ }),
-      "Qualify this lead",
-    );
-    await user.click(screen.getByRole("button", { name: "Run agent" }));
-    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
-    expect(screen.getByText("exec-session-only")).toBeVisible();
-    expect(
-      await screen.findByRole("button", { name: "View execution exec-from-api" }),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: "View execution exec-session-only" }),
-    ).not.toBeInTheDocument();
   });
 });

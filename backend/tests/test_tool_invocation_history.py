@@ -20,6 +20,7 @@ def _invocation(
     execution: AgentExecution,
     *,
     started_at: datetime,
+    completed_at: datetime | None = None,
     invocation_id: str | None = None,
     call_id: str = "call-1",
     tool_name: str = "echo",
@@ -39,7 +40,7 @@ def _invocation(
         argument_keys=argument_keys if argument_keys is not None else ["message"],
         error=error,
         started_at=started_at,
-        completed_at=started_at,
+        completed_at=completed_at if completed_at is not None else started_at,
         created_at=started_at,
     )
     if invocation_id is not None:

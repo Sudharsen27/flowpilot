@@ -32,6 +32,15 @@ class AgentExecutionStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class ExecutionFailureCategory(StrEnum):
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+    TOOL_ERROR = "TOOL_ERROR"
+    POLICY_ERROR = "POLICY_ERROR"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    EXECUTION_ERROR = "EXECUTION_ERROR"
+    CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
+
+
 class AgentExecution(Base):
     __tablename__ = "agent_executions"
     __table_args__ = (
@@ -45,6 +54,12 @@ class AgentExecution(Base):
         CheckConstraint(
             "status IN ('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')",
             name="ck_agent_executions_status",
+        ),
+        CheckConstraint(
+            "failure_category IS NULL OR failure_category IN ("
+            "'PROVIDER_ERROR', 'TOOL_ERROR', 'POLICY_ERROR', "
+            "'VALIDATION_ERROR', 'EXECUTION_ERROR', 'CONFIGURATION_ERROR')",
+            name="ck_agent_executions_failure_category",
         ),
         Index(
             "ix_agent_executions_organization_id_agent_id_created_at_id",
@@ -73,6 +88,7 @@ class AgentExecution(Base):
     input: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    failure_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

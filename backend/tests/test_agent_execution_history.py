@@ -4,7 +4,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.agent import Agent
-from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.agent_execution import (
+    AgentExecution,
+    AgentExecutionStatus,
+    ExecutionFailureCategory,
+)
 from app.models.membership import MembershipRole
 from tests.test_agent_api import _add_org_member, _auth, _headers
 from tests.test_agent_runtime import _create_agent
@@ -21,8 +25,13 @@ def _execution(
     input_text: str = "Qualify this lead with confidential context",
     output_text: str = "The lead is qualified.",
     error: str | None = None,
+    failure_category: ExecutionFailureCategory | None = None,
     initiated_by_user_id: str | None = None,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
 ) -> AgentExecution:
+    start = created_at if started_at is None else started_at
+    end = created_at if completed_at is None and started_at is None else completed_at
     row = AgentExecution(
         organization_id=organization_id,
         agent_id=agent.id,
@@ -33,12 +42,15 @@ def _execution(
             "text": output_text,
             "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
             "tool_results": [{"call_id": "call-1", "output": {"secret": "do-not-leak"}}],
-        },
+        }
+        if output_text
+        else None,
         error=error,
+        failure_category=failure_category,
         provider="fake",
         model="fake-model",
-        started_at=created_at,
-        completed_at=created_at,
+        started_at=start,
+        completed_at=end,
         created_at=created_at,
     )
     if execution_id is not None:

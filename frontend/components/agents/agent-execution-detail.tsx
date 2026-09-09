@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { AgentToolInvocationList } from "@/components/agents/agent-tool-invocation-list";
 import {
   ExecutionStatusBadge,
+  formatDuration,
+  formatFailureCategory,
   formatTimestamp,
   historyErrorMessage,
 } from "@/components/agents/execution-status";
@@ -109,6 +111,18 @@ export function AgentExecutionDetailPanel({
             <p className="font-mono text-xs break-all">{detail.id}</p>
           </div>
           <dl className="grid gap-3 text-sm">
+            {formatDuration(detail.duration_ms) ? (
+              <div className="grid gap-1">
+                <dt className="text-muted-foreground">Duration</dt>
+                <dd>{formatDuration(detail.duration_ms)}</dd>
+              </div>
+            ) : null}
+            {formatFailureCategory(detail.failure_category) ? (
+              <div className="grid gap-1">
+                <dt className="text-muted-foreground">Failure category</dt>
+                <dd>{formatFailureCategory(detail.failure_category)}</dd>
+              </div>
+            ) : null}
             {detail.provider ? (
               <div className="grid gap-1">
                 <dt className="text-muted-foreground">Provider</dt>

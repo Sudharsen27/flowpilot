@@ -6,6 +6,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
+from app.models.agent_execution import ExecutionFailureCategory
 from app.models.tool_invocation import ToolInvocation, ToolInvocationRecordStatus
 from app.repositories.agent_execution_repository import AgentExecutionRepository
 from app.repositories.tool_invocation_repository import ToolInvocationRepository
@@ -54,6 +55,7 @@ class ToolExecutionService:
                 success=False,
                 executed=False,
                 error=call.parse_error,
+                failure_category=ExecutionFailureCategory.VALIDATION_ERROR,
             )
             self._record(
                 context,
@@ -74,6 +76,7 @@ class ToolExecutionService:
                 executed=False,
                 decision=PolicyDecision.DENY,
                 error=f"Unknown tool '{call.name}'",
+                failure_category=ExecutionFailureCategory.VALIDATION_ERROR,
             )
             self._record(
                 context,
@@ -96,6 +99,7 @@ class ToolExecutionService:
                 risk_level=tool.risk_level,
                 decision=PolicyDecision.DENY,
                 error="Invalid tool arguments",
+                failure_category=ExecutionFailureCategory.VALIDATION_ERROR,
             )
             self._record(
                 context,
@@ -117,6 +121,7 @@ class ToolExecutionService:
                 risk_level=tool.risk_level,
                 decision=decision,
                 error=f"Tool '{tool.name}' is denied by policy",
+                failure_category=ExecutionFailureCategory.POLICY_ERROR,
             )
             self._record(
                 context,
@@ -137,6 +142,7 @@ class ToolExecutionService:
                 risk_level=tool.risk_level,
                 decision=decision,
                 error=f"Tool '{tool.name}' requires human approval",
+                failure_category=ExecutionFailureCategory.POLICY_ERROR,
             )
             self._record(
                 context,
@@ -159,6 +165,7 @@ class ToolExecutionService:
                 risk_level=tool.risk_level,
                 decision=decision,
                 error=exc.detail,
+                failure_category=ExecutionFailureCategory.TOOL_ERROR,
             )
             self._record(
                 context,
@@ -179,6 +186,7 @@ class ToolExecutionService:
                 risk_level=tool.risk_level,
                 decision=decision,
                 error="Tool execution failed",
+                failure_category=ExecutionFailureCategory.TOOL_ERROR,
             )
             self._record(
                 context,

@@ -105,6 +105,14 @@ export type AgentExecutionResult = {
   error: string | null;
 };
 
+export type ExecutionFailureCategory =
+  | "PROVIDER_ERROR"
+  | "TOOL_ERROR"
+  | "POLICY_ERROR"
+  | "VALIDATION_ERROR"
+  | "EXECUTION_ERROR"
+  | "CONFIGURATION_ERROR";
+
 export type AgentExecutionListItem = {
   id: string;
   status: AgentExecutionStatus;
@@ -115,6 +123,8 @@ export type AgentExecutionListItem = {
   created_at: string;
   input_preview: string | null;
   error_preview: string | null;
+  duration_ms: number | null;
+  failure_category: ExecutionFailureCategory | null;
 };
 
 export type AgentExecutionListResponse = {
@@ -138,6 +148,8 @@ export type AgentExecutionDetail = {
   completed_at: string | null;
   created_at: string;
   initiated_by_user_id: string | null;
+  duration_ms: number | null;
+  failure_category: ExecutionFailureCategory | null;
 };
 
 export type ToolRiskLevel = "LOW" | "MEDIUM" | "HIGH";
@@ -164,6 +176,7 @@ export type ToolInvocationListItem = {
   started_at: string;
   completed_at: string;
   created_at: string;
+  duration_ms: number | null;
 };
 
 export type ToolInvocationListResponse = {

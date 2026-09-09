@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.agent_execution import ExecutionFailureCategory
+
 
 class ToolRiskLevel(StrEnum):
     LOW = "LOW"
@@ -55,3 +57,4 @@ class ToolResult(BaseModel):
     output: dict[str, Any] | None = None
     error: str | None = None
     executed: bool = False
+    failure_category: ExecutionFailureCategory | None = None

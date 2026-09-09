@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import {
   ToolInvocationStatusBadge,
+  formatDuration,
   formatTimestamp,
   historyErrorMessage,
 } from "@/components/agents/execution-status";
@@ -114,6 +115,12 @@ export function AgentToolInvocationList({
                   <div>
                     <dt className="inline">Argument keys </dt>
                     <dd className="inline">{item.argument_keys.join(", ")}</dd>
+                  </div>
+                ) : null}
+                {formatDuration(item.duration_ms) ? (
+                  <div>
+                    <dt className="inline">Duration </dt>
+                    <dd className="inline">{formatDuration(item.duration_ms)}</dd>
                   </div>
                 ) : null}
                 <div>
