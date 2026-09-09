@@ -8,6 +8,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentCapabilities } from "@/components/agents/agent-capabilities";
 import { AgentCommunication } from "@/components/agents/agent-communication";
 import { AgentConfigurationSidebar } from "@/components/agents/agent-configuration-sidebar";
+import {
+  AgentExecutionPanel,
+  executionErrorMessage,
+} from "@/components/agents/agent-execution-panel";
 import { AgentIdentityForm } from "@/components/agents/agent-identity-form";
 import { AgentInstructions } from "@/components/agents/agent-instructions";
 import { AgentResources } from "@/components/agents/agent-resources";
@@ -21,12 +25,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import {
   activateAgent,
+  executeAgent,
   getAgent,
   markAgentReady,
   pauseAgent,
   updateAgent,
 } from "@/lib/api/agents";
-import type { Agent, AgentType, AgentUpdateRequest } from "@/types/api";
+import type {
+  Agent,
+  AgentExecutionResult,
+  AgentType,
+  AgentUpdateRequest,
+} from "@/types/api";
 
 const statusToBadge = {
   DRAFT: "draft",
@@ -58,7 +68,12 @@ export default function AgentDetailPage() {
   const [lifecycleSuccess, setLifecycleSuccess] = useState<string | null>(
     null,
   );
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionResult, setExecutionResult] =
+    useState<AgentExecutionResult | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
   const lifecyclePendingRef = useRef(false);
+  const executionPendingRef = useRef(false);
   const canEdit =
     session?.membership.role === "OWNER" ||
     session?.membership.role === "ADMIN";
@@ -114,7 +129,14 @@ export default function AgentDetailPage() {
   }, [isDirty]);
 
   async function handleLifecycle(action: "ready" | "activate" | "pause") {
-    if (!agent || !canEdit || lifecyclePendingRef.current || isSaving) return;
+    if (
+      !agent ||
+      !canEdit ||
+      lifecyclePendingRef.current ||
+      isSaving ||
+      isExecuting
+    )
+      return;
     lifecyclePendingRef.current = true;
     setLifecycleError(null);
     setLifecycleSuccess(null);
@@ -149,7 +171,14 @@ export default function AgentDetailPage() {
   }
 
   async function handleSave() {
-    if (!agent || !canEdit || !isDirty || isSaving || isLifecyclePending)
+    if (
+      !agent ||
+      !canEdit ||
+      !isDirty ||
+      isSaving ||
+      isLifecyclePending ||
+      isExecuting
+    )
       return;
     const changes: AgentUpdateRequest = {};
     if (name !== agent.name) changes.name = name.trim();
@@ -181,6 +210,24 @@ export default function AgentDetailPage() {
       );
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleExecute(input: string) {
+    if (!agent || executionPendingRef.current || isSaving || isLifecyclePending)
+      return;
+    if (agent.status !== "READY" && agent.status !== "ACTIVE") return;
+    executionPendingRef.current = true;
+    setExecutionError(null);
+    setIsExecuting(true);
+    try {
+      const result = await executeAgent(agent.id, { input });
+      setExecutionResult(result);
+    } catch (cause) {
+      setExecutionError(executionErrorMessage(cause));
+    } finally {
+      executionPendingRef.current = false;
+      setIsExecuting(false);
     }
   }
 
@@ -275,6 +322,7 @@ export default function AgentDetailPage() {
                 !isDirty ||
                 isSaving ||
                 isLifecyclePending ||
+                isExecuting ||
                 !name.trim()
               }
               onClick={() => void handleSave()}
@@ -346,6 +394,14 @@ export default function AgentDetailPage() {
               setSaved(false);
             }}
           />
+          <AgentExecutionPanel
+            agentStatus={agent.status}
+            isBusy={isSaving || isLifecyclePending}
+            isRunning={isExecuting}
+            result={executionResult}
+            error={executionError}
+            onRun={handleExecute}
+          />
           <AgentCapabilities />
           <AgentResources />
           <AgentSafety />
@@ -357,7 +413,7 @@ export default function AgentDetailPage() {
           canEdit={canEdit}
           isDirty={isDirty}
           isSaving={isSaving}
-          isLifecyclePending={isLifecyclePending}
+          isLifecyclePending={isLifecyclePending || isExecuting}
           onSave={() => void handleSave()}
           onReady={() => void handleLifecycle("ready")}
           onActivate={() => void handleLifecycle("activate")}

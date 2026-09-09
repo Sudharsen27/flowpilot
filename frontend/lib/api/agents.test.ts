@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateAgent,
   createAgent,
+  executeAgent,
   getAgent,
   getAgents,
   markAgentReady,
@@ -140,5 +141,33 @@ describe("Agent API client", () => {
     );
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("body", expect.anything());
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
+  it("posts execution input without organization_id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec-1",
+          status: "COMPLETED",
+          output: "Qualified",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await executeAgent("agent/1", { input: "Qualify this lead" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents/agent%2F1/execute",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ input: "Qualify this lead" }),
+        headers: expect.objectContaining({
+          Authorization: "Bearer agent-token",
+        }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain("organization_id");
   });
 });

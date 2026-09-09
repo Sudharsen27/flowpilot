@@ -113,16 +113,25 @@ export function AgentConfigurationSidebar({
           >
             <FlaskConical className="size-4" />
           </div>
-          <CardTitle id="test-agent-title">Test agent</CardTitle>
+          <CardTitle id="test-agent-title">Manual run</CardTitle>
           <CardDescription>
-            Preview and test behavior after an agent runtime is connected.
+            Use Run agent to send a real request to the connected AI provider.
+            Results stay on this page session only.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <StatusBadge status="draft" label="Runtime unavailable" />
-          <Button type="button" variant="outline" disabled className="w-full">
-            Open test preview
-          </Button>
+          <StatusBadge
+            status={
+              apiStatus === "READY" || apiStatus === "ACTIVE"
+                ? "active"
+                : "draft"
+            }
+            label={
+              apiStatus === "READY" || apiStatus === "ACTIVE"
+                ? "Eligible to run"
+                : "Not executable"
+            }
+          />
         </CardContent>
       </Card>
     </aside>

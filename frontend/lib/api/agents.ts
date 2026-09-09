@@ -2,6 +2,8 @@ import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
   Agent,
   AgentCreateRequest,
+  AgentExecutionRequest,
+  AgentExecutionResult,
   AgentListResponse,
   AgentStatus,
   AgentType,
@@ -54,4 +56,11 @@ export function activateAgent(agentId: string) {
 
 export function pauseAgent(agentId: string) {
   return apiPost<Agent>(agentActionPath(agentId, "pause"));
+}
+
+export function executeAgent(agentId: string, input: AgentExecutionRequest) {
+  return apiPost<AgentExecutionResult>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/execute`,
+    input,
+  );
 }

@@ -78,3 +78,29 @@ export type AgentCreateRequest = {
 };
 
 export type AgentUpdateRequest = Partial<AgentCreateRequest>;
+
+export type AgentExecutionStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED";
+
+export type AgentExecutionRequest = {
+  input: string;
+};
+
+export type AgentTokenUsage = {
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+};
+
+export type AgentExecutionResult = {
+  execution_id: string;
+  status: AgentExecutionStatus;
+  output: string | null;
+  provider: string | null;
+  model: string | null;
+  usage: AgentTokenUsage | null;
+  error: string | null;
+};

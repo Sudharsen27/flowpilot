@@ -6,12 +6,13 @@ import AgentDetailPage from "@/app/(app)/agents/[id]/page";
 import { ApiError } from "@/lib/api/client";
 import {
   activateAgent,
+  executeAgent,
   getAgent,
   markAgentReady,
   pauseAgent,
   updateAgent,
 } from "@/lib/api/agents";
-import type { Agent } from "@/types/api";
+import type { Agent, AgentExecutionResult } from "@/types/api";
 
 const authMock = vi.hoisted(() => ({
   role: "OWNER" as "OWNER" | "ADMIN" | "MEMBER",
@@ -34,6 +35,7 @@ vi.mock("@/lib/api/agents", () => ({
   markAgentReady: vi.fn(),
   activateAgent: vi.fn(),
   pauseAgent: vi.fn(),
+  executeAgent: vi.fn(),
 }));
 
 const agent: Agent = {
@@ -52,6 +54,17 @@ const updateAgentMock = vi.mocked(updateAgent);
 const markAgentReadyMock = vi.mocked(markAgentReady);
 const activateAgentMock = vi.mocked(activateAgent);
 const pauseAgentMock = vi.mocked(pauseAgent);
+const executeAgentMock = vi.mocked(executeAgent);
+
+const executionResult: AgentExecutionResult = {
+  execution_id: "exec-real-1",
+  status: "COMPLETED",
+  output: "This lead is qualified.",
+  provider: "openai",
+  model: "gpt-4.1-mini",
+  usage: { total_tokens: 42 },
+  error: null,
+};
 
 describe("Agent Detail page", () => {
   beforeEach(() => {
@@ -60,6 +73,7 @@ describe("Agent Detail page", () => {
     markAgentReadyMock.mockReset();
     activateAgentMock.mockReset();
     pauseAgentMock.mockReset();
+    executeAgentMock.mockReset();
     authMock.role = "OWNER";
   });
 
@@ -377,5 +391,142 @@ describe("Agent Detail page", () => {
     expect(markAgentReadyMock).toHaveBeenCalledTimes(1);
     resolveReady({ ...agent, status: "READY" });
     expect(await screen.findByRole("button", { name: "Activate" })).toBeVisible();
+  });
+
+  it("lets a READY agent execute and displays the API result", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    executeAgentMock.mockResolvedValue(executionResult);
+    render(<AgentDetailPage />);
+    const input = await screen.findByRole("textbox", {
+      name: /Execution input/,
+    });
+    await user.type(input, "Qualify this lead");
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(executeAgentMock).toHaveBeenCalledWith("agent-real-1", {
+      input: "Qualify this lead",
+    });
+    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
+    expect(screen.getByText("Completed")).toBeVisible();
+    expect(screen.getByText("openai")).toBeVisible();
+    expect(screen.getByText("gpt-4.1-mini")).toBeVisible();
+    expect(screen.getByText("exec-real-1")).toBeVisible();
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+    expect(screen.queryByText("History")).not.toBeInTheDocument();
+  });
+
+  it("lets an ACTIVE agent execute", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue({ ...agent, status: "ACTIVE" });
+    executeAgentMock.mockResolvedValue(executionResult);
+    render(<AgentDetailPage />);
+    const input = await screen.findByRole("textbox", {
+      name: /Execution input/,
+    });
+    await user.type(input, "Follow up");
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(executeAgentMock).toHaveBeenCalledWith("agent-real-1", {
+      input: "Follow up",
+    });
+    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
+    expect(screen.getAllByText("Active").length).toBeGreaterThan(0);
+  });
+
+  it("lets a MEMBER run an eligible agent", async () => {
+    const user = userEvent.setup();
+    authMock.role = "MEMBER";
+    getAgentMock.mockResolvedValue(agent);
+    executeAgentMock.mockResolvedValue(executionResult);
+    render(<AgentDetailPage />);
+    const input = await screen.findByRole("textbox", {
+      name: /Execution input/,
+    });
+    await user.type(input, "Qualify this lead");
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(executeAgentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      "DRAFT",
+      "Draft agents cannot be executed. Mark the agent ready first.",
+    ],
+    ["PAUSED", "Paused agents cannot be executed. Resume the agent first."],
+    [
+      "NEEDS_ATTENTION",
+      "This agent needs attention and cannot be executed from this screen.",
+    ],
+  ] as const)("does not allow execution for %s agents", async (status, copy) => {
+    getAgentMock.mockResolvedValue({ ...agent, status });
+    render(<AgentDetailPage />);
+    expect(await screen.findByText(copy)).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Run agent" }),
+    ).not.toBeInTheDocument();
+    expect(executeAgentMock).not.toHaveBeenCalled();
+  });
+
+  it("disables Run and prevents duplicate execution while running", async () => {
+    const user = userEvent.setup();
+    let resolveExecution: (value: AgentExecutionResult) => void = () =>
+      undefined;
+    getAgentMock.mockResolvedValue(agent);
+    executeAgentMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveExecution = resolve;
+      }),
+    );
+    render(<AgentDetailPage />);
+    const input = await screen.findByRole("textbox", {
+      name: /Execution input/,
+    });
+    await user.type(input, "Qualify this lead");
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(await screen.findByRole("button", { name: "Running…" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Running a real AI execution");
+    await user.click(screen.getByRole("button", { name: "Running…" }));
+    expect(executeAgentMock).toHaveBeenCalledTimes(1);
+    resolveExecution(executionResult);
+    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
+  });
+
+  it.each([
+    [400, "This agent cannot be executed in its current status."],
+    [401, "Your session has expired. Sign in again to run this agent."],
+    [403, "You do not have permission to run this agent."],
+    [404, "This agent could not be found."],
+    [422, "Review the execution input and try again."],
+    [502, "The AI provider could not complete this run."],
+    [503, "The AI provider is not configured."],
+  ] as const)("handles execution HTTP %s", async (status, message) => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    executeAgentMock.mockRejectedValue(
+      new ApiError(`Request failed: ${status}`, status),
+    );
+    render(<AgentDetailPage />);
+    const input = await screen.findByRole("textbox", {
+      name: /Execution input/,
+    });
+    await user.type(input, "Qualify this lead");
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+  });
+
+  it("handles execution network failure", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    executeAgentMock.mockRejectedValue(new Error("network"));
+    render(<AgentDetailPage />);
+    const input = await screen.findByRole("textbox", {
+      name: /Execution input/,
+    });
+    await user.type(input, "Qualify this lead");
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The agent could not be run. Check your connection and try again.",
+    );
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
   });
 });
