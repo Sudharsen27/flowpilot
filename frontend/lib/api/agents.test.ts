@@ -179,6 +179,55 @@ describe("Agent API client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain("organization_id");
   });
 
+  it("recovers a persisted failed execution from a 502 body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec-fail-1",
+          status: "FAILED",
+          output: null,
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          usage: null,
+          error: "AI provider request failed",
+          detail: "AI provider request failed",
+          arguments: { secret: "sk-live" },
+          tool_results: [{ output: "hidden" }],
+        }),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    const result = await executeAgent("agent-1", { input: "Qualify this lead" });
+    expect(result).toEqual({
+      execution_id: "exec-fail-1",
+      status: "FAILED",
+      output: null,
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      usage: null,
+      error: "AI provider request failed",
+      duration_ms: null,
+      failure_category: null,
+    });
+    expect(JSON.stringify(result)).not.toContain("sk-live");
+    expect(JSON.stringify(result)).not.toContain("tool_results");
+  });
+
+  it("throws when a 502 body is not a failed execution result", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "upstream" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(
+      executeAgent("agent-1", { input: "Qualify this lead" }),
+    ).rejects.toMatchObject({ status: 502 });
+  });
+
   const completedList: AgentExecutionListResponse = {
     items: [
       {

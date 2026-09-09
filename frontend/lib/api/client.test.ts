@@ -69,4 +69,17 @@ describe("API client", () => {
     });
     expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
+
+  it("attaches parsed JSON bodies to API errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Invalid token", extra: "keep" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(apiGet("/api/v1/users/me")).rejects.toMatchObject({
+      status: 401,
+      body: { detail: "Invalid token", extra: "keep" },
+    });
+  });
 });

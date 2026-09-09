@@ -95,6 +95,14 @@ export type AgentTokenUsage = {
   total_tokens?: number | null;
 };
 
+export type ExecutionFailureCategory =
+  | "PROVIDER_ERROR"
+  | "TOOL_ERROR"
+  | "POLICY_ERROR"
+  | "VALIDATION_ERROR"
+  | "EXECUTION_ERROR"
+  | "CONFIGURATION_ERROR";
+
 export type AgentExecutionResult = {
   execution_id: string;
   status: AgentExecutionStatus;
@@ -103,15 +111,9 @@ export type AgentExecutionResult = {
   model: string | null;
   usage: AgentTokenUsage | null;
   error: string | null;
+  duration_ms?: number | null;
+  failure_category?: ExecutionFailureCategory | null;
 };
-
-export type ExecutionFailureCategory =
-  | "PROVIDER_ERROR"
-  | "TOOL_ERROR"
-  | "POLICY_ERROR"
-  | "VALIDATION_ERROR"
-  | "EXECUTION_ERROR"
-  | "CONFIGURATION_ERROR";
 
 export type AgentExecutionListItem = {
   id: string;

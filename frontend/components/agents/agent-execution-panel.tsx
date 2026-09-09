@@ -1,8 +1,13 @@
 "use client";
 
 import { Play } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import {
+  ExecutionStatusBadge,
+  formatDuration,
+  formatFailureCategory,
+} from "@/components/agents/execution-status";
 import { FormField } from "@/components/forms/form-field";
 import { Textarea } from "@/components/forms/textarea";
 import { Button } from "@/components/ui/button";
@@ -13,7 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
 import { ApiError } from "@/lib/api/client";
 import type { AgentExecutionResult, AgentStatus } from "@/types/api";
 
@@ -22,16 +26,6 @@ const unavailableCopy: Partial<Record<AgentStatus, string>> = {
   PAUSED: "Paused agents cannot be executed. Resume the agent first.",
   NEEDS_ATTENTION:
     "This agent needs attention and cannot be executed from this screen.",
-};
-
-const executionBadge: Record<
-  AgentExecutionResult["status"],
-  { status: StatusValue; label: string }
-> = {
-  QUEUED: { status: "pending", label: "Queued" },
-  RUNNING: { status: "pending", label: "Running" },
-  COMPLETED: { status: "success", label: "Completed" },
-  FAILED: { status: "failed", label: "Failed" },
 };
 
 export function executionErrorMessage(cause: unknown) {
@@ -80,23 +74,45 @@ export function AgentExecutionPanel({
 }: AgentExecutionPanelProps) {
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
+  const submitGuardRef = useRef(false);
   const canExecute = agentStatus === "READY" || agentStatus === "ACTIVE";
   const unavailable = unavailableCopy[agentStatus];
   const trimmed = input.trim();
+  const controlsLocked = isBusy || isRunning;
+  const canRetry =
+    canExecute &&
+    !controlsLocked &&
+    Boolean(trimmed) &&
+    (Boolean(error) || result?.status === "FAILED");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canExecute || isBusy || isRunning) return;
+  function submitInput() {
+    if (!canExecute || controlsLocked) return;
     if (!trimmed) {
       setInputError("Enter input before running the agent.");
       return;
     }
+    submitGuardRef.current = true;
     setInputError(null);
     onRun(trimmed);
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    submitInput();
+  }
+
+  useEffect(() => {
+    if (!isRunning) {
+      submitGuardRef.current = false;
+    }
+  }, [isRunning]);
+
   return (
-    <Card as="section" aria-labelledby="run-agent-title">
+    <Card
+      as="section"
+      aria-labelledby="run-agent-title"
+      aria-busy={isRunning || undefined}
+    >
       <CardHeader>
         <CardTitle id="run-agent-title">Run agent</CardTitle>
         <CardDescription>
@@ -108,7 +124,11 @@ export function AgentExecutionPanel({
         {!canExecute ? (
           <p className="text-muted-foreground text-sm leading-6">{unavailable}</p>
         ) : (
-          <form className="grid gap-4" onSubmit={handleSubmit}>
+          <form
+            className="grid gap-4"
+            onSubmit={handleSubmit}
+            aria-busy={isRunning || undefined}
+          >
             <FormField
               label="Execution input"
               htmlFor="agent-execution-input"
@@ -134,30 +154,46 @@ export function AgentExecutionPanel({
                 }
               />
             </FormField>
-            <Button
-              type="submit"
-              disabled={isBusy || isRunning || !trimmed}
-            >
-              <Play aria-hidden="true" />
-              {isRunning ? "Running…" : "Run agent"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="submit"
+                disabled={controlsLocked || !trimmed}
+                aria-busy={isRunning || undefined}
+              >
+                <Play aria-hidden="true" />
+                {isRunning ? "Running…" : "Run agent"}
+              </Button>
+              {canRetry ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => submitInput()}
+                >
+                  Try again
+                </Button>
+              ) : null}
+            </div>
           </form>
         )}
 
         {isRunning ? (
-          <p className="text-sm" role="status">
-            Running a real AI execution. Do not close this page until it
-            finishes.
-          </p>
+          <div role="status" aria-live="polite" aria-busy="true" className="grid gap-1">
+            <p className="text-sm font-medium">Running agent…</p>
+            <p className="text-muted-foreground text-sm leading-6">
+              Waiting for the execution request to finish. Do not close this
+              page until it returns.
+            </p>
+            <span className="sr-only">Execution request in progress</span>
+          </div>
         ) : null}
 
-        {error ? (
+        {!isRunning && error ? (
           <p className="text-danger-text text-sm" role="alert">
             {error}
           </p>
         ) : null}
 
-        {result ? (
+        {!isRunning && result ? (
           <ExecutionResult result={result} />
         ) : !isRunning && canExecute ? (
           <p className="text-muted-foreground text-sm leading-6">
@@ -171,8 +207,9 @@ export function AgentExecutionPanel({
 }
 
 function ExecutionResult({ result }: { result: AgentExecutionResult }) {
-  const badge = executionBadge[result.status];
   const usageTotal = result.usage?.total_tokens;
+  const duration = formatDuration(result.duration_ms);
+  const failure = formatFailureCategory(result.failure_category ?? null);
 
   return (
     <section
@@ -183,13 +220,25 @@ function ExecutionResult({ result }: { result: AgentExecutionResult }) {
         <h3 id="execution-result-title" className="text-sm font-semibold">
           Latest execution result
         </h3>
-        <StatusBadge status={badge.status} label={badge.label} />
+        <ExecutionStatusBadge status={result.status} />
       </div>
       <dl className="grid gap-3 text-sm">
         <div className="grid gap-1">
           <dt className="text-muted-foreground">Execution ID</dt>
           <dd className="font-mono text-xs break-all">{result.execution_id}</dd>
         </div>
+        {duration ? (
+          <div className="grid gap-1">
+            <dt className="text-muted-foreground">Duration</dt>
+            <dd>{duration}</dd>
+          </div>
+        ) : null}
+        {failure && result.status === "FAILED" ? (
+          <div className="grid gap-1">
+            <dt className="text-muted-foreground">Failure category</dt>
+            <dd>{failure}</dd>
+          </div>
+        ) : null}
         {result.provider ? (
           <div className="grid gap-1">
             <dt className="text-muted-foreground">Provider</dt>
@@ -209,17 +258,19 @@ function ExecutionResult({ result }: { result: AgentExecutionResult }) {
           </div>
         ) : null}
       </dl>
-      <div className="grid gap-1">
-        <h4 className="text-muted-foreground text-sm font-medium">Output</h4>
-        {result.output ? (
-          <pre className="bg-muted max-h-80 overflow-auto rounded-md p-3 text-sm leading-6 whitespace-pre-wrap">
-            {result.output}
-          </pre>
-        ) : (
-          <p className="text-muted-foreground text-sm">No output returned.</p>
-        )}
-      </div>
-      {result.error ? (
+      {result.status === "COMPLETED" ? (
+        <div className="grid gap-1">
+          <h4 className="text-muted-foreground text-sm font-medium">Output</h4>
+          {result.output ? (
+            <pre className="bg-muted max-h-80 overflow-auto rounded-md p-3 text-sm leading-6 whitespace-pre-wrap">
+              {result.output}
+            </pre>
+          ) : (
+            <p className="text-muted-foreground text-sm">No output returned.</p>
+          )}
+        </div>
+      ) : null}
+      {result.status === "FAILED" && result.error ? (
         <p className="text-danger-text text-sm" role="alert">
           {result.error}
         </p>

@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
+import { ApiError, apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
   Agent,
   AgentCreateRequest,
@@ -10,6 +10,7 @@ import type {
   AgentStatus,
   AgentType,
   AgentUpdateRequest,
+  ExecutionFailureCategory,
   ToolInvocationListResponse,
 } from "@/types/api";
 
@@ -79,11 +80,87 @@ export function pauseAgent(agentId: string) {
   return apiPost<Agent>(agentActionPath(agentId, "pause"));
 }
 
-export function executeAgent(agentId: string, input: AgentExecutionRequest) {
-  return apiPost<AgentExecutionResult>(
-    `/api/v1/agents/${encodeURIComponent(agentId)}/execute`,
-    input,
-  );
+const FAILURE_CATEGORIES = new Set<ExecutionFailureCategory>([
+  "PROVIDER_ERROR",
+  "TOOL_ERROR",
+  "POLICY_ERROR",
+  "VALIDATION_ERROR",
+  "EXECUTION_ERROR",
+  "CONFIGURATION_ERROR",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function recoverFailedExecution(cause: unknown): AgentExecutionResult | null {
+  if (!(cause instanceof ApiError)) return null;
+  if (cause.status !== 502 && cause.status !== 503) return null;
+  if (!isRecord(cause.body)) return null;
+  if (typeof cause.body.execution_id !== "string") return null;
+  if (cause.body.status !== "FAILED") return null;
+
+  const usage = isRecord(cause.body.usage)
+    ? {
+        prompt_tokens:
+          typeof cause.body.usage.prompt_tokens === "number"
+            ? cause.body.usage.prompt_tokens
+            : null,
+        completion_tokens:
+          typeof cause.body.usage.completion_tokens === "number"
+            ? cause.body.usage.completion_tokens
+            : null,
+        total_tokens:
+          typeof cause.body.usage.total_tokens === "number"
+            ? cause.body.usage.total_tokens
+            : null,
+      }
+    : null;
+  const duration =
+    typeof cause.body.duration_ms === "number" &&
+    Number.isFinite(cause.body.duration_ms) &&
+    cause.body.duration_ms >= 0
+      ? Math.trunc(cause.body.duration_ms)
+      : null;
+  const category = FAILURE_CATEGORIES.has(
+    cause.body.failure_category as ExecutionFailureCategory,
+  )
+    ? (cause.body.failure_category as ExecutionFailureCategory)
+    : null;
+  const error =
+    typeof cause.body.error === "string"
+      ? cause.body.error
+      : typeof cause.body.detail === "string"
+        ? cause.body.detail
+        : null;
+
+  return {
+    execution_id: cause.body.execution_id,
+    status: "FAILED",
+    output: typeof cause.body.output === "string" ? cause.body.output : null,
+    provider: typeof cause.body.provider === "string" ? cause.body.provider : null,
+    model: typeof cause.body.model === "string" ? cause.body.model : null,
+    usage,
+    error,
+    duration_ms: duration,
+    failure_category: category,
+  };
+}
+
+export async function executeAgent(
+  agentId: string,
+  input: AgentExecutionRequest,
+) {
+  try {
+    return await apiPost<AgentExecutionResult>(
+      `/api/v1/agents/${encodeURIComponent(agentId)}/execute`,
+      input,
+    );
+  } catch (cause) {
+    const recovered = recoverFailedExecution(cause);
+    if (recovered) return recovered;
+    throw cause;
+  }
 }
 
 export function listAgentExecutions(

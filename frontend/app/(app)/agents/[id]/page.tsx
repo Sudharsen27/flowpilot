@@ -228,6 +228,12 @@ export default function AgentDetailPage() {
       setHistoryRefreshKey((key) => key + 1);
     } catch (cause) {
       setExecutionError(executionErrorMessage(cause));
+      if (
+        cause instanceof ApiError &&
+        (cause.status === 502 || cause.status === 503)
+      ) {
+        setHistoryRefreshKey((key) => key + 1);
+      }
     } finally {
       executionPendingRef.current = false;
       setIsExecuting(false);
