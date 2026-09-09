@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { PageContainer } from "@/components/layout/page-container";
 import { Button } from "@/components/ui/button";
 
 type AppShellProps = {
@@ -122,8 +123,8 @@ export function AppShell({ children }: AppShellProps) {
         >
           Skip to content
         </a>
-        <main id="main" className="flex-1 px-4 py-8 sm:px-8">
-          {children}
+        <main id="main" className="flex-1 py-6 sm:py-8">
+          <PageContainer size="wide">{children}</PageContainer>
         </main>
       </div>
     </div>

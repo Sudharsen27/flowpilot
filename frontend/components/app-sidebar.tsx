@@ -19,6 +19,32 @@ type AppSidebarProps = {
   onNavigate?: () => void;
 };
 
+type SidebarLinkProps = {
+  href: string;
+  label: string;
+  active: boolean;
+  onNavigate?: () => void;
+};
+
+function SidebarLink({ href, label, active, onNavigate }: SidebarLinkProps) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "block rounded-md px-3 py-2 text-sm transition-colors outline-none",
+        "focus-visible:ring-ring focus-visible:ring-2",
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+          : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground",
+      )}
+    >
+      {label}
+    </Link>
+  );
+}
+
 export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
   const { session } = useAuth();
@@ -39,21 +65,13 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         {NAV_ITEMS.map((item) => {
           const active = isActivePath(pathname, item.href);
           return (
-            <Link
+            <SidebarLink
               key={item.href}
               href={item.href}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "rounded-md px-3 py-2 text-sm transition-colors outline-none",
-                "focus-visible:ring-ring focus-visible:ring-2",
-                active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground",
-              )}
-            >
-              {item.label}
-            </Link>
+              label={item.label}
+              active={active}
+              onNavigate={onNavigate}
+            />
           );
         })}
       </nav>
@@ -64,22 +82,12 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
             {session.organization.name}
           </p>
         ) : null}
-        <Link
+        <SidebarLink
           href={SETTINGS_ITEM.href}
-          onClick={onNavigate}
-          aria-current={
-            isActivePath(pathname, SETTINGS_ITEM.href) ? "page" : undefined
-          }
-          className={cn(
-            "block rounded-md px-3 py-2 text-sm transition-colors outline-none",
-            "focus-visible:ring-ring focus-visible:ring-2",
-            isActivePath(pathname, SETTINGS_ITEM.href)
-              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-              : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground",
-          )}
-        >
-          {SETTINGS_ITEM.label}
-        </Link>
+          label={SETTINGS_ITEM.label}
+          active={isActivePath(pathname, SETTINGS_ITEM.href)}
+          onNavigate={onNavigate}
+        />
       </div>
     </div>
   );

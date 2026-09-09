@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { StatePanel } from "@/components/data-display/state-panel";
 
 export default function AppError({
   reset,
@@ -9,17 +10,11 @@ export default function AppError({
   reset: () => void;
 }) {
   return (
-    <div className="border-border bg-card max-w-lg rounded-lg border px-6 py-8">
-      <h1 className="text-lg font-semibold tracking-tight">
-        This page could not be loaded
-      </h1>
-      <p className="text-muted-foreground mt-2 text-sm leading-6">
-        Try loading the page again. If the problem continues, contact your
-        workspace administrator.
-      </p>
-      <Button className="mt-5" onClick={reset}>
-        Try again
-      </Button>
-    </div>
+    <StatePanel
+      kind="error"
+      title="This page could not be loaded"
+      description="Try loading the page again. If the problem continues, contact your workspace administrator."
+      action={<Button onClick={reset}>Try again</Button>}
+    />
   );
 }

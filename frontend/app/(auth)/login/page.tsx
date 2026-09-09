@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { FormField } from "@/components/forms/form-field";
+import { Input } from "@/components/forms/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
@@ -42,29 +44,31 @@ export default function LoginPage() {
         browser only.
       </p>
       <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
-        <label className="flex flex-col gap-1 text-sm">
-          Email
-          <input
-            className="border-input bg-background rounded-md border px-3 py-2"
+        <FormField label="Email" htmlFor="email" required>
+          <Input
+            id="email"
             type="email"
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Password
-          <input
-            className="border-input bg-background rounded-md border px-3 py-2"
+        </FormField>
+        <FormField label="Password" htmlFor="password" required>
+          <Input
+            id="password"
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
           />
-        </label>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        </FormField>
+        {error ? (
+          <p className="text-danger-text text-sm" role="alert">
+            {error}
+          </p>
+        ) : null}
         <Button type="submit" disabled={pending}>
           {pending ? "Signing in…" : "Sign in"}
         </Button>

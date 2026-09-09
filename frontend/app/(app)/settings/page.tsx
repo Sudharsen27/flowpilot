@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function SettingsPage() {
@@ -20,22 +21,24 @@ export default function SettingsPage() {
           Checking signed-in state…
         </p>
       ) : session ? (
-        <div className="border-border bg-card rounded-lg border px-6 py-6">
-          <p className="text-sm font-medium">{session.user.name}</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {session.user.email}
-          </p>
-          <p className="mt-4 text-sm">
-            Organization:{" "}
-            <span className="font-medium">{session.organization.name}</span>
-          </p>
-          <p className="text-muted-foreground text-sm">
-            {session.organization.slug}
-          </p>
-          <Button className="mt-6" variant="outline" onClick={signOut}>
-            Sign out
-          </Button>
-        </div>
+        <Card>
+          <CardContent>
+            <p className="text-sm font-medium">{session.user.name}</p>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {session.user.email}
+            </p>
+            <p className="mt-4 text-sm">
+              Organization:{" "}
+              <span className="font-medium">{session.organization.name}</span>
+            </p>
+            <p className="text-muted-foreground text-sm">
+              {session.organization.slug}
+            </p>
+            <Button className="mt-6" variant="outline" onClick={signOut}>
+              Sign out
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <div className="border-border bg-card max-w-lg rounded-lg border px-6 py-8">
           <h2 className="text-base font-medium tracking-tight">
