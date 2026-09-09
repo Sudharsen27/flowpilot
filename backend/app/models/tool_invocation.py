@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
     func,
@@ -50,6 +51,14 @@ class ToolInvocation(Base):
         CheckConstraint(
             "decision IN ('ALLOW', 'REQUIRE_APPROVAL', 'DENY')",
             name="ck_tool_invocations_decision",
+        ),
+        Index(
+            "ix_tool_invocations_org_agent_execution_started_id",
+            "organization_id",
+            "agent_id",
+            "execution_id",
+            "started_at",
+            "id",
         ),
     )
 

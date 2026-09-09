@@ -20,23 +20,31 @@ from app.core.exceptions import (
 )
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, AgentStatus
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.tool_invocation import ToolInvocation, ToolInvocationRecordStatus
 from app.repositories.agent_execution_repository import (
     EXECUTION_LIST_DEFAULT_LIMIT,
     EXECUTION_LIST_MAX_LIMIT,
     AgentExecutionRepository,
 )
 from app.repositories.agent_repository import AgentRepository
+from app.repositories.tool_invocation_repository import (
+    INVOCATION_LIST_DEFAULT_LIMIT,
+    INVOCATION_LIST_MAX_LIMIT,
+    ToolInvocationRepository,
+)
 from app.schemas.agents import (
     EXECUTION_PREVIEW_LENGTH,
     AgentExecutionDetail,
     AgentExecutionListItem,
     AgentExecutionListResponse,
     AgentExecutionResult,
+    ToolInvocationListItem,
+    ToolInvocationListResponse,
 )
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
-from app.tools.schema import ToolContext, ToolResult
+from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLevel
 
 
 class AgentExecutionService:
@@ -54,6 +62,7 @@ class AgentExecutionService:
         self.provider = provider
         self.agents = AgentRepository(session)
         self.executions = AgentExecutionRepository(session)
+        self.invocations = ToolInvocationRepository(session)
         self.registry = registry or ToolRegistry()
         self.tool_executor = tool_executor or ToolExecutionService(
             session,
@@ -245,6 +254,36 @@ class AgentExecutionService:
             raise NotFoundError("Agent execution not found")
         return _to_detail(execution)
 
+    def list_for_execution(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+        limit: int = INVOCATION_LIST_DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> ToolInvocationListResponse:
+        if self.agents.get_by_id(organization_id, agent_id) is None:
+            raise NotFoundError("Agent not found")
+        execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
+        if execution is None:
+            raise NotFoundError("Agent execution not found")
+        safe_limit = min(max(limit, 1), INVOCATION_LIST_MAX_LIMIT)
+        safe_offset = max(offset, 0)
+        items, total = self.invocations.list_by_execution(
+            organization_id,
+            agent_id,
+            execution.id,
+            limit=safe_limit,
+            offset=safe_offset,
+        )
+        return ToolInvocationListResponse(
+            items=[_to_invocation_item(item) for item in items],
+            limit=safe_limit,
+            offset=safe_offset,
+            total=total,
+        )
+
 
 def _json_text(value: Any, key: str) -> str | None:
     if not isinstance(value, dict):
@@ -303,4 +342,22 @@ def _to_detail(execution: AgentExecution) -> AgentExecutionDetail:
         completed_at=execution.completed_at,
         created_at=execution.created_at,
         initiated_by_user_id=execution.initiated_by_user_id,
+    )
+
+
+def _to_invocation_item(invocation: ToolInvocation) -> ToolInvocationListItem:
+    return ToolInvocationListItem(
+        id=invocation.id,
+        execution_id=invocation.execution_id,
+        agent_id=invocation.agent_id,
+        call_id=invocation.call_id,
+        tool_name=invocation.tool_name,
+        risk_level=ToolRiskLevel(invocation.risk_level) if invocation.risk_level else None,
+        decision=PolicyDecision(invocation.decision) if invocation.decision else None,
+        status=ToolInvocationRecordStatus(invocation.status),
+        argument_keys=list(invocation.argument_keys) if invocation.argument_keys else None,
+        error=invocation.error,
+        started_at=invocation.started_at,
+        completed_at=invocation.completed_at,
+        created_at=invocation.created_at,
     )

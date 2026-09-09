@@ -16,6 +16,10 @@ from app.repositories.agent_execution_repository import (
     EXECUTION_LIST_DEFAULT_LIMIT,
     EXECUTION_LIST_MAX_LIMIT,
 )
+from app.repositories.tool_invocation_repository import (
+    INVOCATION_LIST_DEFAULT_LIMIT,
+    INVOCATION_LIST_MAX_LIMIT,
+)
 from app.schemas.agents import (
     AgentCreate,
     AgentExecutionDetail,
@@ -24,6 +28,7 @@ from app.schemas.agents import (
     AgentExecutionResult,
     AgentPublic,
     AgentUpdate,
+    ToolInvocationListResponse,
 )
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.agent_service import AgentService
@@ -185,4 +190,27 @@ def get_agent_execution(
         organization_id=organization.id,
         agent_id=agent_id,
         execution_id=execution_id,
+    )
+
+
+@router.get(
+    "/{agent_id}/executions/{execution_id}/tool-invocations",
+    response_model=ToolInvocationListResponse,
+)
+def list_agent_execution_tool_invocations(
+    agent_id: str,
+    execution_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+    limit: int = Query(
+        default=INVOCATION_LIST_DEFAULT_LIMIT, ge=1, le=INVOCATION_LIST_MAX_LIMIT
+    ),
+    offset: int = Query(default=0, ge=0),
+) -> ToolInvocationListResponse:
+    return AgentExecutionService(db).list_for_execution(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        execution_id=execution_id,
+        limit=limit,
+        offset=offset,
     )

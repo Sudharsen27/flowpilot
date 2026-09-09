@@ -106,10 +106,11 @@ Agent API
 ├── POST   /api/v1/agents/{id}/pause       ACTIVE → PAUSED
 ├── POST   /api/v1/agents/{id}/execute     Run (READY or ACTIVE)
 ├── GET    /api/v1/agents/{id}/executions  List executions (paginated summaries)
-└── GET    /api/v1/agents/{id}/executions/{execution_id}  Execution detail
+├── GET    /api/v1/agents/{id}/executions/{execution_id}  Execution detail
+└── GET    /api/v1/agents/{id}/executions/{execution_id}/tool-invocations  Tool invocation audit
 ```
 
-Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, execute eligible agents, and read execution history, but cannot change configuration or status.
+Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, execute eligible agents, and read execution and tool-invocation history, but cannot change configuration or status.
 
 PATCH does not accept `status`; lifecycle endpoints enforce allowed transitions. `NEEDS_ATTENTION` cannot be cleared by PATCH or those endpoints. Execution remains limited to `READY` and `ACTIVE`.
 
@@ -120,7 +121,15 @@ Authenticated members of the current organization may read persisted `AgentExecu
 - `GET /api/v1/agents/{agent_id}/executions?limit=&offset=` — newest first (`created_at DESC`, `id DESC`). Default `limit` 20, minimum 1, maximum 50. Response: `{ items, limit, offset, total }`. List items are summaries (`id`, `status`, `provider`, `model`, timestamps, optional `input_preview` / `error_preview`). Full input, full output JSON, and `tool_results` are not returned.
 - `GET /api/v1/agents/{agent_id}/executions/{execution_id}` — safe detail: input text, output text, provider, model, usage when stored, sanitized `error`, timestamps, `initiated_by_user_id`. Does not expose `tool_results`, raw provider payloads, or secrets.
 
-Missing agents, missing executions, cross-tenant ids, and executions that belong to a different agent return 404. Unauthenticated requests return 401. There is no public tool-invocation history API in this slice.
+Missing agents, missing executions, cross-tenant ids, and executions that belong to a different agent return 404. Unauthenticated requests return 401.
+
+### Tool invocation history (Phase 3H.2)
+
+`GET /api/v1/agents/{agent_id}/executions/{execution_id}/tool-invocations` lists `ToolInvocation` audit rows for one execution. `OWNER`, `ADMIN`, and `MEMBER` may read. Organization comes from the membership JWT.
+
+Pagination matches execution history (`limit` default 20, min 1, max 50; `offset` ≥ 0). Ordering is chronological: `started_at ASC`, `id ASC`.
+
+Public fields: `id`, `execution_id`, `agent_id`, `call_id`, `tool_name`, `risk_level`, `decision`, `status`, `argument_keys` (names only), `error`, timestamps. Argument values, tool outputs, `tool_results`, raw provider payloads, secrets, and stack traces are not returned. There is no per-invocation GET, Activity feed, or frontend history UI in this slice.
 
 ## LLM providers
 
@@ -170,4 +179,8 @@ Tenant-safe agent CRUD and lifecycle (`ready` / `activate` / `pause`). `OWNER`/`
 
 ## Phase 3H.1 (execution history read APIs)
 
-Paginated list and safe detail over existing `AgentExecution` rows. No tool-invocation API, Activity feed, or frontend history UI in this slice.
+Paginated list and safe detail over existing `AgentExecution` rows. No Activity feed or frontend history UI in this slice.
+
+## Phase 3H.2 (tool invocation history read API)
+
+Paginated, chronological list of `ToolInvocation` audit rows for a specific execution. Argument values and tool outputs are not exposed.

@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.ai.provider import TokenUsage
 from app.models.agent import AgentStatus, AgentType
 from app.models.agent_execution import AgentExecutionStatus
+from app.models.tool_invocation import ToolInvocationRecordStatus
+from app.tools.schema import PolicyDecision, ToolRiskLevel
 
 
 class AgentCreate(BaseModel):
@@ -96,3 +98,30 @@ class AgentExecutionDetail(BaseModel):
     completed_at: datetime | None = None
     created_at: datetime
     initiated_by_user_id: str | None = None
+
+
+class ToolInvocationListItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    execution_id: str
+    agent_id: str
+    call_id: str
+    tool_name: str
+    risk_level: ToolRiskLevel | None = None
+    decision: PolicyDecision | None = None
+    status: ToolInvocationRecordStatus
+    argument_keys: list[str] | None = None
+    error: str | None = None
+    started_at: datetime
+    completed_at: datetime
+    created_at: datetime
+
+
+class ToolInvocationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ToolInvocationListItem]
+    limit: int
+    offset: int
+    total: int
