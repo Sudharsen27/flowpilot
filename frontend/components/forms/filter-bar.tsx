@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 type FilterBarProps = {
   search?: ReactNode;
+  searchClassName?: string;
   children?: ReactNode;
   activeFilterCount?: number;
   onOpenFilters?: () => void;
@@ -15,6 +16,7 @@ type FilterBarProps = {
 
 export function FilterBar({
   search,
+  searchClassName,
   children,
   activeFilterCount = 0,
   onOpenFilters,
@@ -29,7 +31,9 @@ export function FilterBar({
         className,
       )}
     >
-      {search ? <div className="min-w-0 flex-1">{search}</div> : null}
+      {search ? (
+        <div className={cn("min-w-0 flex-1", searchClassName)}>{search}</div>
+      ) : null}
       {children}
       {onOpenFilters ? (
         <Button type="button" variant="outline" onClick={onOpenFilters}>
