@@ -8,11 +8,20 @@ import {
   activateAgent,
   executeAgent,
   getAgent,
+  getAgentExecution,
+  listAgentExecutions,
+  listToolInvocations,
   markAgentReady,
   pauseAgent,
   updateAgent,
 } from "@/lib/api/agents";
-import type { Agent, AgentExecutionResult } from "@/types/api";
+import type {
+  Agent,
+  AgentExecutionDetail,
+  AgentExecutionListItem,
+  AgentExecutionResult,
+  ToolInvocationListItem,
+} from "@/types/api";
 
 const authMock = vi.hoisted(() => ({
   role: "OWNER" as "OWNER" | "ADMIN" | "MEMBER",
@@ -36,6 +45,9 @@ vi.mock("@/lib/api/agents", () => ({
   activateAgent: vi.fn(),
   pauseAgent: vi.fn(),
   executeAgent: vi.fn(),
+  listAgentExecutions: vi.fn(),
+  getAgentExecution: vi.fn(),
+  listToolInvocations: vi.fn(),
 }));
 
 const agent: Agent = {
@@ -55,6 +67,34 @@ const markAgentReadyMock = vi.mocked(markAgentReady);
 const activateAgentMock = vi.mocked(activateAgent);
 const pauseAgentMock = vi.mocked(pauseAgent);
 const executeAgentMock = vi.mocked(executeAgent);
+const listAgentExecutionsMock = vi.mocked(listAgentExecutions);
+const getAgentExecutionMock = vi.mocked(getAgentExecution);
+const listToolInvocationsMock = vi.mocked(listToolInvocations);
+
+const emptyHistory = {
+  items: [] as AgentExecutionListItem[],
+  limit: 20,
+  offset: 0,
+  total: 0,
+};
+
+function historyItem(
+  id: string,
+  overrides: Partial<AgentExecutionListItem> = {},
+): AgentExecutionListItem {
+  return {
+    id,
+    status: "COMPLETED",
+    provider: "openai",
+    model: "gpt-4o-mini",
+    started_at: "2026-09-09T10:00:00Z",
+    completed_at: "2026-09-09T10:00:02Z",
+    created_at: "2026-09-09T10:00:00Z",
+    input_preview: "Preview of the run",
+    error_preview: null,
+    ...overrides,
+  };
+}
 
 const executionResult: AgentExecutionResult = {
   execution_id: "exec-real-1",
@@ -74,6 +114,16 @@ describe("Agent Detail page", () => {
     activateAgentMock.mockReset();
     pauseAgentMock.mockReset();
     executeAgentMock.mockReset();
+    listAgentExecutionsMock.mockReset();
+    getAgentExecutionMock.mockReset();
+    listToolInvocationsMock.mockReset();
+    listAgentExecutionsMock.mockResolvedValue(emptyHistory);
+    listToolInvocationsMock.mockResolvedValue({
+      items: [],
+      limit: 50,
+      offset: 0,
+      total: 0,
+    });
     authMock.role = "OWNER";
   });
 
@@ -412,7 +462,6 @@ describe("Agent Detail page", () => {
     expect(screen.getByText("gpt-4.1-mini")).toBeVisible();
     expect(screen.getByText("exec-real-1")).toBeVisible();
     expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
-    expect(screen.queryByText("History")).not.toBeInTheDocument();
   });
 
   it("lets an ACTIVE agent execute", async () => {
@@ -483,7 +532,9 @@ describe("Agent Detail page", () => {
     await user.type(input, "Qualify this lead");
     await user.click(screen.getByRole("button", { name: "Run agent" }));
     expect(await screen.findByRole("button", { name: "Running…" })).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Running a real AI execution");
+    expect(
+      screen.getByText("Running a real AI execution. Do not close this page until it finishes."),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Running…" }));
     expect(executeAgentMock).toHaveBeenCalledTimes(1);
     resolveExecution(executionResult);
@@ -528,5 +579,358 @@ describe("Agent Detail page", () => {
       "The agent could not be run. Check your connection and try again.",
     );
     expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+  });
+
+  it("shows a loading state for execution history", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockReturnValue(new Promise(() => undefined));
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByRole("heading", { name: "Inbound qualifier" }),
+    ).toBeVisible();
+    expect(screen.getByText("Loading execution history")).toBeVisible();
+  });
+
+  it("shows an empty execution history", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByText(
+        /No executions have been recorded for this agent yet/,
+      ),
+    ).toBeVisible();
+    expect(listAgentExecutionsMock).toHaveBeenCalledWith("agent-real-1", {
+      limit: 20,
+      offset: 0,
+    });
+  });
+
+  it("retries a failed history load", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce(emptyHistory);
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByText(/Execution history could not be loaded/),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Inbound qualifier" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Retry history" }));
+    expect(
+      await screen.findByText(
+        /No executions have been recorded for this agent yet/,
+      ),
+    ).toBeVisible();
+  });
+
+  it("renders history list fields without full input or output", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [
+        historyItem("exec-list-1", {
+          input_preview: "Preview of the run",
+          error_preview: "Provider timeout",
+        }),
+      ],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    render(<AgentDetailPage />);
+    expect(await screen.findByText("Preview of the run")).toBeVisible();
+    expect(screen.getByText("Provider timeout")).toBeVisible();
+    expect(screen.getByText("openai")).toBeVisible();
+    expect(screen.getByText("gpt-4o-mini")).toBeVisible();
+    expect(
+      screen.queryByText("Qualify this lead with confidential context"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("This lead is fully qualified after review."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("tool_results")).not.toBeInTheDocument();
+  });
+
+  it("paginates execution history using limit and offset", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    const items = Array.from({ length: 43 }, (_, index) =>
+      historyItem(`exec-page-${index + 1}`, {
+        input_preview: `Preview ${index + 1}`,
+      }),
+    );
+    listAgentExecutionsMock.mockImplementation(
+      async (_id: string, params?: { limit?: number; offset?: number }) => {
+        const limit = params?.limit ?? 20;
+        const offset = params?.offset ?? 0;
+        return {
+          items: items.slice(offset, offset + limit),
+          limit,
+          offset,
+          total: 43,
+        };
+      },
+    );
+    render(<AgentDetailPage />);
+    expect(await screen.findByText("Showing 1–20 of 43")).toBeVisible();
+    expect(screen.getByText("Preview 1")).toBeVisible();
+    expect(screen.queryByText("Preview 21")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Previous executions page" }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Next executions page" }),
+    );
+    expect(await screen.findByText("Showing 21–40 of 43")).toBeVisible();
+    expect(listAgentExecutionsMock).toHaveBeenCalledWith("agent-real-1", {
+      limit: 20,
+      offset: 20,
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Next executions page" }),
+    );
+    expect(await screen.findByText("Showing 41–43 of 43")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Next executions page" }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Previous executions page" }),
+    );
+    expect(await screen.findByText("Showing 21–40 of 43")).toBeVisible();
+  });
+
+  it("loads execution detail and tool activity for a selected run", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [historyItem("exec-list-1")],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    const detail: AgentExecutionDetail = {
+      id: "exec-list-1",
+      agent_id: "agent-real-1",
+      status: "COMPLETED",
+      input: "Qualify this lead with confidential context",
+      output: "This lead is fully qualified after review.",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      usage: { total_tokens: 12 },
+      error: null,
+      started_at: "2026-09-09T10:00:00Z",
+      completed_at: "2026-09-09T10:00:02Z",
+      created_at: "2026-09-09T10:00:00Z",
+      initiated_by_user_id: "user-1",
+    };
+    getAgentExecutionMock.mockResolvedValue(detail);
+    const invocation: ToolInvocationListItem = {
+      id: "inv-1",
+      execution_id: "exec-list-1",
+      agent_id: "agent-real-1",
+      call_id: "call-1",
+      tool_name: "echo",
+      risk_level: "LOW",
+      decision: "ALLOW",
+      status: "SUCCESS",
+      argument_keys: ["message"],
+      error: null,
+      started_at: "2026-09-09T10:00:01Z",
+      completed_at: "2026-09-09T10:00:01Z",
+      created_at: "2026-09-09T10:00:01Z",
+    };
+    listToolInvocationsMock.mockResolvedValue({
+      items: [invocation],
+      limit: 50,
+      offset: 0,
+      total: 1,
+    });
+    render(<AgentDetailPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "View execution exec-list-1" }),
+    );
+    expect(getAgentExecutionMock).toHaveBeenCalledWith(
+      "agent-real-1",
+      "exec-list-1",
+    );
+    expect(
+      await screen.findByText("Qualify this lead with confidential context"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("This lead is fully qualified after review."),
+    ).toBeVisible();
+    expect(screen.getByText("12")).toBeVisible();
+    expect(screen.getByText("user-1")).toBeVisible();
+    expect(listToolInvocationsMock).toHaveBeenCalledWith(
+      "agent-real-1",
+      "exec-list-1",
+      { limit: 50, offset: 0 },
+    );
+    expect(screen.getByText("echo")).toBeVisible();
+    expect(screen.getByText("message")).toBeVisible();
+    expect(screen.getByText("LOW")).toBeVisible();
+    expect(screen.getByText("ALLOW")).toBeVisible();
+    expect(screen.queryByText("hello secret")).not.toBeInTheDocument();
+    expect(screen.queryByText("tool_results")).not.toBeInTheDocument();
+  });
+
+  it("keeps execution detail when tool activity fails", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [historyItem("exec-list-1")],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    getAgentExecutionMock.mockResolvedValue({
+      id: "exec-list-1",
+      agent_id: "agent-real-1",
+      status: "FAILED",
+      input: "Task input",
+      output: null,
+      provider: null,
+      model: null,
+      usage: null,
+      error: "The AI provider could not complete this run.",
+      started_at: "2026-09-09T10:00:00Z",
+      completed_at: null,
+      created_at: "2026-09-09T10:00:00Z",
+      initiated_by_user_id: null,
+    });
+    listToolInvocationsMock.mockRejectedValue(new Error("network"));
+    render(<AgentDetailPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "View execution exec-list-1" }),
+    );
+    expect(await screen.findByText("Task input")).toBeVisible();
+    expect(
+      screen.getByText("The AI provider could not complete this run."),
+    ).toBeVisible();
+    expect(screen.queryByText("Provider token usage")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/Tool activity could not be loaded/),
+    ).toBeVisible();
+  });
+
+  it("shows an empty tool activity state", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [historyItem("exec-list-1")],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    getAgentExecutionMock.mockResolvedValue({
+      id: "exec-list-1",
+      agent_id: "agent-real-1",
+      status: "COMPLETED",
+      input: "Task input",
+      output: "Done",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      usage: null,
+      error: null,
+      started_at: "2026-09-09T10:00:00Z",
+      completed_at: "2026-09-09T10:00:02Z",
+      created_at: "2026-09-09T10:00:00Z",
+      initiated_by_user_id: null,
+    });
+    render(<AgentDetailPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "View execution exec-list-1" }),
+    );
+    expect(
+      await screen.findByText("No tool activity recorded for this execution."),
+    ).toBeVisible();
+  });
+
+  it("handles execution detail 404", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [historyItem("exec-list-1")],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    getAgentExecutionMock.mockRejectedValue(new ApiError("Request failed: 404", 404));
+    render(<AgentDetailPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "View execution exec-list-1" }),
+    );
+    expect(
+      await screen.findByText("This execution could not be found."),
+    ).toBeVisible();
+  });
+
+  it.each(["OWNER", "ADMIN", "MEMBER"] as const)(
+    "lets %s view execution history",
+    async (role) => {
+      authMock.role = role;
+      getAgentMock.mockResolvedValue(agent);
+      listAgentExecutionsMock.mockResolvedValue({
+        items: [historyItem("exec-list-1")],
+        limit: 20,
+        offset: 0,
+        total: 1,
+      });
+      render(<AgentDetailPage />);
+      expect(
+        await screen.findByRole("button", { name: "View execution exec-list-1" }),
+      ).toBeVisible();
+    },
+  );
+
+  it("refreshes history after a successful manual run", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock
+      .mockResolvedValueOnce(emptyHistory)
+      .mockResolvedValueOnce({
+        items: [historyItem("exec-real-1")],
+        limit: 20,
+        offset: 0,
+        total: 1,
+      });
+    executeAgentMock.mockResolvedValue(executionResult);
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByText(
+        /No executions have been recorded for this agent yet/,
+      ),
+    ).toBeVisible();
+    await user.type(
+      screen.getByRole("textbox", { name: /Execution input/ }),
+      "Qualify this lead",
+    );
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
+    expect(
+      await screen.findByRole("button", { name: "View execution exec-real-1" }),
+    ).toBeVisible();
+    expect(listAgentExecutionsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the run result if history refresh fails", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock
+      .mockResolvedValueOnce(emptyHistory)
+      .mockRejectedValueOnce(new Error("network"));
+    executeAgentMock.mockResolvedValue(executionResult);
+    render(<AgentDetailPage />);
+    await user.type(
+      await screen.findByRole("textbox", { name: /Execution input/ }),
+      "Qualify this lead",
+    );
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
+    expect(
+      await screen.findByText(/Execution history could not be loaded/),
+    ).toBeVisible();
   });
 });

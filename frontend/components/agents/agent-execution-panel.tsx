@@ -101,7 +101,7 @@ export function AgentExecutionPanel({
         <CardTitle id="run-agent-title">Run agent</CardTitle>
         <CardDescription>
           Sends this input to the connected AI provider and returns the real
-          execution result. This is a manual run, not a saved history.
+          execution result. Recorded runs also appear in Execution history.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-5">
@@ -161,8 +161,8 @@ export function AgentExecutionPanel({
           <ExecutionResult result={result} />
         ) : !isRunning && canExecute ? (
           <p className="text-muted-foreground text-sm leading-6">
-            The latest result from this page session will appear here. Past
-            executions are not listed.
+            The latest result from this page session will appear here. Recorded
+            runs are listed in Execution history.
           </p>
         ) : null}
       </CardContent>

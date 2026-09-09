@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentCapabilities } from "@/components/agents/agent-capabilities";
 import { AgentCommunication } from "@/components/agents/agent-communication";
 import { AgentConfigurationSidebar } from "@/components/agents/agent-configuration-sidebar";
+import { AgentExecutionHistory } from "@/components/agents/agent-execution-history";
 import {
   AgentExecutionPanel,
   executionErrorMessage,
@@ -72,6 +73,7 @@ export default function AgentDetailPage() {
   const [executionResult, setExecutionResult] =
     useState<AgentExecutionResult | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const lifecyclePendingRef = useRef(false);
   const executionPendingRef = useRef(false);
   const canEdit =
@@ -223,6 +225,7 @@ export default function AgentDetailPage() {
     try {
       const result = await executeAgent(agent.id, { input });
       setExecutionResult(result);
+      setHistoryRefreshKey((key) => key + 1);
     } catch (cause) {
       setExecutionError(executionErrorMessage(cause));
     } finally {
@@ -401,6 +404,10 @@ export default function AgentDetailPage() {
             result={executionResult}
             error={executionError}
             onRun={handleExecute}
+          />
+          <AgentExecutionHistory
+            key={historyRefreshKey}
+            agentId={agent.id}
           />
           <AgentCapabilities />
           <AgentResources />
