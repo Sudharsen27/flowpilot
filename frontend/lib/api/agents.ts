@@ -39,3 +39,19 @@ export function updateAgent(agentId: string, input: AgentUpdateRequest) {
     input,
   );
 }
+
+function agentActionPath(agentId: string, action: "ready" | "activate" | "pause") {
+  return `/api/v1/agents/${encodeURIComponent(agentId)}/${action}`;
+}
+
+export function markAgentReady(agentId: string) {
+  return apiPost<Agent>(agentActionPath(agentId, "ready"));
+}
+
+export function activateAgent(agentId: string) {
+  return apiPost<Agent>(agentActionPath(agentId, "activate"));
+}
+
+export function pauseAgent(agentId: string) {
+  return apiPost<Agent>(agentActionPath(agentId, "pause"));
+}

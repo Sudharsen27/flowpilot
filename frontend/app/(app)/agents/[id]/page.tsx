@@ -3,7 +3,7 @@
 import { Save } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentCapabilities } from "@/components/agents/agent-capabilities";
 import { AgentCommunication } from "@/components/agents/agent-communication";
@@ -19,7 +19,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatusBadge } from "@/components/agents/agent-status-badge";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
-import { getAgent, updateAgent } from "@/lib/api/agents";
+import {
+  activateAgent,
+  getAgent,
+  markAgentReady,
+  pauseAgent,
+  updateAgent,
+} from "@/lib/api/agents";
 import type { Agent, AgentType, AgentUpdateRequest } from "@/types/api";
 
 const statusToBadge = {
@@ -47,6 +53,12 @@ export default function AgentDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [isLifecyclePending, setIsLifecyclePending] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [lifecycleSuccess, setLifecycleSuccess] = useState<string | null>(
+    null,
+  );
+  const lifecyclePendingRef = useRef(false);
   const canEdit =
     session?.membership.role === "OWNER" ||
     session?.membership.role === "ADMIN";
@@ -101,8 +113,44 @@ export default function AgentDetailPage() {
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [isDirty]);
 
+  async function handleLifecycle(action: "ready" | "activate" | "pause") {
+    if (!agent || !canEdit || lifecyclePendingRef.current || isSaving) return;
+    lifecyclePendingRef.current = true;
+    setLifecycleError(null);
+    setLifecycleSuccess(null);
+    setIsLifecyclePending(true);
+    try {
+      const updated =
+        action === "ready"
+          ? await markAgentReady(agent.id)
+          : action === "activate"
+            ? await activateAgent(agent.id)
+            : await pauseAgent(agent.id);
+      setAgent(updated);
+      setLifecycleSuccess(
+        action === "ready"
+          ? "Agent marked ready."
+          : action === "activate"
+            ? "Agent activated."
+            : "Agent paused.",
+      );
+    } catch (cause) {
+      setLifecycleError(
+        cause instanceof ApiError && cause.status === 403
+          ? "You do not have permission to change this agent's status."
+          : cause instanceof ApiError && cause.status === 409
+            ? "This status change is not allowed for the current agent."
+            : "The agent status could not be updated. Please try again.",
+      );
+    } finally {
+      lifecyclePendingRef.current = false;
+      setIsLifecyclePending(false);
+    }
+  }
+
   async function handleSave() {
-    if (!agent || !canEdit || !isDirty || isSaving) return;
+    if (!agent || !canEdit || !isDirty || isSaving || isLifecyclePending)
+      return;
     const changes: AgentUpdateRequest = {};
     if (name !== agent.name) changes.name = name.trim();
     if (description !== agent.description) {
@@ -222,7 +270,13 @@ export default function AgentDetailPage() {
           <>
             <Button
               type="button"
-              disabled={!canEdit || !isDirty || isSaving || !name.trim()}
+              disabled={
+                !canEdit ||
+                !isDirty ||
+                isSaving ||
+                isLifecyclePending ||
+                !name.trim()
+              }
               onClick={() => void handleSave()}
               aria-describedby={!canEdit ? "agent-save-unavailable" : undefined}
             >
@@ -243,6 +297,14 @@ export default function AgentDetailPage() {
       ) : saved ? (
         <p className="text-success-text text-sm" role="status">
           Configuration saved.
+        </p>
+      ) : lifecycleError ? (
+        <p className="text-danger-text text-sm" role="alert">
+          {lifecycleError}
+        </p>
+      ) : lifecycleSuccess ? (
+        <p className="text-success-text text-sm" role="status">
+          {lifecycleSuccess}
         </p>
       ) : !canEdit ? (
         <StatePanel
@@ -291,10 +353,15 @@ export default function AgentDetailPage() {
         </div>
         <AgentConfigurationSidebar
           status={badgeStatus}
+          apiStatus={agent.status}
           canEdit={canEdit}
           isDirty={isDirty}
           isSaving={isSaving}
+          isLifecyclePending={isLifecyclePending}
           onSave={() => void handleSave()}
+          onReady={() => void handleLifecycle("ready")}
+          onActivate={() => void handleLifecycle("activate")}
+          onPause={() => void handleLifecycle("pause")}
         />
       </div>
     </div>

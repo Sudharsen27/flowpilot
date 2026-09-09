@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  activateAgent,
   createAgent,
   getAgent,
   getAgents,
+  markAgentReady,
+  pauseAgent,
   updateAgent,
 } from "@/lib/api/agents";
 
@@ -112,5 +115,30 @@ describe("Agent API client", () => {
         }),
       }),
     );
+  });
+
+  it.each([
+    ["ready", markAgentReady],
+    ["activate", activateAgent],
+    ["pause", pauseAgent],
+  ] as const)("posts %s without a request body", async (action, method) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "agent-1", status: "READY" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await method("agent/1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://localhost:8000/api/v1/agents/agent%2F1/${action}`,
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer agent-token",
+        }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("body", expect.anything());
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
   });
 });

@@ -9,23 +9,43 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { AgentLifecycleControls } from "@/components/agents/agent-lifecycle-controls";
 import {
   AgentStatusBadge,
   type AgentStatus,
 } from "@/components/agents/agent-status-badge";
+import type { AgentStatus as ApiAgentStatus } from "@/types/api";
+
+const activationLabel: Record<ApiAgentStatus, string> = {
+  DRAFT: "Draft",
+  READY: "Ready to activate",
+  ACTIVE: "Active",
+  PAUSED: "Paused",
+  NEEDS_ATTENTION: "Needs attention",
+};
 
 export function AgentConfigurationSidebar({
   status,
+  apiStatus,
   canEdit,
   isDirty,
   isSaving,
+  isLifecyclePending,
   onSave,
+  onReady,
+  onActivate,
+  onPause,
 }: {
   status: AgentStatus;
+  apiStatus: ApiAgentStatus;
   canEdit: boolean;
   isDirty: boolean;
   isSaving: boolean;
+  isLifecyclePending: boolean;
   onSave: () => void;
+  onReady: () => void;
+  onActivate: () => void;
+  onPause: () => void;
 }) {
   return (
     <aside
@@ -62,12 +82,20 @@ export function AgentConfigurationSidebar({
             </div>
             <div className="flex justify-between gap-3 py-3 last:pb-0">
               <dt className="text-muted-foreground">Activation</dt>
-              <dd className="font-medium">Not connected</dd>
+              <dd className="font-medium">{activationLabel[apiStatus]}</dd>
             </div>
           </dl>
+          <AgentLifecycleControls
+            status={apiStatus}
+            canManage={canEdit}
+            isPending={isLifecyclePending || isSaving}
+            onReady={onReady}
+            onActivate={onActivate}
+            onPause={onPause}
+          />
           <Button
             type="button"
-            disabled={!canEdit || !isDirty || isSaving}
+            disabled={!canEdit || !isDirty || isSaving || isLifecyclePending}
             onClick={onSave}
             className="w-full"
           >

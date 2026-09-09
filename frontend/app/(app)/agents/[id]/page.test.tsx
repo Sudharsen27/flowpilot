@@ -1,10 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import AgentDetailPage from "@/app/(app)/agents/[id]/page";
 import { ApiError } from "@/lib/api/client";
-import { getAgent, updateAgent } from "@/lib/api/agents";
+import {
+  activateAgent,
+  getAgent,
+  markAgentReady,
+  pauseAgent,
+  updateAgent,
+} from "@/lib/api/agents";
 import type { Agent } from "@/types/api";
 
 const authMock = vi.hoisted(() => ({
@@ -25,6 +31,9 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/lib/api/agents", () => ({
   getAgent: vi.fn(),
   updateAgent: vi.fn(),
+  markAgentReady: vi.fn(),
+  activateAgent: vi.fn(),
+  pauseAgent: vi.fn(),
 }));
 
 const agent: Agent = {
@@ -40,11 +49,17 @@ const agent: Agent = {
 
 const getAgentMock = vi.mocked(getAgent);
 const updateAgentMock = vi.mocked(updateAgent);
+const markAgentReadyMock = vi.mocked(markAgentReady);
+const activateAgentMock = vi.mocked(activateAgent);
+const pauseAgentMock = vi.mocked(pauseAgent);
 
 describe("Agent Detail page", () => {
   beforeEach(() => {
     getAgentMock.mockReset();
     updateAgentMock.mockReset();
+    markAgentReadyMock.mockReset();
+    activateAgentMock.mockReset();
+    pauseAgentMock.mockReset();
     authMock.role = "OWNER";
   });
 
@@ -194,5 +209,173 @@ describe("Agent Detail page", () => {
     screen
       .getAllByRole("button", { name: "Save configuration" })
       .forEach((button) => expect(button).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
+  });
+
+  it("shows Mark Ready for draft agents", async () => {
+    getAgentMock.mockResolvedValue({ ...agent, status: "DRAFT" });
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByRole("button", { name: "Mark Ready" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Activate" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Pause" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Activate for ready agents", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
+    expect(await screen.findByRole("button", { name: "Activate" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Mark Ready" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Pause for active agents", async () => {
+    getAgentMock.mockResolvedValue({ ...agent, status: "ACTIVE" });
+    render(<AgentDetailPage />);
+    expect(await screen.findByRole("button", { name: "Pause" })).toBeVisible();
+  });
+
+  it("shows Resume for paused agents", async () => {
+    getAgentMock.mockResolvedValue({ ...agent, status: "PAUSED" });
+    render(<AgentDetailPage />);
+    expect(await screen.findByRole("button", { name: "Resume" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Pause" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer a fake resolve action for needs-attention agents", async () => {
+    getAgentMock.mockResolvedValue({ ...agent, status: "NEEDS_ATTENTION" });
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByText(
+        "This agent needs attention and cannot change status from this screen.",
+      ),
+    ).toBeVisible();
+    expect(screen.getAllByText("Needs attention").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: "Mark Ready" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Activate" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Pause" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Resume" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/resolve/i)).not.toBeInTheDocument();
+  });
+
+  it.each(["OWNER", "ADMIN"] as const)(
+    "lets %s confirm activate and updates the status from the API",
+    async (role) => {
+      const user = userEvent.setup();
+      authMock.role = role;
+      getAgentMock.mockResolvedValue(agent);
+      activateAgentMock.mockResolvedValue({ ...agent, status: "ACTIVE" });
+      render(<AgentDetailPage />);
+      await user.click(await screen.findByRole("button", { name: "Activate" }));
+      expect(
+        screen.getByRole("heading", { name: "Activate this agent?" }),
+      ).toBeVisible();
+      await user.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: "Activate",
+        }),
+      );
+      expect(activateAgentMock).toHaveBeenCalledWith("agent-real-1");
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "Agent activated.",
+      );
+      expect(screen.getAllByText("Active").length).toBeGreaterThan(0);
+      expect(screen.getByRole("button", { name: "Pause" })).toBeVisible();
+    },
+  );
+
+  it("cancels confirmation without requesting a lifecycle change", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
+    await user.click(await screen.findByRole("button", { name: "Activate" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(activateAgentMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("heading", { name: "Activate this agent?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a confirmation dialog before pausing", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue({ ...agent, status: "ACTIVE" });
+    pauseAgentMock.mockResolvedValue({ ...agent, status: "PAUSED" });
+    render(<AgentDetailPage />);
+    await user.click(await screen.findByRole("button", { name: "Pause" }));
+    expect(
+      screen.getByRole("heading", { name: "Pause this agent?" }),
+    ).toBeVisible();
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Pause" }),
+    );
+    expect(pauseAgentMock).toHaveBeenCalledWith("agent-real-1");
+    expect(await screen.findByRole("status")).toHaveTextContent("Agent paused.");
+  });
+
+  it("marks a draft ready without a confirmation dialog", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue({ ...agent, status: "DRAFT" });
+    markAgentReadyMock.mockResolvedValue({ ...agent, status: "READY" });
+    render(<AgentDetailPage />);
+    await user.click(await screen.findByRole("button", { name: "Mark Ready" }));
+    expect(
+      screen.queryByRole("heading", { name: /this agent/i }),
+    ).not.toBeInTheDocument();
+    expect(markAgentReadyMock).toHaveBeenCalledWith("agent-real-1");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Agent marked ready.",
+    );
+  });
+
+  it("shows lifecycle API errors without hiding the current status", async () => {
+    const user = userEvent.setup();
+    getAgentMock.mockResolvedValue(agent);
+    activateAgentMock.mockRejectedValue(new ApiError("Request failed: 409", 409));
+    render(<AgentDetailPage />);
+    await user.click(await screen.findByRole("button", { name: "Activate" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Activate",
+      }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This status change is not allowed for the current agent.",
+    );
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+  });
+
+  it("prevents duplicate lifecycle submissions", async () => {
+    const user = userEvent.setup();
+    let resolveReady: (value: Agent) => void = () => undefined;
+    getAgentMock.mockResolvedValue({ ...agent, status: "DRAFT" });
+    markAgentReadyMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReady = resolve;
+      }),
+    );
+    render(<AgentDetailPage />);
+    const markReady = await screen.findByRole("button", { name: "Mark Ready" });
+    await user.click(markReady);
+    expect(await screen.findByRole("button", { name: "Updating…" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Updating…" }));
+    expect(markAgentReadyMock).toHaveBeenCalledTimes(1);
+    resolveReady({ ...agent, status: "READY" });
+    expect(await screen.findByRole("button", { name: "Activate" })).toBeVisible();
   });
 });
