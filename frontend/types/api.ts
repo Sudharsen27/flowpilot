@@ -19,6 +19,12 @@ export type MembershipPublic = {
   user_id: string;
 };
 
+export type MemberPublic = {
+  membership_id: string;
+  role: MembershipRole;
+  user: UserPublic;
+};
+
 export type AuthResponse = {
   access_token: string;
   token_type: string;
