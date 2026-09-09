@@ -4,6 +4,7 @@ import { Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { AgentBlueprints } from "@/components/agents/agent-blueprints";
+import { CreateAgentDialog } from "@/components/agents/create-agent-dialog";
 import { AgentGrid } from "@/components/agents/agent-grid";
 import { AgentOverview } from "@/components/agents/agent-overview";
 import { StatePanel } from "@/components/data-display/state-panel";
@@ -13,6 +14,7 @@ import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
 import { getAgents } from "@/lib/api/agents";
 import type { Agent, AgentStatus, AgentType } from "@/types/api";
 
@@ -36,6 +38,7 @@ function readableDate(value: string) {
 }
 
 export default function AgentsPage() {
+  const { session } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [status, setStatus] = useState<AgentStatus | "">("");
   const [agentType, setAgentType] = useState<AgentType | "">("");
@@ -43,6 +46,10 @@ export default function AgentsPage() {
   const [retryKey, setRetryKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const canManage =
+    session?.membership.role === "OWNER" ||
+    session?.membership.role === "ADMIN";
 
   useEffect(() => {
     let cancelled = false;
@@ -101,18 +108,20 @@ export default function AgentsPage() {
           <>
             <Button
               type="button"
-              disabled
-              aria-describedby="create-agent-unavailable"
+              disabled={!canManage}
+              onClick={() => setCreateOpen(true)}
+              aria-describedby={!canManage ? "create-agent-unavailable" : undefined}
             >
               <Plus aria-hidden="true" />
               Create agent
             </Button>
             <span id="create-agent-unavailable" className="sr-only">
-              Agent creation is not available yet.
+              Your role has read-only access to agents.
             </span>
           </>
         }
       />
+      <CreateAgentDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       <section className="grid gap-5">
         <SectionHeader

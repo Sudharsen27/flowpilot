@@ -3,7 +3,7 @@
 import { Save } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AgentCapabilities } from "@/components/agents/agent-capabilities";
 import { AgentCommunication } from "@/components/agents/agent-communication";
@@ -17,9 +17,10 @@ import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatusBadge } from "@/components/agents/agent-status-badge";
+import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
-import { getAgent } from "@/lib/api/agents";
-import type { Agent } from "@/types/api";
+import { getAgent, updateAgent } from "@/lib/api/agents";
+import type { Agent, AgentType, AgentUpdateRequest } from "@/types/api";
 
 const statusToBadge = {
   DRAFT: "draft",
@@ -31,6 +32,7 @@ const statusToBadge = {
 
 export default function AgentDetailPage() {
   const params = useParams<{ id: string }>();
+  const { session } = useAuth();
   const agentId = params.id;
   const [agent, setAgent] = useState<Agent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,12 +40,28 @@ export default function AgentDetailPage() {
     null,
   );
   const [retryKey, setRetryKey] = useState(0);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [agentType, setAgentType] = useState<AgentType>("SALES");
+  const [instructions, setInstructions] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const canEdit =
+    session?.membership.role === "OWNER" ||
+    session?.membership.role === "ADMIN";
 
   useEffect(() => {
     let cancelled = false;
     void getAgent(agentId)
       .then((data) => {
-        if (!cancelled) setAgent(data);
+        if (!cancelled) {
+          setAgent(data);
+          setName(data.name);
+          setDescription(data.description);
+          setAgentType(data.agent_type);
+          setInstructions(data.system_instructions);
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -62,6 +80,61 @@ export default function AgentDetailPage() {
       cancelled = true;
     };
   }, [agentId, retryKey]);
+
+  const isDirty = useMemo(
+    () =>
+      agent !== null &&
+      (name !== agent.name ||
+        description !== agent.description ||
+        agentType !== agent.agent_type ||
+        instructions !== agent.system_instructions),
+    [agent, agentType, description, instructions, name],
+  );
+
+  useEffect(() => {
+    function warnBeforeUnload(event: BeforeUnloadEvent) {
+      if (isDirty) {
+        event.preventDefault();
+      }
+    }
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [isDirty]);
+
+  async function handleSave() {
+    if (!agent || !canEdit || !isDirty || isSaving) return;
+    const changes: AgentUpdateRequest = {};
+    if (name !== agent.name) changes.name = name.trim();
+    if (description !== agent.description) {
+      changes.description = description.trim();
+    }
+    if (agentType !== agent.agent_type) changes.agent_type = agentType;
+    if (instructions !== agent.system_instructions) {
+      changes.system_instructions = instructions;
+    }
+    setSaveError(null);
+    setSaved(false);
+    setIsSaving(true);
+    try {
+      const updated = await updateAgent(agent.id, changes);
+      setAgent(updated);
+      setName(updated.name);
+      setDescription(updated.description);
+      setAgentType(updated.agent_type);
+      setInstructions(updated.system_instructions);
+      setSaved(true);
+    } catch (cause) {
+      setSaveError(
+        cause instanceof ApiError && cause.status === 403
+          ? "You do not have permission to update this agent."
+          : cause instanceof ApiError && cause.status === 422
+            ? "Review the configuration and correct invalid fields."
+            : "The configuration could not be saved. Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -149,25 +222,36 @@ export default function AgentDetailPage() {
           <>
             <Button
               type="button"
-              disabled
-              aria-describedby="agent-save-unavailable"
+              disabled={!canEdit || !isDirty || isSaving || !name.trim()}
+              onClick={() => void handleSave()}
+              aria-describedby={!canEdit ? "agent-save-unavailable" : undefined}
             >
               <Save aria-hidden="true" />
-              Save configuration
+              {isSaving ? "Saving…" : "Save configuration"}
             </Button>
             <span id="agent-save-unavailable" className="sr-only">
-              Editing and saving are not connected yet.
+              Your role has read-only access to agent configuration.
             </span>
           </>
         }
       />
 
-      <StatePanel
-        kind="unavailable"
-        className="max-w-none"
-        title="Configuration editing is not connected"
-        description="This agent is loaded from the API and shown read-only. Changes and lifecycle actions will be connected in a later update."
-      />
+      {saveError ? (
+        <p className="text-danger-text text-sm" role="alert">
+          {saveError}
+        </p>
+      ) : saved ? (
+        <p className="text-success-text text-sm" role="status">
+          Configuration saved.
+        </p>
+      ) : !canEdit ? (
+        <StatePanel
+          kind="information"
+          className="max-w-none"
+          title="Read-only configuration"
+          description="Your membership role can view this agent but cannot update its configuration."
+        />
+      ) : null}
 
       <div
         data-slot="agent-detail-layout"
@@ -175,17 +259,43 @@ export default function AgentDetailPage() {
       >
         <div className="grid min-w-0 gap-6">
           <AgentIdentityForm
-            name={agent.name}
-            description={agent.description}
-            agentType={agent.agent_type}
+            name={name}
+            description={description}
+            agentType={agentType}
+            editable={canEdit}
+            onNameChange={(value) => {
+              setName(value);
+              setSaved(false);
+            }}
+            onDescriptionChange={(value) => {
+              setDescription(value);
+              setSaved(false);
+            }}
+            onAgentTypeChange={(value) => {
+              setAgentType(value);
+              setSaved(false);
+            }}
           />
-          <AgentInstructions instructions={agent.system_instructions} />
+          <AgentInstructions
+            instructions={instructions}
+            editable={canEdit}
+            onChange={(value) => {
+              setInstructions(value);
+              setSaved(false);
+            }}
+          />
           <AgentCapabilities />
           <AgentResources />
           <AgentSafety />
           <AgentCommunication />
         </div>
-        <AgentConfigurationSidebar status={badgeStatus} />
+        <AgentConfigurationSidebar
+          status={badgeStatus}
+          canEdit={canEdit}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          onSave={() => void handleSave()}
+        />
       </div>
     </div>
   );

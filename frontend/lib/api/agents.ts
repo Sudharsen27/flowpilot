@@ -1,9 +1,11 @@
-import { apiGet } from "@/lib/api/client";
+import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
   Agent,
+  AgentCreateRequest,
   AgentListResponse,
   AgentStatus,
   AgentType,
+  AgentUpdateRequest,
 } from "@/types/api";
 
 export type AgentListFilters = {
@@ -25,4 +27,15 @@ export function getAgents(filters: AgentListFilters = {}) {
 
 export function getAgent(agentId: string) {
   return apiGet<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}`);
+}
+
+export function createAgent(input: AgentCreateRequest) {
+  return apiPost<Agent>("/api/v1/agents", input);
+}
+
+export function updateAgent(agentId: string, input: AgentUpdateRequest) {
+  return apiPatch<Agent>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}`,
+    input,
+  );
 }

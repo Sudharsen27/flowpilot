@@ -16,8 +16,16 @@ import {
 
 export function AgentConfigurationSidebar({
   status,
+  canEdit,
+  isDirty,
+  isSaving,
+  onSave,
 }: {
   status: AgentStatus;
+  canEdit: boolean;
+  isDirty: boolean;
+  isSaving: boolean;
+  onSave: () => void;
 }) {
   return (
     <aside
@@ -30,8 +38,9 @@ export function AgentConfigurationSidebar({
             Configuration status
           </CardTitle>
           <CardDescription>
-            This record is loaded from the Agent API. Configuration remains
-            read-only in this slice.
+            {canEdit
+              ? "Configuration changes are saved to the Agent API."
+              : "Your role has read-only access to this configuration."}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
@@ -43,20 +52,27 @@ export function AgentConfigurationSidebar({
             </div>
             <div className="flex justify-between gap-3 py-3">
               <dt className="text-muted-foreground">Unsaved changes</dt>
-              <dd className="font-medium">Not tracked</dd>
+              <dd className="font-medium">{isDirty ? "Yes" : "None"}</dd>
             </div>
             <div className="flex justify-between gap-3 py-3">
               <dt className="text-muted-foreground">Save state</dt>
-              <dd className="font-medium">Read-only</dd>
+              <dd className="font-medium">
+                {canEdit ? (isSaving ? "Saving…" : "Ready") : "Read-only"}
+              </dd>
             </div>
             <div className="flex justify-between gap-3 py-3 last:pb-0">
               <dt className="text-muted-foreground">Activation</dt>
               <dd className="font-medium">Not connected</dd>
             </div>
           </dl>
-          <Button type="button" disabled className="w-full">
+          <Button
+            type="button"
+            disabled={!canEdit || !isDirty || isSaving}
+            onClick={onSave}
+            className="w-full"
+          >
             <Save aria-hidden="true" />
-            Save configuration
+            {isSaving ? "Saving…" : "Save configuration"}
           </Button>
         </CardContent>
       </Card>

@@ -8,7 +8,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export function AgentInstructions({ instructions }: { instructions: string }) {
+type AgentInstructionsProps = {
+  instructions: string;
+  editable: boolean;
+  onChange: (value: string) => void;
+};
+
+export function AgentInstructions({
+  instructions,
+  editable,
+  onChange,
+}: AgentInstructionsProps) {
   return (
     <Card as="section" aria-labelledby="agent-instructions-title">
       <CardHeader>
@@ -19,18 +29,23 @@ export function AgentInstructions({ instructions }: { instructions: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <fieldset disabled>
+        <fieldset disabled={!editable}>
           <legend className="sr-only">Agent instructions configuration</legend>
           <FormField
             label="Agent instructions"
             htmlFor="agent-instructions"
-            description="Loaded from the agent record. Editing is not connected yet."
+            description={
+              editable
+                ? "Changes are saved only when you choose Save configuration."
+                : "Your role has read-only access to these instructions."
+            }
           >
             <Textarea
               id="agent-instructions"
               className="min-h-56 font-mono text-sm"
               value={instructions}
-              readOnly
+              onChange={(event) => onChange(event.target.value)}
+              maxLength={8000}
               placeholder="No system instructions configured."
               aria-describedby="agent-instructions-description"
             />

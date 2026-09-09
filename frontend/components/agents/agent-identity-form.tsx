@@ -14,12 +14,20 @@ type AgentIdentityFormProps = {
   name: string;
   description: string;
   agentType: AgentType;
+  editable: boolean;
+  onNameChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onAgentTypeChange: (value: AgentType) => void;
 };
 
 export function AgentIdentityForm({
   name,
   description,
   agentType,
+  editable,
+  onNameChange,
+  onDescriptionChange,
+  onAgentTypeChange,
 }: AgentIdentityFormProps) {
   return (
     <Card as="section" aria-labelledby="agent-identity-title">
@@ -31,7 +39,7 @@ export function AgentIdentityForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <fieldset disabled className="grid gap-5">
+        <fieldset disabled={!editable} className="grid gap-5">
           <legend className="sr-only">Agent identity configuration</legend>
           <div className="grid gap-5 sm:grid-cols-2">
             <FormField
@@ -42,7 +50,10 @@ export function AgentIdentityForm({
               <Input
                 id="agent-name"
                 value={name}
-                readOnly
+                onChange={(event) => onNameChange(event.target.value)}
+                minLength={1}
+                maxLength={200}
+                required
                 aria-describedby="agent-name-description"
               />
             </FormField>
@@ -54,6 +65,9 @@ export function AgentIdentityForm({
               <Select
                 id="agent-type"
                 value={agentType}
+                onChange={(event) =>
+                  onAgentTypeChange(event.target.value as AgentType)
+                }
                 aria-describedby="agent-type-description"
               >
                 <option value="SALES">Sales</option>
@@ -71,14 +85,16 @@ export function AgentIdentityForm({
             <Input
               id="agent-description"
               value={description}
-              readOnly
+              onChange={(event) => onDescriptionChange(event.target.value)}
+              maxLength={2000}
               aria-describedby="agent-description-description"
             />
           </FormField>
         </fieldset>
         <p className="text-muted-foreground mt-5 text-xs">
-          Agent identity is read-only here. Editing will be connected in a
-          later update.
+          {editable
+            ? "Changes are saved only when you choose Save configuration."
+            : "Your role has read-only access to agent configuration."}
         </p>
       </CardContent>
     </Card>
