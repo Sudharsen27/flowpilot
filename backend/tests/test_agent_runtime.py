@@ -16,8 +16,12 @@ from app.core.exceptions import (
 from app.main import app
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.tool_invocation import ToolInvocation
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.agent_service import AgentService
+from app.tools.echo import EchoTool
+from app.tools.registry import ToolRegistry
+from app.tools.schema import ToolCall
 from tests.conftest import register_payload
 
 
@@ -308,3 +312,79 @@ def test_execute_api_cross_tenant(db: Session, api_client: TestClient) -> None:
         headers=_headers(second["access_token"]),
     )
     assert response.status_code == 404
+
+
+class ScriptedAIProvider:
+    def __init__(self, responses: list[AIGenerateResult]) -> None:
+        self.responses = list(responses)
+        self.calls: list[AIGenerateRequest] = []
+
+    def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
+        self.calls.append(request)
+        if not self.responses:
+            raise AssertionError("Unexpected extra provider call")
+        return self.responses.pop(0)
+
+
+def test_runtime_tool_call_round_trip(db: Session, client: TestClient) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    provider = ScriptedAIProvider(
+        [
+            AIGenerateResult(
+                output_text="",
+                provider="fake",
+                model="fake-model",
+                tool_calls=[
+                    ToolCall(id="call-1", name="echo", arguments={"message": "hello"})
+                ],
+            ),
+            AIGenerateResult(
+                output_text="Echoed hello",
+                provider="fake",
+                model="fake-model",
+            ),
+        ]
+    )
+    result = AgentExecutionService(db, provider, registry=registry).execute(
+        organization_id=created["organization"]["id"],
+        agent_id=agent.id,
+        user_input="Use echo",
+        initiated_by_user_id=created["user"]["id"],
+    )
+    assert result.status == AgentExecutionStatus.COMPLETED
+    assert result.output == "Echoed hello"
+    assert len(provider.calls) == 2
+    assert provider.calls[0].tools[0].name == "echo"
+    assert provider.calls[1].history[0].tool_calls[0].name == "echo"
+    assert "hello" in (provider.calls[1].history[1].content or "")
+    invocation = db.query(ToolInvocation).one()
+    assert invocation.status == "SUCCESS"
+    assert invocation.organization_id == created["organization"]["id"]
+
+
+def test_runtime_max_tool_iterations_enforced(db: Session, client: TestClient) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    repeating = AIGenerateResult(
+        output_text="",
+        provider="fake",
+        model="fake-model",
+        tool_calls=[ToolCall(id="call-loop", name="echo", arguments={"message": "hello"})],
+    )
+    provider = ScriptedAIProvider([repeating, repeating, repeating, repeating])
+    with pytest.raises(ProviderError, match="Maximum tool-call iterations exceeded"):
+        AgentExecutionService(
+            db, provider, registry=registry, max_tool_iterations=2
+        ).execute(
+            organization_id=created["organization"]["id"],
+            agent_id=agent.id,
+            user_input="Loop",
+        )
+    execution = db.query(AgentExecution).one()
+    assert execution.status == AgentExecutionStatus.FAILED
+    assert execution.error == "Maximum tool-call iterations exceeded"

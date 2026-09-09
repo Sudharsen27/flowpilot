@@ -6,6 +6,8 @@ import pytest
 from app.ai.openai_provider import OpenAIProvider, sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider
 from app.core.exceptions import ProviderError, ProviderNotConfiguredError
+from app.tools.echo import EchoTool
+from app.tools.schema import ToolCall
 
 
 def test_ai_provider_protocol_is_implemented_by_openai() -> None:
@@ -37,6 +39,56 @@ def test_openai_provider_uses_injected_client_not_network() -> None:
     assert result.usage is not None
     assert result.usage.total_tokens == 3
     client.chat.completions.create.assert_called_once()
+
+
+def test_openai_provider_translates_tool_definitions() -> None:
+    message = SimpleNamespace(content="ok", tool_calls=None)
+    choice = SimpleNamespace(message=message)
+    completion = SimpleNamespace(choices=[choice], usage=None, model="gpt-4o-mini")
+    client = MagicMock()
+    client.chat.completions.create.return_value = completion
+    definition = EchoTool().definition()
+    provider = OpenAIProvider(api_key="sk-test", client=client)
+    provider.generate(
+        AIGenerateRequest(
+            system_instructions="sys",
+            user_input="hi",
+            tools=[definition],
+        )
+    )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["tools"][0]["type"] == "function"
+    assert kwargs["tools"][0]["function"]["name"] == "echo"
+    assert kwargs["tools"][0]["function"]["parameters"] == definition.input_schema
+
+
+def test_openai_provider_translates_tool_calls() -> None:
+    function = SimpleNamespace(name="echo", arguments='{"message": "hello"}')
+    tool_call = SimpleNamespace(id="call-1", function=function)
+    message = SimpleNamespace(content=None, tool_calls=[tool_call])
+    choice = SimpleNamespace(message=message)
+    completion = SimpleNamespace(choices=[choice], usage=None, model="gpt-4o-mini")
+    client = MagicMock()
+    client.chat.completions.create.return_value = completion
+    provider = OpenAIProvider(api_key="sk-test", client=client)
+    result = provider.generate(AIGenerateRequest(system_instructions="sys", user_input="hi"))
+    assert result.output_text == ""
+    assert result.tool_calls == [
+        ToolCall(id="call-1", name="echo", arguments={"message": "hello"})
+    ]
+
+
+def test_openai_provider_malformed_tool_arguments() -> None:
+    function = SimpleNamespace(name="echo", arguments="{not-json")
+    tool_call = SimpleNamespace(id="call-1", function=function)
+    message = SimpleNamespace(content=None, tool_calls=[tool_call])
+    choice = SimpleNamespace(message=message)
+    completion = SimpleNamespace(choices=[choice], usage=None, model="gpt-4o-mini")
+    client = MagicMock()
+    client.chat.completions.create.return_value = completion
+    provider = OpenAIProvider(api_key="sk-test", client=client)
+    result = provider.generate(AIGenerateRequest(system_instructions="sys", user_input="hi"))
+    assert result.tool_calls[0].parse_error == "Malformed tool arguments"
 
 
 def test_openai_provider_sanitizes_secrets_in_errors() -> None:

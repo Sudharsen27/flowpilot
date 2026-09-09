@@ -2,6 +2,7 @@ from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
+from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "Membership",
     "MembershipRole",
     "Organization",
+    "ToolInvocation",
     "User",
 ]

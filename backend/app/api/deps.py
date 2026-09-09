@@ -13,6 +13,8 @@ from app.models.user import User
 from app.repositories.membership_repository import MembershipRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.user_repository import UserRepository
+from app.tools import build_default_tool_registry
+from app.tools.registry import ToolRegistry
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -100,3 +102,7 @@ def get_current_organization(
 
 def get_ai_provider() -> AIProvider:
     return OpenAIProvider()
+
+
+def get_tool_registry() -> ToolRegistry:
+    return build_default_tool_registry()

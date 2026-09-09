@@ -19,9 +19,20 @@ Request path:
 
 `UI → API client → API → services → domain → repositories → PostgreSQL`
 
-AI path (later phases):
+AI path:
 
-`Agent → context → decision → tool selection → policy → execute or approve → verify → audit`
+```
+AI Runtime
+    → AI Provider
+    → Tool Call
+    → Tool Registry
+    → Policy (ALLOW | REQUIRE_APPROVAL | DENY)
+    → Tool Execution
+    → Tool Result
+    → AI Runtime
+```
+
+Only tools registered in `ToolRegistry` may run. Arguments are validated against the tool’s Pydantic schema before `execute()`. The model never writes to the database; tools run through `ToolExecutionService` with server-side tenant context. External CRM, email, WhatsApp, calendar, Slack, webhooks, and other business integrations are deferred.
 
 The model never writes to the database. Tools call application services.
 
@@ -59,13 +70,13 @@ Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `
 
 ## Safety
 
-Each tool will declare name, description, input/output schemas, required permissions, and risk (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`). HIGH and CRITICAL actions require human approval. Policy cannot be bypassed by the model.
+Each registered tool declares name, description, input/output schemas, and risk (`LOW` / `MEDIUM` / `HIGH`). `DefaultToolPolicy` allows `LOW` tools and returns `REQUIRE_APPROVAL` for `MEDIUM` and `HIGH`. Tools are not executed on `REQUIRE_APPROVAL` or `DENY`. A full Approvals backend is not in this slice; the decision is recorded on `ToolInvocation`. Policy cannot be bypassed by the model.
 
 ## AI runtime (Phase 3A)
 
 Authenticated API requests run a tenant-owned **Agent** through an **AgentExecutionService**. The service loads the agent for the caller's organization, records an **AgentExecution**, and calls an **AIProvider**. Product and service code depend on the `AIProvider` protocol, not a vendor SDK. **OpenAIProvider** is the first implementation (`OPENAI_API_KEY`, `OPENAI_MODEL`).
 
-This slice only produces a structured AI response and an audit row. External tool execution, CRM/email/WhatsApp/calendar actions, webhooks, workflow runners, RAG, and autonomous background agents are deferred.
+This slice produces a structured AI response and an audit row. Tool calling is described in Phase 3B.
 
 ### Models
 
@@ -73,6 +84,14 @@ This slice only produces a structured AI response and an audit row. External too
 - **AgentExecution** — tenant-owned attempt: status (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED`), JSON input/output, provider/model, timestamps, optional initiating user.
 
 Tenant isolation: repositories always query by `organization_id` from the authenticated membership JWT, never from the client body.
+
+## Tool calling (Phase 3B)
+
+`ToolRegistry` holds explicit `Tool` implementations. `ToolExecutionService` looks up the tool, validates arguments, applies policy, executes only on `ALLOW`, and writes a `ToolInvocation` audit row (organization, agent, execution, tool name, call id, risk, decision, status, argument keys, timestamps). Argument values are not stored.
+
+`AIProvider.generate` may return internal `ToolCall` values. `OpenAIProvider` translates vendor tool definitions and tool-call payloads. `AgentExecutionService` runs a bounded loop (configurable `AGENT_MAX_TOOL_ITERATIONS`, default 3): text completes the run; tool calls go through the registry/service and results are sent back to the provider. There is no public tool-execution API.
+
+`echo` is an in-process test/foundation tool, not a customer integration.
 
 ## LLM providers
 
@@ -110,4 +129,8 @@ The top bar reads the current organization, user, and membership role from `Auth
 
 ## Phase 3A (AI runtime foundation)
 
-Tenant-owned `Agent` and `AgentExecution` models, `AIProvider` / `OpenAIProvider`, `AgentExecutionService`, and authenticated `POST /api/v1/agents/{agent_id}/execute`. No tool calling, workflows, or external business actions.
+Tenant-owned `Agent` and `AgentExecution` models, `AIProvider` / `OpenAIProvider`, `AgentExecutionService`, and authenticated `POST /api/v1/agents/{agent_id}/execute`.
+
+## Phase 3B (AI tool calling foundation)
+
+Registered tools, input validation, risk/policy (`ALLOW` / `REQUIRE_APPROVAL` / `DENY`), `ToolInvocation` audit rows, OpenAI tool-call translation, and a strictly limited execution loop. No real external business integrations.

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,6 +20,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.agent import Agent
     from app.models.organization import Organization
+    from app.models.tool_invocation import ToolInvocation
     from app.models.user import User
 
 
@@ -32,6 +34,7 @@ class AgentExecutionStatus(StrEnum):
 class AgentExecution(Base):
     __tablename__ = "agent_executions"
     __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_agent_executions_organization_id"),
         ForeignKeyConstraint(
             ["organization_id", "agent_id"],
             ["agents.organization_id", "agents.id"],
@@ -76,3 +79,7 @@ class AgentExecution(Base):
     organization: Mapped["Organization"] = relationship(overlaps="agent,executions")
     agent: Mapped["Agent"] = relationship(back_populates="executions", overlaps="organization")
     initiated_by: Mapped["User | None"] = relationship()
+    tool_invocations: Mapped[list["ToolInvocation"]] = relationship(
+        back_populates="execution",
+        overlaps="organization",
+    )
