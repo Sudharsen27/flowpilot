@@ -104,12 +104,23 @@ Agent API
 ├── POST   /api/v1/agents/{id}/ready       DRAFT → READY
 ├── POST   /api/v1/agents/{id}/activate    READY or PAUSED → ACTIVE
 ├── POST   /api/v1/agents/{id}/pause       ACTIVE → PAUSED
-└── POST   /api/v1/agents/{id}/execute     Run (READY or ACTIVE)
+├── POST   /api/v1/agents/{id}/execute     Run (READY or ACTIVE)
+├── GET    /api/v1/agents/{id}/executions  List executions (paginated summaries)
+└── GET    /api/v1/agents/{id}/executions/{execution_id}  Execution detail
 ```
 
-Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, and execute eligible agents, but cannot change configuration or status.
+Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, execute eligible agents, and read execution history, but cannot change configuration or status.
 
 PATCH does not accept `status`; lifecycle endpoints enforce allowed transitions. `NEEDS_ATTENTION` cannot be cleared by PATCH or those endpoints. Execution remains limited to `READY` and `ACTIVE`.
+
+### Execution history (Phase 3H.1)
+
+Authenticated members of the current organization may read persisted `AgentExecution` rows for agents they can already `GET`.
+
+- `GET /api/v1/agents/{agent_id}/executions?limit=&offset=` — newest first (`created_at DESC`, `id DESC`). Default `limit` 20, minimum 1, maximum 50. Response: `{ items, limit, offset, total }`. List items are summaries (`id`, `status`, `provider`, `model`, timestamps, optional `input_preview` / `error_preview`). Full input, full output JSON, and `tool_results` are not returned.
+- `GET /api/v1/agents/{agent_id}/executions/{execution_id}` — safe detail: input text, output text, provider, model, usage when stored, sanitized `error`, timestamps, `initiated_by_user_id`. Does not expose `tool_results`, raw provider payloads, or secrets.
+
+Missing agents, missing executions, cross-tenant ids, and executions that belong to a different agent return 404. Unauthenticated requests return 401. There is no public tool-invocation history API in this slice.
 
 ## LLM providers
 
@@ -156,3 +167,7 @@ Registered tools, input validation, risk/policy (`ALLOW` / `REQUIRE_APPROVAL` / 
 ## Phase 3C (agent management API)
 
 Tenant-safe agent CRUD and lifecycle (`ready` / `activate` / `pause`). `OWNER`/`ADMIN` configure agents; `MEMBER` can read and execute eligible agents. Status is not mutated via PATCH.
+
+## Phase 3H.1 (execution history read APIs)
+
+Paginated list and safe detail over existing `AgentExecution` rows. No tool-invocation API, Activity feed, or frontend history UI in this slice.

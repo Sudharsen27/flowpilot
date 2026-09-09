@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.ai.provider import AIProvider
@@ -12,8 +12,14 @@ from app.db.session import get_db
 from app.models.agent import AgentStatus, AgentType
 from app.models.membership import Membership
 from app.models.organization import Organization
+from app.repositories.agent_execution_repository import (
+    EXECUTION_LIST_DEFAULT_LIMIT,
+    EXECUTION_LIST_MAX_LIMIT,
+)
 from app.schemas.agents import (
     AgentCreate,
+    AgentExecutionDetail,
+    AgentExecutionListResponse,
     AgentExecutionRequest,
     AgentExecutionResult,
     AgentPublic,
@@ -149,4 +155,34 @@ def execute_agent(
         agent_id=agent_id,
         user_input=payload.input,
         initiated_by_user_id=membership.user_id,
+    )
+
+
+@router.get("/{agent_id}/executions", response_model=AgentExecutionListResponse)
+def list_agent_executions(
+    agent_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=EXECUTION_LIST_DEFAULT_LIMIT, ge=1, le=EXECUTION_LIST_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+) -> AgentExecutionListResponse:
+    return AgentExecutionService(db).list_for_agent(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/{agent_id}/executions/{execution_id}", response_model=AgentExecutionDetail)
+def get_agent_execution(
+    agent_id: str,
+    execution_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> AgentExecutionDetail:
+    return AgentExecutionService(db).get_for_agent(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        execution_id=execution_id,
     )

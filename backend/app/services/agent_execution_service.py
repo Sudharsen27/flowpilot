@@ -4,7 +4,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.ai.openai_provider import sanitize_provider_error
-from app.ai.provider import AIGenerateRequest, AIGenerateResult, AIProvider, ConversationMessage
+from app.ai.provider import (
+    AIGenerateRequest,
+    AIGenerateResult,
+    AIProvider,
+    ConversationMessage,
+    TokenUsage,
+)
 from app.core.config import settings
 from app.core.exceptions import (
     NotFoundError,
@@ -14,9 +20,19 @@ from app.core.exceptions import (
 )
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, AgentStatus
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
-from app.repositories.agent_execution_repository import AgentExecutionRepository
+from app.repositories.agent_execution_repository import (
+    EXECUTION_LIST_DEFAULT_LIMIT,
+    EXECUTION_LIST_MAX_LIMIT,
+    AgentExecutionRepository,
+)
 from app.repositories.agent_repository import AgentRepository
-from app.schemas.agents import AgentExecutionResult
+from app.schemas.agents import (
+    EXECUTION_PREVIEW_LENGTH,
+    AgentExecutionDetail,
+    AgentExecutionListItem,
+    AgentExecutionListResponse,
+    AgentExecutionResult,
+)
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
@@ -27,7 +43,7 @@ class AgentExecutionService:
     def __init__(
         self,
         session: Session,
-        provider: AIProvider,
+        provider: AIProvider | None = None,
         *,
         registry: ToolRegistry | None = None,
         tool_executor: ToolExecutionService | None = None,
@@ -58,6 +74,9 @@ class AgentExecutionService:
         user_input: str,
         initiated_by_user_id: str | None = None,
     ) -> AgentExecutionResult:
+        provider = self.provider
+        if provider is None:
+            raise ProviderNotConfiguredError("AI provider is not configured")
         agent = self.agents.get_by_id(organization_id, agent_id)
         if agent is None:
             raise NotFoundError("Agent not found")
@@ -83,7 +102,7 @@ class AgentExecutionService:
 
         try:
             for round_index in range(self.max_tool_iterations + 1):
-                generated = self.provider.generate(
+                generated = provider.generate(
                     AIGenerateRequest(
                         system_instructions=agent.system_instructions,
                         user_input=user_input,
@@ -186,3 +205,102 @@ class AgentExecutionService:
         if configured:
             raise ProviderError(error, content=content)
         raise ProviderNotConfiguredError(error, content=content)
+
+    def list_for_agent(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        limit: int = EXECUTION_LIST_DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> AgentExecutionListResponse:
+        if self.agents.get_by_id(organization_id, agent_id) is None:
+            raise NotFoundError("Agent not found")
+        safe_limit = min(max(limit, 1), EXECUTION_LIST_MAX_LIMIT)
+        safe_offset = max(offset, 0)
+        items, total = self.executions.list_by_agent(
+            organization_id,
+            agent_id,
+            limit=safe_limit,
+            offset=safe_offset,
+        )
+        return AgentExecutionListResponse(
+            items=[_to_list_item(item) for item in items],
+            limit=safe_limit,
+            offset=safe_offset,
+            total=total,
+        )
+
+    def get_for_agent(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+    ) -> AgentExecutionDetail:
+        if self.agents.get_by_id(organization_id, agent_id) is None:
+            raise NotFoundError("Agent not found")
+        execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
+        if execution is None:
+            raise NotFoundError("Agent execution not found")
+        return _to_detail(execution)
+
+
+def _json_text(value: Any, key: str) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    text = value.get(key)
+    return text if isinstance(text, str) else None
+
+
+def _preview(text: str | None) -> str | None:
+    if text is None:
+        return None
+    if len(text) <= EXECUTION_PREVIEW_LENGTH:
+        return text
+    return text[:EXECUTION_PREVIEW_LENGTH]
+
+
+def _usage_from_output(output: dict[str, Any] | None) -> TokenUsage | None:
+    if not output:
+        return None
+    usage = output.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    try:
+        return TokenUsage.model_validate(usage)
+    except ValueError:
+        return None
+
+
+def _to_list_item(execution: AgentExecution) -> AgentExecutionListItem:
+    return AgentExecutionListItem(
+        id=execution.id,
+        status=AgentExecutionStatus(execution.status),
+        provider=execution.provider,
+        model=execution.model,
+        started_at=execution.started_at,
+        completed_at=execution.completed_at,
+        created_at=execution.created_at,
+        input_preview=_preview(_json_text(execution.input, "text")),
+        error_preview=_preview(execution.error),
+    )
+
+
+def _to_detail(execution: AgentExecution) -> AgentExecutionDetail:
+    output = execution.output if isinstance(execution.output, dict) else None
+    return AgentExecutionDetail(
+        id=execution.id,
+        agent_id=execution.agent_id,
+        status=AgentExecutionStatus(execution.status),
+        input=_json_text(execution.input, "text"),
+        output=_json_text(output, "text") if output is not None else None,
+        provider=execution.provider,
+        model=execution.model,
+        usage=_usage_from_output(output),
+        error=execution.error,
+        started_at=execution.started_at,
+        completed_at=execution.completed_at,
+        created_at=execution.created_at,
+        initiated_by_user_id=execution.initiated_by_user_id,
+    )

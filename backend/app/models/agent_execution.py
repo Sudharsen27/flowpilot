@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
     func,
@@ -44,6 +45,13 @@ class AgentExecution(Base):
         CheckConstraint(
             "status IN ('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')",
             name="ck_agent_executions_status",
+        ),
+        Index(
+            "ix_agent_executions_organization_id_agent_id_created_at_id",
+            "organization_id",
+            "agent_id",
+            "created_at",
+            "id",
         ),
     )
 

@@ -52,3 +52,47 @@ class AgentExecutionResult(BaseModel):
     model: str | None = None
     usage: TokenUsage | None = None
     error: str | None = None
+
+
+EXECUTION_PREVIEW_LENGTH = 120
+
+
+class AgentExecutionListItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    status: AgentExecutionStatus
+    provider: str | None = None
+    model: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    input_preview: str | None = None
+    error_preview: str | None = None
+
+
+class AgentExecutionListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AgentExecutionListItem]
+    limit: int
+    offset: int
+    total: int
+
+
+class AgentExecutionDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    agent_id: str
+    status: AgentExecutionStatus
+    input: str | None = None
+    output: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    usage: TokenUsage | None = None
+    error: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    initiated_by_user_id: str | None = None
