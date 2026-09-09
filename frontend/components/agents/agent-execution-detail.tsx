@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AgentToolInvocationList } from "@/components/agents/agent-tool-invocation-list";
 import {
@@ -27,6 +27,11 @@ export function AgentExecutionDetailPanel({
   const [detail, setDetail] = useState<AgentExecutionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [executionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,9 +64,15 @@ export function AgentExecutionDetailPanel({
     <section
       className="border-border grid gap-4 rounded-md border p-4"
       aria-labelledby="execution-history-detail-title"
+      aria-busy={!detail && !error ? true : undefined}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="execution-history-detail-title" className="text-sm font-semibold">
+        <h3
+          ref={headingRef}
+          id="execution-history-detail-title"
+          tabIndex={-1}
+          className="text-sm font-semibold outline-none"
+        >
           Execution detail
         </h3>
         <Button type="button" variant="outline" onClick={onClose}>
@@ -70,12 +81,13 @@ export function AgentExecutionDetailPanel({
       </div>
       {error ? (
         <div className="grid gap-2">
-          <p className="text-danger-text text-sm" role="alert">
+          <p id="execution-detail-error" className="text-danger-text text-sm" role="alert">
             {error}
           </p>
           <Button
             type="button"
             variant="outline"
+            aria-describedby="execution-detail-error"
             onClick={() => {
               setDetail(null);
               setError(null);
@@ -86,7 +98,7 @@ export function AgentExecutionDetailPanel({
           </Button>
         </div>
       ) : !detail ? (
-        <div role="status" className="grid gap-2">
+        <div role="status" aria-live="polite" aria-busy="true" className="grid gap-2">
           <Skeleton className="h-40" />
           <span className="sr-only">Loading execution detail</span>
         </div>

@@ -273,6 +273,20 @@ describe("Agent API client", () => {
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain("organization_id");
   });
 
+  it("clamps execution history query parameters to API bounds", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(completedList), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await listAgentExecutions("agent-1", { limit: 99, offset: -4 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents/agent-1/executions?limit=50&offset=0",
+      expect.any(Object),
+    );
+  });
+
   it("omits unused execution list query parameters", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(completedList), {

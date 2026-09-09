@@ -306,8 +306,13 @@ def _usage_from_output(output: dict[str, Any] | None) -> TokenUsage | None:
     usage = output.get("usage")
     if not isinstance(usage, dict):
         return None
+    allowed = {
+        key: usage[key]
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+        if key in usage
+    }
     try:
-        return TokenUsage.model_validate(usage)
+        return TokenUsage.model_validate(allowed)
     except ValueError:
         return None
 

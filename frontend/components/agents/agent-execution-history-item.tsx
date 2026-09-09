@@ -18,6 +18,7 @@ export function AgentExecutionHistoryItem({
     <li>
       <button
         type="button"
+        id={`execution-history-${item.id}`}
         aria-pressed={selected}
         aria-current={selected ? "true" : undefined}
         aria-label={`View execution ${item.id}`}

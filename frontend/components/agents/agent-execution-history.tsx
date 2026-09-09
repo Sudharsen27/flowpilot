@@ -66,16 +66,21 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
   }, [agentId, offset, retryKey]);
 
   const pageLimit = limit || EXECUTION_HISTORY_PAGE_SIZE;
-  const rangeStart = total === 0 ? 0 : offset + 1;
-  const rangeEnd = Math.min(offset + items.length, total);
+  const lastPageOffset =
+    total === 0 ? 0 : Math.floor((total - 1) / pageLimit) * pageLimit;
+  const rangeStart = items.length === 0 ? 0 : offset + 1;
+  const rangeEnd = items.length === 0 ? 0 : Math.min(offset + items.length, total);
   const canPrevious = offset > 0;
   const canNext = offset + pageLimit < total;
 
   function goToOffset(nextOffset: number) {
-    setIsLoading(true);
-    setError(null);
+    const clamped = Math.min(Math.max(0, nextOffset), lastPageOffset);
+    if (clamped === offset && !isLoading) return;
+    setItems([]);
     setSelectedId(null);
-    setOffset(nextOffset);
+    setError(null);
+    setIsLoading(true);
+    setOffset(clamped);
   }
 
   return (
@@ -90,15 +95,21 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
       <CardContent className="grid min-w-0 gap-4">
         {error ? (
           <div className="grid gap-2">
-            <p className="text-danger-text text-sm" role="alert">
+            <p
+              id="execution-history-error"
+              className="text-danger-text text-sm"
+              role="alert"
+            >
               {error}
             </p>
             <Button
               type="button"
               variant="outline"
+              aria-describedby="execution-history-error"
               onClick={() => {
-                setIsLoading(true);
+                setItems([]);
                 setError(null);
+                setIsLoading(true);
                 setRetryKey((key) => key + 1);
               }}
             >
@@ -106,15 +117,21 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
             </Button>
           </div>
         ) : isLoading ? (
-          <div role="status" className="grid gap-2">
+          <div
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            className="grid gap-2"
+          >
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
             <span className="sr-only">Loading execution history</span>
           </div>
         ) : items.length === 0 ? (
           <p className="text-muted-foreground text-sm leading-6">
-            No executions have been recorded for this agent yet. Use Run agent
-            above to create the first recorded run.
+            {total === 0
+              ? "No executions have been recorded for this agent yet. Use Run agent above to create the first recorded run."
+              : "No executions are available on this page."}
           </p>
         ) : (
           <>
@@ -128,7 +145,10 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
                 />
               ))}
             </ul>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <nav
+              className="flex flex-wrap items-center justify-between gap-3"
+              aria-label="Execution history pagination"
+            >
               <p className="text-muted-foreground text-sm" aria-live="polite">
                 Showing {rangeStart}–{rangeEnd} of {total}
               </p>
@@ -138,9 +158,7 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
                   variant="outline"
                   disabled={!canPrevious}
                   aria-label="Previous executions page"
-                  onClick={() =>
-                    goToOffset(Math.max(0, offset - pageLimit))
-                  }
+                  onClick={() => goToOffset(offset - pageLimit)}
                 >
                   Previous
                 </Button>
@@ -154,7 +172,7 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
                   Next
                 </Button>
               </div>
-            </div>
+            </nav>
           </>
         )}
         {selectedId ? (
@@ -162,7 +180,13 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
             key={selectedId}
             agentId={agentId}
             executionId={selectedId}
-            onClose={() => setSelectedId(null)}
+            onClose={() => {
+              const closedId = selectedId;
+              setSelectedId(null);
+              queueMicrotask(() => {
+                document.getElementById(`execution-history-${closedId}`)?.focus();
+              });
+            }}
           />
         ) : null}
       </CardContent>

@@ -26,10 +26,12 @@ export type AgentHistoryPageParams = {
 function historyQuery(params: AgentHistoryPageParams = {}) {
   const query = new URLSearchParams();
   if (params.limit !== undefined) {
-    query.set("limit", String(params.limit));
+    const limit = Math.min(50, Math.max(1, Math.trunc(params.limit)));
+    query.set("limit", String(Number.isFinite(limit) ? limit : 20));
   }
   if (params.offset !== undefined) {
-    query.set("offset", String(params.offset));
+    const offset = Math.max(0, Math.trunc(params.offset));
+    query.set("offset", String(Number.isFinite(offset) ? offset : 0));
   }
   return query.size > 0 ? `?${query.toString()}` : "";
 }

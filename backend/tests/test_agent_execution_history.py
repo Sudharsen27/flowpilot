@@ -267,3 +267,118 @@ def test_cross_agent_execution_is_not_found(client: TestClient, db: Session) -> 
     assert listed.status_code == 200
     assert listed.json()["total"] == 0
     assert listed.json()["items"] == []
+
+
+def test_list_pagination_boundaries_and_tie_break(client: TestClient, db: Session) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    now = datetime.now(UTC)
+    first = _execution(db, org_id, agent, created_at=now, execution_id="exec-a")
+    second = _execution(db, org_id, agent, created_at=now, execution_id="exec-b")
+    third = _execution(
+        db, org_id, agent, created_at=now - timedelta(seconds=1), execution_id="exec-c"
+    )
+    fourth = _execution(
+        db, org_id, agent, created_at=now - timedelta(seconds=2), execution_id="exec-d"
+    )
+    fifth = _execution(
+        db, org_id, agent, created_at=now - timedelta(seconds=3), execution_id="exec-e"
+    )
+    headers = _headers(created["access_token"])
+    path = f"/api/v1/agents/{agent.id}/executions"
+
+    default = client.get(path, headers=headers)
+    assert default.status_code == 200
+    assert default.json()["limit"] == 20
+    assert default.json()["offset"] == 0
+    assert default.json()["total"] == 5
+    assert [item["id"] for item in default.json()["items"]] == [
+        second.id,
+        first.id,
+        third.id,
+        fourth.id,
+        fifth.id,
+    ]
+
+    first_page = client.get(path, params={"limit": 2, "offset": 0}, headers=headers)
+    assert [item["id"] for item in first_page.json()["items"]] == [second.id, first.id]
+    middle = client.get(path, params={"limit": 2, "offset": 2}, headers=headers)
+    assert middle.json()["total"] == 5
+    assert [item["id"] for item in middle.json()["items"]] == [third.id, fourth.id]
+    last = client.get(path, params={"limit": 2, "offset": 4}, headers=headers)
+    assert [item["id"] for item in last.json()["items"]] == [fifth.id]
+    beyond = client.get(path, params={"limit": 2, "offset": 50}, headers=headers)
+    assert beyond.json() == {"items": [], "limit": 2, "offset": 50, "total": 5}
+
+    one = client.get(path, params={"limit": 1, "offset": 0}, headers=headers)
+    assert [item["id"] for item in one.json()["items"]] == [second.id]
+    max_ok = client.get(path, params={"limit": 50}, headers=headers)
+    assert max_ok.status_code == 200
+    assert max_ok.json()["limit"] == 50
+    assert len(max_ok.json()["items"]) == 5
+
+
+def test_list_limit_and_offset_validation(client: TestClient, db: Session) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    headers = _headers(created["access_token"])
+    path = f"/api/v1/agents/{agent.id}/executions"
+    assert client.get(path, params={"limit": 0}, headers=headers).status_code == 422
+    assert client.get(path, params={"limit": 51}, headers=headers).status_code == 422
+    assert client.get(path, params={"offset": -1}, headers=headers).status_code == 422
+
+
+def test_history_payloads_omit_organization_and_provider_secrets(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    now = datetime.now(UTC)
+    execution = AgentExecution(
+        organization_id=org_id,
+        agent_id=agent.id,
+        status=AgentExecutionStatus.COMPLETED,
+        input={"text": "User task", "authorization": "secret-token"},
+        output={
+            "text": "Safe output text",
+            "usage": {
+                "prompt_tokens": 3,
+                "completion_tokens": 5,
+                "total_tokens": 8,
+                "api_key": "sk-secret",
+            },
+            "tool_results": [{"output": {"secret": "do-not-leak"}}],
+            "provider_request": {"messages": [{"role": "system", "content": "hidden"}]},
+        },
+        provider="fake",
+        model="fake-model",
+        started_at=now,
+        completed_at=now,
+        created_at=now,
+    )
+    db.add(execution)
+    db.commit()
+    db.refresh(execution)
+    headers = _headers(created["access_token"])
+    listed = client.get(f"/api/v1/agents/{agent.id}/executions", headers=headers).json()
+    detail = client.get(
+        f"/api/v1/agents/{agent.id}/executions/{execution.id}",
+        headers=headers,
+    ).json()
+    serialized = str(listed) + str(detail)
+    assert "organization_id" not in listed["items"][0]
+    assert "organization_id" not in detail
+    assert "secret-token" not in serialized
+    assert "sk-secret" not in serialized
+    assert "do-not-leak" not in serialized
+    assert "provider_request" not in serialized
+    assert "tool_results" not in serialized
+    assert detail["usage"] == {
+        "prompt_tokens": 3,
+        "completion_tokens": 5,
+        "total_tokens": 8,
+    }
+    assert detail["input"] == "User task"
+    assert detail["output"] == "Safe output text"

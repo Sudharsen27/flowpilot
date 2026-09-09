@@ -57,12 +57,13 @@ export function AgentToolInvocationList({
       </h4>
       {error ? (
         <div className="grid gap-2">
-          <p className="text-danger-text text-sm" role="alert">
+          <p id="tool-activity-error" className="text-danger-text text-sm" role="alert">
             {error}
           </p>
           <Button
             type="button"
             variant="outline"
+            aria-describedby="tool-activity-error"
             onClick={() => {
               setItems(null);
               setError(null);
@@ -73,7 +74,7 @@ export function AgentToolInvocationList({
           </Button>
         </div>
       ) : items === null ? (
-        <div role="status" className="grid gap-2">
+        <div role="status" aria-live="polite" aria-busy="true" className="grid gap-2">
           <Skeleton className="h-16" />
           <span className="sr-only">Loading tool activity</span>
         </div>

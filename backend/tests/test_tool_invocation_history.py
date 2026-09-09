@@ -298,3 +298,40 @@ def test_cross_agent_tool_invocations_not_found(client: TestClient, db: Session)
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent execution not found"
+
+
+def test_tool_invocations_are_scoped_to_the_requested_execution(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    now = datetime.now(UTC)
+    execution_a = _execution(db, org_id, agent, created_at=now, execution_id="exec-a")
+    execution_b = _execution(
+        db, org_id, agent, created_at=now - timedelta(seconds=1), execution_id="exec-b"
+    )
+    keep = _invocation(
+        db, execution_a, started_at=now, invocation_id="inv-keep", call_id="keep"
+    )
+    _invocation(db, execution_b, started_at=now, invocation_id="inv-other", call_id="other")
+    body = client.get(
+        _path(agent.id, execution_a.id),
+        headers=_headers(created["access_token"]),
+    ).json()
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [keep.id]
+
+
+def test_tool_invocation_offset_beyond_total(client: TestClient, db: Session) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    execution = _execution(db, org_id, agent, created_at=datetime.now(UTC))
+    _invocation(db, execution, started_at=datetime.now(UTC), invocation_id="inv-1", call_id="c1")
+    body = client.get(
+        _path(agent.id, execution.id),
+        params={"limit": 20, "offset": 25},
+        headers=_headers(created["access_token"]),
+    ).json()
+    assert body == {"items": [], "limit": 20, "offset": 25, "total": 1}
