@@ -16,6 +16,7 @@ from app.core.exceptions import (
 from app.main import app
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.membership import MembershipRole
 from app.models.tool_invocation import ToolInvocation
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.agent_service import AgentService
@@ -79,6 +80,7 @@ def _create_agent(
 ) -> Agent:
     return AgentService(db).create(
         organization_id=organization_id,
+        role=MembershipRole.OWNER,
         name=name,
         agent_type=AgentType.SALES,
         description="Qualify inbound interest",

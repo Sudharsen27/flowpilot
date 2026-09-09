@@ -93,6 +93,24 @@ Tenant isolation: repositories always query by `organization_id` from the authen
 
 `echo` is an in-process test/foundation tool, not a customer integration.
 
+## Agent management API (Phase 3C)
+
+```
+Agent API
+├── POST   /api/v1/agents                  Create (DRAFT)
+├── GET    /api/v1/agents                  List (current org; optional status/type filters)
+├── GET    /api/v1/agents/{id}             Get
+├── PATCH  /api/v1/agents/{id}             Update configuration (not status)
+├── POST   /api/v1/agents/{id}/ready       DRAFT → READY
+├── POST   /api/v1/agents/{id}/activate    READY or PAUSED → ACTIVE
+├── POST   /api/v1/agents/{id}/pause       ACTIVE → PAUSED
+└── POST   /api/v1/agents/{id}/execute     Run (READY or ACTIVE)
+```
+
+Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, and execute eligible agents, but cannot change configuration or status.
+
+PATCH does not accept `status`; lifecycle endpoints enforce allowed transitions. `NEEDS_ATTENTION` cannot be cleared by PATCH or those endpoints. Execution remains limited to `READY` and `ACTIVE`.
+
 ## LLM providers
 
 `AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` remains planned for knowledge retrieval. OpenAI is the first `AIProvider` implementation.
@@ -134,3 +152,7 @@ Tenant-owned `Agent` and `AgentExecution` models, `AIProvider` / `OpenAIProvider
 ## Phase 3B (AI tool calling foundation)
 
 Registered tools, input validation, risk/policy (`ALLOW` / `REQUIRE_APPROVAL` / `DENY`), `ToolInvocation` audit rows, OpenAI tool-call translation, and a strictly limited execution loop. No real external business integrations.
+
+## Phase 3C (agent management API)
+
+Tenant-safe agent CRUD and lifecycle (`ready` / `activate` / `pause`). `OWNER`/`ADMIN` configure agents; `MEMBER` can read and execute eligible agents. Status is not mutated via PATCH.

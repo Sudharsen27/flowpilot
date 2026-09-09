@@ -9,13 +9,129 @@ from app.api.deps import (
     get_tool_registry,
 )
 from app.db.session import get_db
+from app.models.agent import AgentStatus, AgentType
 from app.models.membership import Membership
 from app.models.organization import Organization
-from app.schemas.agents import AgentExecutionRequest, AgentExecutionResult
+from app.schemas.agents import (
+    AgentCreate,
+    AgentExecutionRequest,
+    AgentExecutionResult,
+    AgentPublic,
+    AgentUpdate,
+)
 from app.services.agent_execution_service import AgentExecutionService
+from app.services.agent_service import AgentService
 from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
+
+
+@router.post("", response_model=AgentPublic)
+def create_agent(
+    payload: AgentCreate,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentPublic:
+    agent = AgentService(db).create(
+        organization_id=organization.id,
+        role=membership.role,
+        name=payload.name,
+        description=payload.description,
+        agent_type=payload.agent_type,
+        system_instructions=payload.system_instructions,
+    )
+    return AgentPublic.model_validate(agent)
+
+
+@router.get("", response_model=list[AgentPublic])
+def list_agents(
+    status: AgentStatus | None = None,
+    agent_type: AgentType | None = None,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> list[AgentPublic]:
+    agents = AgentService(db).list(
+        organization.id,
+        status=status,
+        agent_type=agent_type,
+    )
+    return [AgentPublic.model_validate(agent) for agent in agents]
+
+
+@router.get("/{agent_id}", response_model=AgentPublic)
+def get_agent(
+    agent_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> AgentPublic:
+    agent = AgentService(db).get_or_raise(organization.id, agent_id)
+    return AgentPublic.model_validate(agent)
+
+
+@router.patch("/{agent_id}", response_model=AgentPublic)
+def update_agent(
+    agent_id: str,
+    payload: AgentUpdate,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentPublic:
+    agent = AgentService(db).update(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        role=membership.role,
+        name=payload.name,
+        description=payload.description,
+        agent_type=payload.agent_type,
+        system_instructions=payload.system_instructions,
+    )
+    return AgentPublic.model_validate(agent)
+
+
+@router.post("/{agent_id}/ready", response_model=AgentPublic)
+def mark_agent_ready(
+    agent_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentPublic:
+    agent = AgentService(db).mark_ready(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        role=membership.role,
+    )
+    return AgentPublic.model_validate(agent)
+
+
+@router.post("/{agent_id}/activate", response_model=AgentPublic)
+def activate_agent(
+    agent_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentPublic:
+    agent = AgentService(db).activate(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        role=membership.role,
+    )
+    return AgentPublic.model_validate(agent)
+
+
+@router.post("/{agent_id}/pause", response_model=AgentPublic)
+def pause_agent(
+    agent_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentPublic:
+    agent = AgentService(db).pause(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        role=membership.role,
+    )
+    return AgentPublic.model_validate(agent)
 
 
 @router.post("/{agent_id}/execute", response_model=AgentExecutionResult)

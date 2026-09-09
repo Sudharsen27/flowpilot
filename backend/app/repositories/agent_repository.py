@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.agent import Agent
+from app.models.agent import Agent, AgentStatus, AgentType
 
 
 class AgentRepository:
@@ -15,6 +15,21 @@ class AgentRepository:
                 Agent.id == agent_id,
             )
         )
+
+    def list_for_organization(
+        self,
+        organization_id: str,
+        *,
+        status: AgentStatus | None = None,
+        agent_type: AgentType | None = None,
+    ) -> list[Agent]:
+        statement = select(Agent).where(Agent.organization_id == organization_id)
+        if status is not None:
+            statement = statement.where(Agent.status == status)
+        if agent_type is not None:
+            statement = statement.where(Agent.agent_type == agent_type)
+        statement = statement.order_by(Agent.created_at.desc())
+        return list(self.session.scalars(statement))
 
     def add(self, agent: Agent) -> Agent:
         self.session.add(agent)

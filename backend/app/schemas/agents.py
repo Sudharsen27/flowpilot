@@ -1,7 +1,41 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.provider import TokenUsage
+from app.models.agent import AgentStatus, AgentType
 from app.models.agent_execution import AgentExecutionStatus
+
+
+class AgentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    agent_type: AgentType
+    system_instructions: str = Field(default="", max_length=8000)
+
+
+class AgentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    agent_type: AgentType | None = None
+    system_instructions: str | None = Field(default=None, max_length=8000)
+
+
+class AgentPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str
+    agent_type: AgentType
+    system_instructions: str
+    status: AgentStatus
+    created_at: datetime
+    updated_at: datetime
 
 
 class AgentExecutionRequest(BaseModel):
