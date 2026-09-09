@@ -1,154 +1,111 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import AgentDetailPage from "@/app/(app)/agents/[id]/page";
+import { ApiError } from "@/lib/api/client";
+import { getAgent } from "@/lib/api/agents";
+import type { Agent } from "@/types/api";
+
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ id: "agent-real-1" }),
+}));
+
+vi.mock("@/lib/api/agents", () => ({
+  getAgent: vi.fn(),
+}));
+
+const agent: Agent = {
+  id: "agent-real-1",
+  name: "Inbound qualifier",
+  description: "Qualifies new inbound leads.",
+  agent_type: "SALES",
+  system_instructions: "Ask concise qualification questions.",
+  status: "READY",
+  created_at: "2026-09-01T10:00:00Z",
+  updated_at: "2026-09-09T10:00:00Z",
+};
+
+const getAgentMock = vi.mocked(getAgent);
 
 describe("Agent Detail page", () => {
-  it("renders a neutral configuration route with back navigation", () => {
-    render(<AgentDetailPage />);
+  beforeEach(() => {
+    getAgentMock.mockReset();
+  });
 
+  it("shows loading while requesting the agent id", () => {
+    getAgentMock.mockReturnValue(new Promise(() => undefined));
+    render(<AgentDetailPage />);
+    expect(screen.getByText("Loading agent details")).toBeVisible();
+    expect(getAgentMock).toHaveBeenCalledWith("agent-real-1");
+  });
+
+  it("renders real identity, status, and system instructions read-only", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
     expect(
-      screen.getByRole("heading", {
+      await screen.findByRole("heading", {
         level: 1,
-        name: "Agent configuration",
+        name: "Inbound qualifier",
       }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "AI Agents" })).toHaveAttribute(
-      "href",
-      "/agents",
+    expect(screen.getByText("Qualifies new inbound leads.")).toBeVisible();
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+    expect(screen.getByRole("textbox", { name: "Agent name" })).toHaveValue(
+      "Inbound qualifier",
+    );
+    expect(screen.getByRole("combobox", { name: "Agent type" })).toHaveValue(
+      "SALES",
     );
     expect(
-      screen.getByRole("heading", {
-        name: "Configuration is not connected",
-      }),
-    ).toBeVisible();
-    expect(
-      screen.getByText(/No agent record is loaded, changes are not tracked/),
-    ).toBeVisible();
-  });
-
-  it("renders all configuration sections with a clear heading hierarchy", () => {
-    render(<AgentDetailPage />);
-
-    for (const heading of [
-      "Agent identity",
-      "Instructions",
-      "Capabilities",
-      "Tools",
-      "Knowledge",
-      "Human approval and safety",
-      "Communication behavior",
-      "Configuration status",
-      "Test agent",
-    ]) {
-      expect(
-        screen.getByRole("heading", { level: 2, name: heading }),
-      ).toBeVisible();
-    }
-  });
-
-  it("provides labeled, disabled identity and instruction controls", () => {
-    render(<AgentDetailPage />);
-
-    expect(screen.getByRole("textbox", { name: "Agent name" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "Agent type" })).toBeDisabled();
-    expect(screen.getByRole("textbox", { name: "Description" })).toBeDisabled();
-    expect(screen.getByRole("textbox", { name: "Purpose" })).toBeDisabled();
+      screen.getByRole("textbox", { name: "Agent instructions" }),
+    ).toHaveValue("Ask concise qualification questions.");
     expect(
       screen.getByRole("textbox", { name: "Agent instructions" }),
     ).toBeDisabled();
-    expect(screen.getByText(/this editor does not save changes/)).toBeVisible();
+    screen
+      .getAllByRole("button", { name: "Save configuration" })
+      .forEach((button) => expect(button).toBeDisabled());
   });
 
-  it("renders disabled capability concepts without executing them", () => {
+  it("shows a not-found state with back navigation", async () => {
+    getAgentMock.mockRejectedValue(new ApiError("Request failed: 404", 404));
     render(<AgentDetailPage />);
-
-    for (const capability of [
-      "Understand enquiries",
-      "Qualify leads",
-      "Respond to customers",
-      "Create or update records",
-      "Schedule follow-ups",
-      "Escalate to humans",
-    ]) {
-      const checkbox = screen.getByRole("checkbox", { name: capability });
-      expect(checkbox).toBeDisabled();
-      expect(checkbox).not.toBeChecked();
-    }
-    expect(screen.getByText(/does not execute any action/)).toBeVisible();
-  });
-
-  it("shows tools and knowledge as unconnected setup concepts", () => {
-    render(<AgentDetailPage />);
-
-    expect(screen.getByText("No tools connected")).toBeVisible();
-    expect(screen.getByText("No knowledge connected")).toBeVisible();
     expect(
-      screen.getByRole("list", { name: "Tool connection concepts" }),
+      await screen.findByRole("heading", { level: 1, name: "Agent not found" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("list", { name: "Knowledge source concepts" }),
+      screen.getByRole("link", { name: "Back to AI Agents" }),
+    ).toHaveAttribute("href", "/agents");
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("shows a retryable API error and retries", async () => {
+    const user = userEvent.setup();
+    getAgentMock
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce(agent);
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByRole("heading", {
+        name: "Agent could not be loaded",
+      }),
     ).toBeVisible();
-    expect(screen.getAllByText("Not connected")).toHaveLength(10);
-  });
-
-  it("renders disabled human-control and communication settings", () => {
-    render(<AgentDetailPage />);
-
-    for (const policy of [
-      "Require approval for sensitive actions",
-      "Escalate uncertain conversations",
-      "Allow automatic customer responses",
-      "Require approval before external actions",
-    ]) {
-      const control = screen.getByRole("switch", { name: policy });
-      expect(control).toBeDisabled();
-      expect(control).toHaveAttribute("aria-checked", "false");
-    }
-
-    for (const setting of [
-      "Tone",
-      "Response style",
-      "Business-hours behavior",
-      "Human-handoff behavior",
-    ]) {
-      expect(screen.getByRole("combobox", { name: setting })).toBeDisabled();
-    }
-  });
-
-  it("keeps save, activation, and runtime behavior honestly unavailable", () => {
-    render(<AgentDetailPage />);
-
-    const saveButtons = screen.getAllByRole("button", {
-      name: "Save configuration",
-    });
-    expect(saveButtons).toHaveLength(2);
-    saveButtons.forEach((button) => expect(button).toBeDisabled());
-    expect(saveButtons[0]).toHaveAccessibleDescription(
-      "Saving is unavailable because agent persistence is not implemented.",
-    );
+    await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(
-      screen.getByRole("button", { name: "Open test preview" }),
-    ).toBeDisabled();
-    expect(screen.getByText("Runtime unavailable")).toBeVisible();
-    expect(screen.getByText("Not tracked")).toBeVisible();
-    expect(screen.getByText("Not ready")).toBeVisible();
-    expect(screen.queryByText("Sales Agent")).not.toBeInTheDocument();
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Inbound qualifier",
+      }),
+    ).toBeVisible();
+    expect(getAgentMock).toHaveBeenCalledTimes(2);
   });
 
-  it("uses an adaptive content and status layout", () => {
-    const { container } = render(<AgentDetailPage />);
-
-    const responsiveLayout = container.querySelector(
-      '[data-slot="agent-detail-layout"]',
-    );
-    expect(responsiveLayout).toBeInTheDocument();
-    expect(responsiveLayout).toHaveClass(
-      "grid",
-      "xl:grid-cols-[minmax(0,1fr)_20rem]",
-    );
+  it("keeps the existing back breadcrumb", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
     expect(
-      screen.getByRole("complementary", { name: "Configuration status" }),
-    ).toBeInTheDocument();
+      await screen.findByRole("link", { name: "AI Agents" }),
+    ).toHaveAttribute("href", "/agents");
   });
 });

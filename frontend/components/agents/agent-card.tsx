@@ -1,4 +1,5 @@
 import { Bot, Settings2 } from "lucide-react";
+import Link from "next/link";
 
 import {
   AgentStatusBadge,
@@ -9,11 +10,11 @@ import { Card, CardContent } from "@/components/ui/card";
 export type AgentCardData = {
   id: string;
   name: string;
-  purpose: string;
+  description: string;
+  agentType: string;
   status: AgentStatus;
-  capabilities: string[];
   configurationState: string;
-  healthOrLastActivity?: string;
+  updatedAt: string;
 };
 
 type AgentCardProps = {
@@ -35,26 +36,24 @@ export function AgentCard({ agent }: AgentCardProps) {
         </div>
 
         <div className="mt-5">
-          <h3 className="text-base font-medium tracking-tight">{agent.name}</h3>
+          <h3 className="text-base font-medium tracking-tight">
+            <Link
+              href={`/agents/${agent.id}`}
+              className="focus-visible:ring-ring rounded-sm outline-none hover:underline focus-visible:ring-2"
+            >
+              {agent.name}
+            </Link>
+          </h3>
           <p className="text-muted-foreground mt-1.5 text-sm leading-6">
-            {agent.purpose}
+            {agent.description || "No description provided."}
           </p>
         </div>
 
         <div className="mt-5">
-          <p className="text-muted-foreground text-xs font-medium">
-            Capabilities
+          <p className="text-muted-foreground text-xs font-medium">Agent type</p>
+          <p className="border-border bg-surface-subtle mt-2 inline-flex rounded-md border px-2 py-1 text-xs">
+            {agent.agentType}
           </p>
-          <ul className="mt-2 flex flex-wrap gap-2" aria-label="Capabilities">
-            {agent.capabilities.map((capability) => (
-              <li
-                key={capability}
-                className="border-border bg-surface-subtle rounded-md border px-2 py-1 text-xs"
-              >
-                {capability}
-              </li>
-            ))}
-          </ul>
         </div>
 
         <dl className="border-border mt-5 grid gap-3 border-t pt-4 text-xs">
@@ -68,10 +67,8 @@ export function AgentCard({ agent }: AgentCardProps) {
             </dd>
           </div>
           <div className="flex items-start justify-between gap-3">
-            <dt className="text-muted-foreground">Health / last activity</dt>
-            <dd className="text-right font-medium">
-              {agent.healthOrLastActivity ?? "Unavailable"}
-            </dd>
+            <dt className="text-muted-foreground">Updated</dt>
+            <dd className="text-right font-medium">{agent.updatedAt}</dd>
           </div>
         </dl>
       </CardContent>

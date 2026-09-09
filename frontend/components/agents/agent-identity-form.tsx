@@ -1,7 +1,6 @@
 import { FormField } from "@/components/forms/form-field";
 import { Input } from "@/components/forms/input";
 import { Select } from "@/components/forms/select";
-import { Textarea } from "@/components/forms/textarea";
 import {
   Card,
   CardContent,
@@ -9,8 +8,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { AgentType } from "@/types/api";
 
-export function AgentIdentityForm() {
+type AgentIdentityFormProps = {
+  name: string;
+  description: string;
+  agentType: AgentType;
+};
+
+export function AgentIdentityForm({
+  name,
+  description,
+  agentType,
+}: AgentIdentityFormProps) {
   return (
     <Card as="section" aria-labelledby="agent-identity-title">
       <CardHeader>
@@ -31,7 +41,8 @@ export function AgentIdentityForm() {
             >
               <Input
                 id="agent-name"
-                placeholder="No agent name"
+                value={name}
+                readOnly
                 aria-describedby="agent-name-description"
               />
             </FormField>
@@ -42,14 +53,13 @@ export function AgentIdentityForm() {
             >
               <Select
                 id="agent-type"
-                defaultValue=""
+                value={agentType}
                 aria-describedby="agent-type-description"
               >
-                <option value="">Select agent type</option>
-                <option value="sales">Sales</option>
-                <option value="support">Support</option>
-                <option value="operations">Operations</option>
-                <option value="communication">Communication</option>
+                <option value="SALES">Sales</option>
+                <option value="SUPPORT">Support</option>
+                <option value="OPERATIONS">Operations</option>
+                <option value="COMMUNICATION">Communication</option>
               </Select>
             </FormField>
           </div>
@@ -60,26 +70,15 @@ export function AgentIdentityForm() {
           >
             <Input
               id="agent-description"
-              placeholder="No agent description"
+              value={description}
+              readOnly
               aria-describedby="agent-description-description"
-            />
-          </FormField>
-          <FormField
-            label="Purpose"
-            htmlFor="agent-purpose"
-            description="The business outcome and boundaries this agent should work within."
-          >
-            <Textarea
-              id="agent-purpose"
-              className="min-h-24"
-              placeholder="No purpose has been configured."
-              aria-describedby="agent-purpose-description"
             />
           </FormField>
         </fieldset>
         <p className="text-muted-foreground mt-5 text-xs">
-          Identity controls are unavailable until agent persistence is
-          implemented.
+          Agent identity is read-only here. Editing will be connected in a
+          later update.
         </p>
       </CardContent>
     </Card>

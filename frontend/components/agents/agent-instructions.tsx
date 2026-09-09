@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export function AgentInstructions() {
+export function AgentInstructions({ instructions }: { instructions: string }) {
   return (
     <Card as="section" aria-labelledby="agent-instructions-title">
       <CardHeader>
@@ -24,12 +24,14 @@ export function AgentInstructions() {
           <FormField
             label="Agent instructions"
             htmlFor="agent-instructions"
-            description="No instructions are loaded, and this editor does not save changes."
+            description="Loaded from the agent record. Editing is not connected yet."
           >
             <Textarea
               id="agent-instructions"
               className="min-h-56 font-mono text-sm"
-              placeholder="Instructions will be configured here once agent persistence is available."
+              value={instructions}
+              readOnly
+              placeholder="No system instructions configured."
               aria-describedby="agent-instructions-description"
             />
           </FormField>

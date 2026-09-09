@@ -9,8 +9,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  AgentStatusBadge,
+  type AgentStatus,
+} from "@/components/agents/agent-status-badge";
 
-export function AgentConfigurationSidebar() {
+export function AgentConfigurationSidebar({
+  status,
+}: {
+  status: AgentStatus;
+}) {
   return (
     <aside
       className="grid gap-4 xl:sticky xl:top-24"
@@ -22,16 +30,16 @@ export function AgentConfigurationSidebar() {
             Configuration status
           </CardTitle>
           <CardDescription>
-            This route is a setup workspace and is not backed by an agent
-            record.
+            This record is loaded from the Agent API. Configuration remains
+            read-only in this slice.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <StatusBadge status="draft" label="Configuration incomplete" />
+          <AgentStatusBadge status={status} />
           <dl className="divide-border divide-y text-sm">
             <div className="flex justify-between gap-3 py-3 first:pt-0">
               <dt className="text-muted-foreground">Agent record</dt>
-              <dd className="font-medium">Not loaded</dd>
+              <dd className="font-medium">Loaded</dd>
             </div>
             <div className="flex justify-between gap-3 py-3">
               <dt className="text-muted-foreground">Unsaved changes</dt>
@@ -39,11 +47,11 @@ export function AgentConfigurationSidebar() {
             </div>
             <div className="flex justify-between gap-3 py-3">
               <dt className="text-muted-foreground">Save state</dt>
-              <dd className="font-medium">Unavailable</dd>
+              <dd className="font-medium">Read-only</dd>
             </div>
             <div className="flex justify-between gap-3 py-3 last:pb-0">
               <dt className="text-muted-foreground">Activation</dt>
-              <dd className="font-medium">Not ready</dd>
+              <dd className="font-medium">Not connected</dd>
             </div>
           </dl>
           <Button type="button" disabled className="w-full">

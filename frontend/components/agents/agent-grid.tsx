@@ -22,7 +22,7 @@ export function AgentGrid({ agents }: AgentGridProps) {
         icon={<Bot />}
         className="max-w-none"
         title="No agents configured"
-        description="Agents will appear here after agent configuration and persistence are implemented. Explore the related workspaces that agents may support in the future."
+        description="No agents have been created for this organization yet. Explore the related workspaces that agents may support in the future."
         action={
           <nav aria-label="Explore related workspaces">
             <ul className="flex flex-wrap gap-2">
