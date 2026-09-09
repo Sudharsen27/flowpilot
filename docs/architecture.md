@@ -61,9 +61,22 @@ Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `
 
 Each tool will declare name, description, input/output schemas, required permissions, and risk (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`). HIGH and CRITICAL actions require human approval. Policy cannot be bypassed by the model.
 
+## AI runtime (Phase 3A)
+
+Authenticated API requests run a tenant-owned **Agent** through an **AgentExecutionService**. The service loads the agent for the caller's organization, records an **AgentExecution**, and calls an **AIProvider**. Product and service code depend on the `AIProvider` protocol, not a vendor SDK. **OpenAIProvider** is the first implementation (`OPENAI_API_KEY`, `OPENAI_MODEL`).
+
+This slice only produces a structured AI response and an audit row. External tool execution, CRM/email/WhatsApp/calendar actions, webhooks, workflow runners, RAG, and autonomous background agents are deferred.
+
+### Models
+
+- **Agent** — tenant-owned (`organization_id`). Types: `SALES`, `SUPPORT`, `OPERATIONS`, `COMMUNICATION`. Statuses: `DRAFT`, `READY`, `ACTIVE`, `PAUSED`, `NEEDS_ATTENTION`. Only `READY` and `ACTIVE` may execute.
+- **AgentExecution** — tenant-owned attempt: status (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED`), JSON input/output, provider/model, timestamps, optional initiating user.
+
+Tenant isolation: repositories always query by `organization_id` from the authenticated membership JWT, never from the client body.
+
 ## LLM providers
 
-`LLMProvider` and `EmbeddingProvider` interfaces. OpenAI is the first implementation. Product code depends on the interface, not a vendor SDK.
+`AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` remains planned for knowledge retrieval. OpenAI is the first `AIProvider` implementation.
 
 ## Workflows
 
@@ -94,3 +107,7 @@ Product routes are guarded by a client-side authentication boundary that waits f
 Every authenticated route uses one `AppShell`: a persistent grouped sidebar on desktop, the existing focus-managed navigation drawer below desktop, an authenticated top bar, and a shared responsive `PageContainer`. Navigation metadata and nested-route active matching live in `lib/navigation.ts`.
 
 The top bar reads the current organization, user, and membership role from `AuthProvider`. Its user menu delegates logout to the existing auth mechanism. Global search is an honest UI entry point only; product search, notifications, organization switching, and business data remain outside the shell.
+
+## Phase 3A (AI runtime foundation)
+
+Tenant-owned `Agent` and `AgentExecution` models, `AIProvider` / `OpenAIProvider`, `AgentExecutionService`, and authenticated `POST /api/v1/agents/{agent_id}/execute`. No tool calling, workflows, or external business actions.

@@ -2,6 +2,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.ai.openai_provider import OpenAIProvider
+from app.ai.provider import AIProvider
 from app.core.exceptions import UnauthorizedError
 from app.core.security import decode_access_token
 from app.db.session import get_db
@@ -94,3 +96,7 @@ def get_current_organization(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return organization
+
+
+def get_ai_provider() -> AIProvider:
+    return OpenAIProvider()

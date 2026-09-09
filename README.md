@@ -2,7 +2,7 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository has completed **Phase 2, Slice 1 (authenticated app shell)**. Product features (agents, leads, RAG, workflows) are not implemented yet.
+This repository has completed **Phase 2 product UI foundations**. Phase 3A adds a tenant-safe AI runtime (Agent, AgentExecution, AIProvider) without tool calling or external business actions.
 
 ## Requirements
 
@@ -38,6 +38,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Register: `POST /api/v1/auth/register`
 - Login: `POST /api/v1/auth/login`
 - Current user: `GET /api/v1/users/me`
+- Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
+
+`OPENAI_API_KEY` and `OPENAI_MODEL` are documented in `.env.example`. Unit tests mock `AIProvider` and do not call OpenAI.
 
 ### Frontend
 
