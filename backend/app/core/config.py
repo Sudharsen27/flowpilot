@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    openai_request_timeout_seconds: float = 60
     agent_max_tool_iterations: int = 3
 
     @property

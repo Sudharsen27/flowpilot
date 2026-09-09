@@ -5,6 +5,7 @@ import pytest
 
 from app.ai.openai_provider import OpenAIProvider, sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider
+from app.core.config import settings
 from app.core.exceptions import ProviderError, ProviderNotConfiguredError
 from app.tools.echo import EchoTool
 from app.tools.schema import ToolCall
@@ -39,6 +40,9 @@ def test_openai_provider_uses_injected_client_not_network() -> None:
     assert result.usage is not None
     assert result.usage.total_tokens == 3
     client.chat.completions.create.assert_called_once()
+    assert client.chat.completions.create.call_args.kwargs["timeout"] == (
+        settings.openai_request_timeout_seconds
+    )
 
 
 def test_openai_provider_translates_tool_definitions() -> None:

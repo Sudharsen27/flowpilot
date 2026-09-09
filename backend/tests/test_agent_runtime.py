@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.ai.provider import AIGenerateRequest, AIGenerateResult, TokenUsage
@@ -20,9 +21,11 @@ from app.models.membership import MembershipRole
 from app.models.tool_invocation import ToolInvocation
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.agent_service import AgentService
+from app.services.tool_execution_service import ToolExecutionError
+from app.tools.base import Tool
 from app.tools.echo import EchoTool
 from app.tools.registry import ToolRegistry
-from app.tools.schema import ToolCall
+from app.tools.schema import ToolCall, ToolContext, ToolRiskLevel
 from tests.conftest import register_payload
 
 
@@ -47,6 +50,17 @@ class FakeAIProvider:
             model="fake-model",
             usage=TokenUsage(prompt_tokens=3, completion_tokens=5, total_tokens=8),
         )
+
+
+class FailingRuntimeTool(Tool):
+    name = "fail_tool"
+    description = "Always fails after validation. Test only."
+    risk_level = ToolRiskLevel.LOW
+    input_model = EchoTool.input_model
+    output_model = EchoTool.output_model
+
+    def execute(self, arguments: BaseModel, context: ToolContext) -> BaseModel:
+        raise ToolExecutionError("boom")
 
 
 @pytest.fixture
@@ -390,3 +404,121 @@ def test_runtime_max_tool_iterations_enforced(db: Session, client: TestClient) -
     execution = db.query(AgentExecution).one()
     assert execution.status == AgentExecutionStatus.FAILED
     assert execution.error == "Maximum tool-call iterations exceeded"
+
+
+def test_ready_agent_can_execute(
+    db: Session, client: TestClient, fake_provider: FakeAIProvider
+) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"], status=AgentStatus.READY)
+    result = AgentExecutionService(db, fake_provider).execute(
+        organization_id=created["organization"]["id"],
+        agent_id=agent.id,
+        user_input="Hello",
+    )
+    assert result.status == AgentExecutionStatus.COMPLETED
+    assert db.query(AgentExecution).count() == 1
+    assert db.query(AgentExecution).one().status == AgentExecutionStatus.COMPLETED
+    assert db.query(AgentExecution).one().error is None
+
+
+def test_unexpected_exception_records_failed_execution(
+    db: Session, client: TestClient
+) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    provider = FakeAIProvider(fail=RuntimeError("boom with sk-secretvalue123"))
+    with pytest.raises(ProviderError) as exc:
+        AgentExecutionService(db, provider).execute(
+            organization_id=created["organization"]["id"],
+            agent_id=agent.id,
+            user_input="Hello",
+        )
+    assert "sk-secretvalue123" not in str(exc.value.content)
+    assert exc.value.content["error"] == "AI provider request failed"
+    assert db.query(AgentExecution).count() == 1
+    execution = db.query(AgentExecution).one()
+    assert execution.status == AgentExecutionStatus.FAILED
+    assert execution.status != AgentExecutionStatus.RUNNING
+    assert execution.error == "AI provider request failed"
+    assert execution.output is None
+    assert execution.completed_at is not None
+    assert "sk-secretvalue123" not in (execution.error or "")
+
+
+def test_tool_failure_fails_parent_and_finalizes_invocation(
+    db: Session, client: TestClient
+) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    registry = ToolRegistry()
+    registry.register(FailingRuntimeTool())
+    provider = ScriptedAIProvider(
+        [
+            AIGenerateResult(
+                output_text="",
+                provider="fake",
+                model="fake-model",
+                tool_calls=[
+                    ToolCall(id="call-1", name="fail_tool", arguments={"message": "hello"})
+                ],
+            )
+        ]
+    )
+    with pytest.raises(ProviderError, match="boom"):
+        AgentExecutionService(db, provider, registry=registry).execute(
+            organization_id=created["organization"]["id"],
+            agent_id=agent.id,
+            user_input="Use fail_tool",
+        )
+    assert db.query(AgentExecution).count() == 1
+    execution = db.query(AgentExecution).one()
+    assert execution.status == AgentExecutionStatus.FAILED
+    assert execution.error == "boom"
+    invocation = db.query(ToolInvocation).one()
+    assert invocation.status == "FAILED"
+    assert invocation.error == "boom"
+    assert invocation.completed_at is not None
+
+
+def test_provider_failure_creates_one_failed_record(
+    db: Session, client: TestClient
+) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    provider = FakeAIProvider(fail=ProviderError("upstream timeout"))
+    with pytest.raises(ProviderError):
+        AgentExecutionService(db, provider).execute(
+            organization_id=created["organization"]["id"],
+            agent_id=agent.id,
+            user_input="Hello",
+        )
+    assert db.query(AgentExecution).count() == 1
+
+
+def test_execute_api_unexpected_exception_hides_secrets(
+    db: Session, client: TestClient
+) -> None:
+    failing = FakeAIProvider(fail=RuntimeError("trace sk-abc Bearer secret.token"))
+    app.dependency_overrides[get_ai_provider] = lambda: failing
+    try:
+        created = _auth(client)
+        agent = _create_agent(db, created["organization"]["id"])
+        response = client.post(
+            f"/api/v1/agents/{agent.id}/execute",
+            json={"input": "Hello"},
+            headers=_headers(created["access_token"]),
+        )
+        assert response.status_code == 502
+        body = response.json()
+        assert body["status"] == "FAILED"
+        assert body["error"] == "AI provider request failed"
+        serialized = str(body)
+        assert "sk-abc" not in serialized
+        assert "secret.token" not in serialized
+        assert "Traceback" not in serialized
+        execution = db.get(AgentExecution, body["execution_id"])
+        assert execution is not None
+        assert execution.status == AgentExecutionStatus.FAILED
+    finally:
+        app.dependency_overrides.pop(get_ai_provider, None)

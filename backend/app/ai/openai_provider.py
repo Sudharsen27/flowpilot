@@ -39,6 +39,7 @@ class OpenAIProvider:
     ) -> None:
         self._api_key = api_key if api_key is not None else settings.openai_api_key
         self._model = model or settings.openai_model
+        self._timeout = settings.openai_request_timeout_seconds
         self._client = client
 
     def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
@@ -46,10 +47,11 @@ class OpenAIProvider:
             raise ProviderNotConfiguredError("OPENAI_API_KEY is not configured")
 
         model = request.model or self._model
-        client = self._client or OpenAI(api_key=self._api_key)
+        client = self._client or OpenAI(api_key=self._api_key, timeout=self._timeout)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": self._messages(request),
+            "timeout": self._timeout,
         }
         tool_payload = self._tool_definitions(request.tools)
         if tool_payload:

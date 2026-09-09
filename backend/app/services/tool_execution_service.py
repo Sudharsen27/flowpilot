@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,6 +12,8 @@ from app.repositories.tool_invocation_repository import ToolInvocationRepository
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
 from app.tools.schema import PolicyDecision, ToolCall, ToolContext, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutionError(Exception):
@@ -167,6 +170,7 @@ class ToolExecutionService:
             )
             return result
         except Exception:
+            logger.exception("Unexpected tool execution failure tool=%s", tool.name)
             result = ToolResult(
                 call_id=call.id,
                 tool_name=call.name,

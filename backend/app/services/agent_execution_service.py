@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,6 +46,8 @@ from app.services.tool_execution_service import ToolExecutionService
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
 from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLevel
+
+logger = logging.getLogger(__name__)
 
 
 class AgentExecutionService:
@@ -94,6 +97,8 @@ class AgentExecutionService:
             raise ValidationError(f"Agent cannot be executed while status is {agent.status}")
 
         now = datetime.now(UTC)
+        # Synchronous requests begin work immediately, so the persisted row starts
+        # RUNNING rather than QUEUED (QUEUED is reserved for a future async worker).
         execution = AgentExecution(
             organization_id=organization_id,
             agent_id=agent.id,
@@ -105,70 +110,102 @@ class AgentExecutionService:
         self.executions.add(execution)
         self.session.flush()
 
+        try:
+            generated, tool_results = self._run_provider_loop(
+                provider,
+                agent.system_instructions,
+                user_input,
+                organization_id,
+                agent.id,
+                execution,
+            )
+            return self._complete(execution, generated, tool_results)
+        except ProviderNotConfiguredError as exc:
+            return self._fail(
+                execution,
+                sanitize_provider_error(exc.detail),
+                configured=False,
+            )
+        except ProviderError as exc:
+            return self._fail(
+                execution,
+                sanitize_provider_error(exc.detail),
+                configured=True,
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected agent execution failure execution_id=%s agent_id=%s",
+                execution.id,
+                agent.id,
+            )
+            return self._fail(execution, "AI provider request failed", configured=True)
+
+    def _run_provider_loop(
+        self,
+        provider: AIProvider,
+        system_instructions: str,
+        user_input: str,
+        organization_id: str,
+        agent_id: str,
+        execution: AgentExecution,
+    ) -> tuple[AIGenerateResult, list[ToolResult]]:
         history: list[ConversationMessage] = []
         generated: AIGenerateResult | None = None
         tool_results: list[ToolResult] = []
 
-        try:
-            for round_index in range(self.max_tool_iterations + 1):
-                generated = provider.generate(
-                    AIGenerateRequest(
-                        system_instructions=agent.system_instructions,
-                        user_input=user_input,
-                        tools=self.registry.list_available(),
-                        history=history,
-                    )
+        for round_index in range(self.max_tool_iterations + 1):
+            generated = provider.generate(
+                AIGenerateRequest(
+                    system_instructions=system_instructions,
+                    user_input=user_input,
+                    tools=self.registry.list_available(),
+                    history=history,
                 )
-                execution.provider = generated.provider
-                execution.model = generated.model
-                if not generated.tool_calls:
-                    break
-                if round_index >= self.max_tool_iterations:
-                    return self._fail(
-                        execution,
-                        "Maximum tool-call iterations exceeded",
-                        configured=True,
-                    )
+            )
+            execution.provider = generated.provider
+            execution.model = generated.model
+            if not generated.tool_calls:
+                break
+            if round_index >= self.max_tool_iterations:
+                raise ProviderError("Maximum tool-call iterations exceeded")
 
+            history.append(
+                ConversationMessage(
+                    role="assistant",
+                    content=generated.output_text or None,
+                    tool_calls=generated.tool_calls,
+                )
+            )
+            context = ToolContext(
+                organization_id=organization_id,
+                agent_id=agent_id,
+                execution_id=execution.id,
+            )
+            for call in generated.tool_calls:
+                result = self.tool_executor.execute(call, context)
+                tool_results.append(result)
                 history.append(
                     ConversationMessage(
-                        role="assistant",
-                        content=generated.output_text or None,
-                        tool_calls=generated.tool_calls,
+                        role="tool",
+                        tool_call_id=result.call_id,
+                        tool_name=result.tool_name,
+                        content=result.model_dump_json(),
                     )
                 )
-                context = ToolContext(
-                    organization_id=organization_id,
-                    agent_id=agent.id,
-                    execution_id=execution.id,
-                )
-                for call in generated.tool_calls:
-                    result = self.tool_executor.execute(call, context)
-                    tool_results.append(result)
-                    history.append(
-                        ConversationMessage(
-                            role="tool",
-                            tool_call_id=result.call_id,
-                            tool_name=result.tool_name,
-                            content=result.model_dump_json(),
-                        )
-                    )
-                    if not result.success and not result.executed:
-                        return self._fail(
-                            execution,
-                            result.error or "Tool was rejected",
-                            configured=True,
-                        )
-            if generated is None:
-                return self._fail(execution, "AI provider request failed", configured=True)
-        except ProviderNotConfiguredError as exc:
-            return self._fail(execution, sanitize_provider_error(exc.detail), configured=False)
-        except ProviderError as exc:
-            return self._fail(execution, sanitize_provider_error(exc.detail), configured=True)
-        except Exception:
-            return self._fail(execution, "AI provider request failed", configured=True)
+                if not result.success:
+                    raise ProviderError(result.error or "Tool execution failed")
+        if generated is None:
+            raise ProviderError("AI provider request failed")
+        return generated, tool_results
 
+    def _complete(
+        self,
+        execution: AgentExecution,
+        generated: AIGenerateResult,
+        tool_results: list[ToolResult],
+    ) -> AgentExecutionResult:
         execution.status = AgentExecutionStatus.COMPLETED
+        execution.error = None
         execution.provider = generated.provider
         execution.model = generated.model
         execution.output = {
@@ -196,11 +233,19 @@ class AgentExecutionService:
         *,
         configured: bool,
     ) -> AgentExecutionResult:
+        error = sanitize_provider_error(error)
         execution.status = AgentExecutionStatus.FAILED
         execution.error = error
+        execution.output = None
         execution.completed_at = datetime.now(UTC)
-        self.session.commit()
-        self.session.refresh(execution)
+        try:
+            self.session.commit()
+            self.session.refresh(execution)
+        except Exception:
+            logger.exception(
+                "Failed to persist terminal execution state execution_id=%s",
+                execution.id,
+            )
 
         result = AgentExecutionResult(
             execution_id=execution.id,
