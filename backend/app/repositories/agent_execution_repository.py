@@ -1,7 +1,9 @@
-from sqlalchemy import func, select
+from typing import Any
+
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.agent_execution import AgentExecution
+from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 
 EXECUTION_LIST_MAX_LIMIT = 50
 EXECUTION_LIST_DEFAULT_LIMIT = 20
@@ -65,3 +67,48 @@ class AgentExecutionRepository:
             )
         )
         return items, int(total or 0)
+
+    def probe_status(
+        self,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+    ) -> str | None:
+        # Do not flush a dirty RUNNING instance first: that can overwrite a
+        # concurrent CANCELLED commit. Expire, then SELECT committed status.
+        for obj in list(self.session.identity_map.values()):
+            if isinstance(obj, AgentExecution) and obj.id == execution_id:
+                self.session.expire(obj)
+        return self.session.scalar(
+            select(AgentExecution.status)
+            .where(
+                AgentExecution.organization_id == organization_id,
+                AgentExecution.agent_id == agent_id,
+                AgentExecution.id == execution_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+
+    def finalize_running(
+        self,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+        values: dict[str, Any],
+    ) -> int:
+        for obj in list(self.session.identity_map.values()):
+            if isinstance(obj, AgentExecution):
+                self.session.expire(obj)
+        self.session.flush()
+        result = self.session.execute(
+            update(AgentExecution)
+            .where(
+                AgentExecution.organization_id == organization_id,
+                AgentExecution.agent_id == agent_id,
+                AgentExecution.id == execution_id,
+                AgentExecution.status == AgentExecutionStatus.RUNNING,
+            )
+            .values(**values)
+        )
+        self.session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)

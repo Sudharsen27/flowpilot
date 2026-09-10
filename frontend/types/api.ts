@@ -83,7 +83,8 @@ export type AgentExecutionStatus =
   | "QUEUED"
   | "RUNNING"
   | "COMPLETED"
-  | "FAILED";
+  | "FAILED"
+  | "CANCELLED";
 
 export type AgentExecutionRequest = {
   input: string;

@@ -4,6 +4,7 @@ import {
   activateAgent,
   createAgent,
   createAgentExecution,
+  cancelAgentExecution,
   executeAgent,
   getAgent,
   getAgentExecution,
@@ -226,6 +227,33 @@ describe("Agent API client", () => {
     await runAgentExecution("agent/1", "exec/1");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/api/v1/agents/agent%2F1/executions/exec%2F1/run",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer agent-token",
+        }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
+  it("cancels an encoded execution id without a request body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec/1",
+          status: "CANCELLED",
+          error: "Execution was cancelled.",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await cancelAgentExecution("agent/1", "exec/1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents/agent%2F1/executions/exec%2F1/cancel",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({

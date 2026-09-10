@@ -14,6 +14,7 @@ const executionPresentation: Record<
   RUNNING: { status: "pending", label: "Running" },
   COMPLETED: { status: "success", label: "Completed" },
   FAILED: { status: "failed", label: "Failed" },
+  CANCELLED: { status: "paused", label: "Cancelled" },
 };
 
 const invocationPresentation: Record<

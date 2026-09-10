@@ -21,9 +21,11 @@ export function AgentExecutionHistoryItem({
       ? "Completed"
       : item.status === "FAILED"
         ? "Failed"
-        : item.status === "RUNNING"
-          ? "Running"
-          : "Queued";
+        : item.status === "CANCELLED"
+          ? "Cancelled"
+          : item.status === "RUNNING"
+            ? "Running"
+            : "Queued";
   const summary = [statusLabel, failure, duration].filter(Boolean).join(" · ");
   return (
     <li>

@@ -201,6 +201,25 @@ def run_agent_execution(
     )
 
 
+@router.post(
+    "/{agent_id}/executions/{execution_id}/cancel",
+    response_model=AgentExecutionResult,
+)
+def cancel_agent_execution(
+    agent_id: str,
+    execution_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentExecutionResult:
+    del membership
+    return AgentExecutionService(db).cancel_execution(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        execution_id=execution_id,
+    )
+
+
 @router.get("/{agent_id}/executions", response_model=AgentExecutionListResponse)
 def list_agent_executions(
     agent_id: str,

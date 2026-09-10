@@ -57,6 +57,7 @@ from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLe
 logger = logging.getLogger(__name__)
 
 RUN_CLAIM_KEY = "claimed"
+CANCELLED_MESSAGE = "Execution was cancelled."
 
 
 class ExecutionFailure(Exception):
@@ -64,6 +65,10 @@ class ExecutionFailure(Exception):
         super().__init__(detail)
         self.detail = detail
         self.category = category
+
+
+class ExecutionCancelled(Exception):
+    pass
 
 
 class AgentExecutionService:
@@ -175,6 +180,12 @@ class AgentExecutionService:
                 execution,
             )
             return self._complete(execution, generated, tool_results)
+        except ExecutionCancelled:
+            return self._cancelled_result(
+                organization_id=organization_id,
+                agent_id=agent_id,
+                execution_id=execution.id,
+            )
         except ProviderNotConfiguredError as exc:
             return self._fail(
                 execution,
@@ -229,6 +240,48 @@ class AgentExecutionService:
             execution_id=started.execution_id,
         )
 
+    def cancel_execution(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+    ) -> AgentExecutionResult:
+        if self.agents.get_by_id(organization_id, agent_id) is None:
+            raise NotFoundError("Agent not found")
+        execution = self.executions.get_by_agent(
+            organization_id, agent_id, execution_id
+        )
+        if execution is None:
+            raise NotFoundError("Agent execution not found")
+        status = AgentExecutionStatus(execution.status)
+        if status != AgentExecutionStatus.RUNNING:
+            raise ConflictError("Execution cannot be cancelled in its current status")
+        now = datetime.now(UTC)
+        updated = self.executions.finalize_running(
+            organization_id,
+            agent_id,
+            execution_id,
+            {
+                "status": AgentExecutionStatus.CANCELLED,
+                "error": CANCELLED_MESSAGE,
+                "failure_category": None,
+                "output": None,
+                "completed_at": now,
+            },
+        )
+        if updated != 1:
+            current = self.executions.get_by_agent(
+                organization_id, agent_id, execution_id
+            )
+            if current is None:
+                raise NotFoundError("Agent execution not found")
+            raise ConflictError("Execution cannot be cancelled in its current status")
+        current = self.executions.get_by_agent(organization_id, agent_id, execution_id)
+        if current is None:
+            raise NotFoundError("Agent execution not found")
+        return _to_run_result(current)
+
     def _claim_running_execution(
         self,
         *,
@@ -255,6 +308,32 @@ class AgentExecutionService:
         self.session.refresh(execution)
         return execution
 
+    def _ensure_not_cancelled(self, execution: AgentExecution) -> None:
+        status = self.executions.probe_status(
+            execution.organization_id,
+            execution.agent_id,
+            execution.id,
+        )
+        if status == AgentExecutionStatus.CANCELLED:
+            raise ExecutionCancelled()
+
+    def _cancelled_result(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+    ) -> AgentExecutionResult:
+        self.session.expire_all()
+        current = self.executions.get_by_agent(
+            organization_id, agent_id, execution_id
+        )
+        if current is None:
+            raise NotFoundError("Agent execution not found")
+        if AgentExecutionStatus(current.status) != AgentExecutionStatus.CANCELLED:
+            raise ConflictError("Execution is no longer running")
+        return _to_run_result(current)
+
     def _run_provider_loop(
         self,
         provider: AIProvider,
@@ -269,6 +348,7 @@ class AgentExecutionService:
         tool_results: list[ToolResult] = []
 
         for round_index in range(self.max_tool_iterations + 1):
+            self._ensure_not_cancelled(execution)
             generated = provider.generate(
                 AIGenerateRequest(
                     system_instructions=system_instructions,
@@ -277,8 +357,10 @@ class AgentExecutionService:
                     history=history,
                 )
             )
+            self._ensure_not_cancelled(execution)
             execution.provider = generated.provider
             execution.model = generated.model
+            self.session.flush()
             if not generated.tool_calls:
                 break
             if round_index >= self.max_tool_iterations:
@@ -300,8 +382,10 @@ class AgentExecutionService:
                 execution_id=execution.id,
             )
             for call in generated.tool_calls:
+                self._ensure_not_cancelled(execution)
                 result = self.tool_executor.execute(call, context)
                 tool_results.append(result)
+                self.session.flush()
                 history.append(
                     ConversationMessage(
                         role="tool",
@@ -310,12 +394,14 @@ class AgentExecutionService:
                         content=result.model_dump_json(),
                     )
                 )
+                self._ensure_not_cancelled(execution)
                 if not result.success:
                     raise ExecutionFailure(
                         result.error or "Tool execution failed",
                         result.failure_category
                         or ExecutionFailureCategory.TOOL_ERROR,
                     )
+        self._ensure_not_cancelled(execution)
         if generated is None:
             raise ExecutionFailure(
                 "AI provider request failed",
@@ -329,28 +415,39 @@ class AgentExecutionService:
         generated: AIGenerateResult,
         tool_results: list[ToolResult],
     ) -> AgentExecutionResult:
-        execution.status = AgentExecutionStatus.COMPLETED
-        execution.error = None
-        execution.failure_category = None
-        execution.provider = generated.provider
-        execution.model = generated.model
-        execution.output = {
-            "text": generated.output_text,
-            "usage": generated.usage.model_dump() if generated.usage else None,
-            "tool_results": [item.model_dump(mode="json") for item in tool_results],
-        }
-        execution.completed_at = datetime.now(UTC)
-        self.session.commit()
-        self.session.refresh(execution)
-
-        return AgentExecutionResult(
-            execution_id=execution.id,
-            status=AgentExecutionStatus.COMPLETED,
-            output=generated.output_text,
-            provider=generated.provider,
-            model=generated.model,
-            usage=generated.usage,
+        now = datetime.now(UTC)
+        updated = self.executions.finalize_running(
+            execution.organization_id,
+            execution.agent_id,
+            execution.id,
+            {
+                "status": AgentExecutionStatus.COMPLETED,
+                "error": None,
+                "failure_category": None,
+                "provider": generated.provider,
+                "model": generated.model,
+                "output": {
+                    "text": generated.output_text,
+                    "usage": generated.usage.model_dump() if generated.usage else None,
+                    "tool_results": [
+                        item.model_dump(mode="json") for item in tool_results
+                    ],
+                },
+                "completed_at": now,
+            },
         )
+        if updated != 1:
+            return self._cancelled_result(
+                organization_id=execution.organization_id,
+                agent_id=execution.agent_id,
+                execution_id=execution.id,
+            )
+        current = self.executions.get_by_agent(
+            execution.organization_id, execution.agent_id, execution.id
+        )
+        if current is None:
+            raise NotFoundError("Agent execution not found")
+        return _to_run_result(current)
 
     def _fail(
         self,
@@ -361,20 +458,35 @@ class AgentExecutionService:
         configured: bool,
     ) -> AgentExecutionResult:
         error = sanitize_provider_error(error)
-        execution.status = AgentExecutionStatus.FAILED
-        execution.error = error
-        execution.failure_category = category
-        execution.output = None
-        execution.completed_at = datetime.now(UTC)
-        try:
-            self.session.commit()
-            self.session.refresh(execution)
-        except Exception:
-            logger.exception(
-                "Failed to persist terminal execution state execution_id=%s",
-                execution.id,
+        now = datetime.now(UTC)
+        updated = self.executions.finalize_running(
+            execution.organization_id,
+            execution.agent_id,
+            execution.id,
+            {
+                "status": AgentExecutionStatus.FAILED,
+                "error": error,
+                "failure_category": category,
+                "output": None,
+                "completed_at": now,
+            },
+        )
+        if updated != 1:
+            current = self.executions.get_by_agent(
+                execution.organization_id, execution.agent_id, execution.id
             )
-
+            if (
+                current is not None
+                and AgentExecutionStatus(current.status)
+                == AgentExecutionStatus.CANCELLED
+            ):
+                return _to_run_result(current)
+        else:
+            current = self.executions.get_by_agent(
+                execution.organization_id, execution.agent_id, execution.id
+            )
+            if current is not None:
+                execution = current
         result = AgentExecutionResult(
             execution_id=execution.id,
             status=AgentExecutionStatus.FAILED,
@@ -503,6 +615,19 @@ def _usage_from_output(output: dict[str, Any] | None) -> TokenUsage | None:
         return TokenUsage.model_validate(allowed)
     except ValueError:
         return None
+
+
+def _to_run_result(execution: AgentExecution) -> AgentExecutionResult:
+    output = execution.output if isinstance(execution.output, dict) else None
+    return AgentExecutionResult(
+        execution_id=execution.id,
+        status=AgentExecutionStatus(execution.status),
+        output=_json_text(output, "text") if output is not None else None,
+        provider=execution.provider,
+        model=execution.model,
+        usage=_usage_from_output(output),
+        error=execution.error,
+    )
 
 
 def _to_list_item(execution: AgentExecution) -> AgentExecutionListItem:

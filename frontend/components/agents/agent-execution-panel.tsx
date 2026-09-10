@@ -58,22 +58,46 @@ export function executionErrorMessage(cause: unknown) {
   return "The agent could not be run. Check your connection and try again.";
 }
 
+export function cancellationErrorMessage(cause: unknown) {
+  if (cause instanceof ApiError) {
+    if (cause.status === 401) {
+      return "Your session has expired. Sign in again to cancel this execution.";
+    }
+    if (cause.status === 403) {
+      return "You do not have permission to cancel this execution.";
+    }
+    if (cause.status === 404) {
+      return "This execution could not be found.";
+    }
+    if (cause.status === 409) {
+      return "This execution can no longer be cancelled.";
+    }
+  }
+  return "The execution could not be cancelled. Please try again.";
+}
+
 type AgentExecutionPanelProps = {
   agentStatus: AgentStatus;
   isBusy: boolean;
   isRunning: boolean;
+  isCancelling: boolean;
+  canCancel: boolean;
   result: AgentExecutionResult | null;
   error: string | null;
   onRun: (input: string) => void;
+  onCancel: () => void;
 };
 
 export function AgentExecutionPanel({
   agentStatus,
   isBusy,
   isRunning,
+  isCancelling,
+  canCancel,
   result,
   error,
   onRun,
+  onCancel,
 }: AgentExecutionPanelProps) {
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
@@ -81,12 +105,15 @@ export function AgentExecutionPanel({
   const canExecute = agentStatus === "READY" || agentStatus === "ACTIVE";
   const unavailable = unavailableCopy[agentStatus];
   const trimmed = input.trim();
-  const controlsLocked = isBusy || isRunning;
+  const awaitingProvider = isRunning && result?.status !== "CANCELLED";
+  const controlsLocked = isBusy || awaitingProvider;
   const canRetry =
     canExecute &&
     !controlsLocked &&
     Boolean(trimmed) &&
-    (Boolean(error) || result?.status === "FAILED");
+    (Boolean(error) ||
+      result?.status === "FAILED" ||
+      result?.status === "CANCELLED");
 
   function submitInput() {
     if (!canExecute || controlsLocked) return;
@@ -147,7 +174,7 @@ export function AgentExecutionPanel({
                   setInputError(null);
                 }}
                 maxLength={8000}
-                disabled={isRunning}
+                disabled={awaitingProvider}
                 placeholder="Describe the task for this agent to complete."
                 aria-invalid={inputError ? true : undefined}
                 aria-describedby={
@@ -161,10 +188,10 @@ export function AgentExecutionPanel({
               <Button
                 type="submit"
                 disabled={controlsLocked || !trimmed}
-                aria-busy={isRunning || undefined}
+                aria-busy={awaitingProvider || undefined}
               >
                 <Play aria-hidden="true" />
-                {isRunning ? "Running…" : "Run agent"}
+                {awaitingProvider ? "Running…" : "Run agent"}
               </Button>
               {canRetry ? (
                 <Button
@@ -175,11 +202,22 @@ export function AgentExecutionPanel({
                   Try again
                 </Button>
               ) : null}
+              {canCancel ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isCancelling}
+                  aria-busy={isCancelling || undefined}
+                  onClick={() => onCancel()}
+                >
+                  {isCancelling ? "Cancelling…" : "Cancel execution"}
+                </Button>
+              ) : null}
             </div>
           </form>
         )}
 
-        {isRunning ? (
+        {awaitingProvider ? (
           <div role="status" aria-live="polite" aria-busy="true" className="grid gap-1">
             <p className="text-sm font-medium">Running agent…</p>
             <p className="text-muted-foreground text-sm leading-6">
@@ -190,15 +228,15 @@ export function AgentExecutionPanel({
           </div>
         ) : null}
 
-        {!isRunning && error ? (
+        {error ? (
           <p className="text-danger-text text-sm" role="alert">
             {error}
           </p>
         ) : null}
 
-        {!isRunning && result ? (
+        {!awaitingProvider && result ? (
           <ExecutionResult result={result} />
-        ) : !isRunning && canExecute ? (
+        ) : !awaitingProvider && canExecute ? (
           <p className="text-muted-foreground text-sm leading-6">
             The latest result from this page session will appear here. Recorded
             runs are listed in Execution history.
@@ -275,6 +313,11 @@ function ExecutionResult({ result }: { result: AgentExecutionResult }) {
       ) : null}
       {result.status === "FAILED" && result.error ? (
         <p className="text-danger-text text-sm" role="alert">
+          {result.error}
+        </p>
+      ) : null}
+      {result.status === "CANCELLED" && result.error ? (
+        <p className="text-muted-foreground text-sm" role="status">
           {result.error}
         </p>
       ) : null}

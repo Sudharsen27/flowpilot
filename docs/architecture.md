@@ -81,7 +81,7 @@ This slice produces a structured AI response and an audit row. Tool calling is d
 ### Models
 
 - **Agent** — tenant-owned (`organization_id`). Types: `SALES`, `SUPPORT`, `OPERATIONS`, `COMMUNICATION`. Statuses: `DRAFT`, `READY`, `ACTIVE`, `PAUSED`, `NEEDS_ATTENTION`. Only `READY` and `ACTIVE` may execute.
-- **AgentExecution** — tenant-owned attempt: status (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED`), JSON input/output, provider/model, timestamps, optional initiating user.
+- **AgentExecution** — tenant-owned attempt: status (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED` / `CANCELLED`), JSON input/output, provider/model, timestamps, optional initiating user. `POST .../executions` commits `RUNNING`; `POST .../run` executes; `POST .../cancel` CAS-transitions `RUNNING` → `CANCELLED`. In-flight OpenAI HTTP calls are not aborted; the run loop stops at the next cooperative boundary.
 
 Tenant isolation: repositories always query by `organization_id` from the authenticated membership JWT, never from the client body.
 
@@ -104,13 +104,16 @@ Agent API
 ├── POST   /api/v1/agents/{id}/ready       DRAFT → READY
 ├── POST   /api/v1/agents/{id}/activate    READY or PAUSED → ACTIVE
 ├── POST   /api/v1/agents/{id}/pause       ACTIVE → PAUSED
-├── POST   /api/v1/agents/{id}/execute     Run (READY or ACTIVE)
+├── POST   /api/v1/agents/{id}/execute     Compatibility wrapper (start + run)
+├── POST   /api/v1/agents/{id}/executions  Start (commit RUNNING)
+├── POST   /api/v1/agents/{id}/executions/{execution_id}/run  Run a RUNNING execution
+├── POST   /api/v1/agents/{id}/executions/{execution_id}/cancel  RUNNING → CANCELLED
 ├── GET    /api/v1/agents/{id}/executions  List executions (paginated summaries)
 ├── GET    /api/v1/agents/{id}/executions/{execution_id}  Execution detail
 └── GET    /api/v1/agents/{id}/executions/{execution_id}/tool-invocations  Tool invocation audit
 ```
 
-Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, execute eligible agents, and read execution and tool-invocation history, but cannot change configuration or status.
+Tenant: organization is always the authenticated membership. Cross-tenant ids return 404. `OWNER` and `ADMIN` may create, update, and change lifecycle. `MEMBER` may list, get, execute eligible agents, cancel running executions, and read execution and tool-invocation history, but cannot change configuration or status.
 
 PATCH does not accept `status`; lifecycle endpoints enforce allowed transitions. `NEEDS_ATTENTION` cannot be cleared by PATCH or those endpoints. Execution remains limited to `READY` and `ACTIVE`.
 

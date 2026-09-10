@@ -11,6 +11,7 @@ import { AgentConfigurationSidebar } from "@/components/agents/agent-configurati
 import { AgentExecutionHistory } from "@/components/agents/agent-execution-history";
 import {
   AgentExecutionPanel,
+  cancellationErrorMessage,
   executionErrorMessage,
 } from "@/components/agents/agent-execution-panel";
 import { AgentIdentityForm } from "@/components/agents/agent-identity-form";
@@ -26,6 +27,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import {
   activateAgent,
+  cancelAgentExecution,
   createAgentExecution,
   getAgent,
   markAgentReady,
@@ -71,12 +73,17 @@ export default function AgentDetailPage() {
     null,
   );
   const [isExecuting, setIsExecuting] = useState(false);
+  const [activeExecutionId, setActiveExecutionId] = useState<string | null>(
+    null,
+  );
+  const [isCancelling, setIsCancelling] = useState(false);
   const [executionResult, setExecutionResult] =
     useState<AgentExecutionResult | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const lifecyclePendingRef = useRef(false);
   const executionPendingRef = useRef(false);
+  const cancelPendingRef = useRef(false);
   const canEdit =
     session?.membership.role === "OWNER" ||
     session?.membership.role === "ADMIN";
@@ -221,25 +228,56 @@ export default function AgentDetailPage() {
       return;
     if (agent.status !== "READY" && agent.status !== "ACTIVE") return;
     executionPendingRef.current = true;
+    cancelPendingRef.current = false;
     setExecutionError(null);
     setIsExecuting(true);
+    setActiveExecutionId(null);
+    setIsCancelling(false);
     try {
       const started = await createAgentExecution(agent.id, { input });
+      setActiveExecutionId(started.execution_id);
       setHistoryRefreshKey((key) => key + 1);
       const result = await runAgentExecution(agent.id, started.execution_id);
       setExecutionResult(result);
       setHistoryRefreshKey((key) => key + 1);
     } catch (cause) {
-      setExecutionError(executionErrorMessage(cause));
       if (
+        cancelPendingRef.current &&
         cause instanceof ApiError &&
-        (cause.status === 502 || cause.status === 503)
+        cause.status === 409
       ) {
         setHistoryRefreshKey((key) => key + 1);
+      } else {
+        setExecutionError(executionErrorMessage(cause));
+        if (
+          cause instanceof ApiError &&
+          (cause.status === 502 || cause.status === 503)
+        ) {
+          setHistoryRefreshKey((key) => key + 1);
+        }
       }
     } finally {
       executionPendingRef.current = false;
       setIsExecuting(false);
+      setActiveExecutionId(null);
+      setIsCancelling(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!agent || !activeExecutionId || cancelPendingRef.current) return;
+    cancelPendingRef.current = true;
+    setIsCancelling(true);
+    setExecutionError(null);
+    try {
+      const result = await cancelAgentExecution(agent.id, activeExecutionId);
+      setExecutionResult(result);
+      setHistoryRefreshKey((key) => key + 1);
+    } catch (cause) {
+      cancelPendingRef.current = false;
+      setExecutionError(cancellationErrorMessage(cause));
+    } finally {
+      setIsCancelling(false);
     }
   }
 
@@ -410,9 +448,16 @@ export default function AgentDetailPage() {
             agentStatus={agent.status}
             isBusy={isSaving || isLifecyclePending}
             isRunning={isExecuting}
+            isCancelling={isCancelling}
+            canCancel={
+              Boolean(activeExecutionId) &&
+              isExecuting &&
+              executionResult?.status !== "CANCELLED"
+            }
             result={executionResult}
             error={executionError}
             onRun={handleExecute}
+            onCancel={() => void handleCancel()}
           />
           <AgentExecutionHistory
             key={historyRefreshKey}

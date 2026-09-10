@@ -30,6 +30,7 @@ class AgentExecutionStatus(StrEnum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class ExecutionFailureCategory(StrEnum):
@@ -52,7 +53,7 @@ class AgentExecution(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint(
-            "status IN ('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')",
+            "status IN ('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED')",
             name="ck_agent_executions_status",
         ),
         CheckConstraint(

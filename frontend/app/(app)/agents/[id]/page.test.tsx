@@ -6,6 +6,7 @@ import AgentDetailPage from "@/app/(app)/agents/[id]/page";
 import { ApiError } from "@/lib/api/client";
 import {
   activateAgent,
+  cancelAgentExecution,
   createAgentExecution,
   getAgent,
   getAgentExecution,
@@ -48,6 +49,7 @@ vi.mock("@/lib/api/agents", () => ({
   pauseAgent: vi.fn(),
   createAgentExecution: vi.fn(),
   runAgentExecution: vi.fn(),
+  cancelAgentExecution: vi.fn(),
   listAgentExecutions: vi.fn(),
   getAgentExecution: vi.fn(),
   listToolInvocations: vi.fn(),
@@ -71,6 +73,7 @@ const activateAgentMock = vi.mocked(activateAgent);
 const pauseAgentMock = vi.mocked(pauseAgent);
 const createAgentExecutionMock = vi.mocked(createAgentExecution);
 const runAgentExecutionMock = vi.mocked(runAgentExecution);
+const cancelAgentExecutionMock = vi.mocked(cancelAgentExecution);
 const listAgentExecutionsMock = vi.mocked(listAgentExecutions);
 const getAgentExecutionMock = vi.mocked(getAgentExecution);
 const listToolInvocationsMock = vi.mocked(listToolInvocations);
@@ -138,6 +141,7 @@ describe("Agent Detail page", () => {
     pauseAgentMock.mockReset();
     createAgentExecutionMock.mockReset();
     runAgentExecutionMock.mockReset();
+    cancelAgentExecutionMock.mockReset();
     listAgentExecutionsMock.mockReset();
     getAgentExecutionMock.mockReset();
     listToolInvocationsMock.mockReset();
@@ -581,6 +585,119 @@ describe("Agent Detail page", () => {
     resolveExecution(executionResult);
     expect(await screen.findByText("This lead is qualified.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Run agent" })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Cancel execution" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("cancels a running execution through the API", async () => {
+    const user = userEvent.setup();
+    let resolveRun: (value: AgentExecutionResult) => void = () => undefined;
+    let resolveCancel: (value: AgentExecutionResult) => void = () => undefined;
+    getAgentMock.mockResolvedValue(agent);
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRun = resolve;
+      }),
+    );
+    cancelAgentExecutionMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCancel = resolve;
+      }),
+    );
+    render(<AgentDetailPage />);
+    await user.type(
+      await screen.findByRole("textbox", { name: /Execution input/ }),
+      "Qualify this lead",
+    );
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    const cancel = await screen.findByRole("button", {
+      name: "Cancel execution",
+    });
+    expect(cancel).toBeEnabled();
+    await user.click(cancel);
+    expect(await screen.findByRole("button", { name: "Cancelling…" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Cancelling…" }));
+    expect(cancelAgentExecutionMock).toHaveBeenCalledTimes(1);
+    expect(cancelAgentExecutionMock).toHaveBeenCalledWith(
+      "agent-real-1",
+      "exec-real-1",
+    );
+    resolveCancel({
+      execution_id: "exec-real-1",
+      status: "CANCELLED",
+      output: null,
+      provider: null,
+      model: null,
+      usage: null,
+      error: "Execution was cancelled.",
+    });
+    expect(await screen.findByText("Cancelled")).toBeVisible();
+    expect(screen.getByText("Execution was cancelled.")).toBeVisible();
+    resolveRun({
+      execution_id: "exec-real-1",
+      status: "CANCELLED",
+      output: null,
+      provider: null,
+      model: null,
+      usage: null,
+      error: "Execution was cancelled.",
+    });
+    expect(
+      screen.queryByRole("button", { name: "Cancel execution" }),
+    ).not.toBeInTheDocument();
+    expect(listAgentExecutionsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows a conflict message when cancellation is no longer allowed", async () => {
+    const user = userEvent.setup();
+    let resolveRun: (value: AgentExecutionResult) => void = () => undefined;
+    getAgentMock.mockResolvedValue(agent);
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRun = resolve;
+      }),
+    );
+    cancelAgentExecutionMock.mockRejectedValue(
+      new ApiError("Request failed: 409", 409),
+    );
+    render(<AgentDetailPage />);
+    await user.type(
+      await screen.findByRole("textbox", { name: /Execution input/ }),
+      "Qualify this lead",
+    );
+    await user.click(screen.getByRole("button", { name: "Run agent" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Cancel execution" }),
+    );
+    expect(
+      await screen.findByText("This execution can no longer be cancelled."),
+    ).toBeVisible();
+    expect(cancelAgentExecutionMock).toHaveBeenCalledTimes(1);
+    resolveRun(executionResult);
+    expect(await screen.findByText("This lead is qualified.")).toBeVisible();
+  });
+
+  it("renders cancelled history without a failure category", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    listAgentExecutionsMock.mockResolvedValue({
+      items: [
+        historyItem("exec-cancelled-1", {
+          status: "CANCELLED",
+          duration_ms: 1800,
+          failure_category: null,
+          error_preview: "Execution was cancelled.",
+        }),
+      ],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    render(<AgentDetailPage />);
+    expect(await screen.findByText("Cancelled · 1.8s")).toBeVisible();
+    expect(screen.queryByText("Provider error")).not.toBeInTheDocument();
   });
 
   it("submits only once when Enter is pressed repeatedly on Run agent", async () => {

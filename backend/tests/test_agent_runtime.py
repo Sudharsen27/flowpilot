@@ -1,5 +1,6 @@
 import threading
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -840,3 +841,337 @@ def test_execute_wrapper_creates_one_execution(
     )
     assert result.status == AgentExecutionStatus.COMPLETED
     assert db.query(AgentExecution).count() == 1
+
+
+def test_start_then_cancel_before_run(
+    db: Session, client: TestClient, fake_provider: FakeAIProvider
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    service = AgentExecutionService(db, fake_provider)
+    started = service.start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Hello"
+    )
+    cancelled = service.cancel_execution(
+        organization_id=org_id,
+        agent_id=agent.id,
+        execution_id=started.execution_id,
+    )
+    assert cancelled.status == AgentExecutionStatus.CANCELLED
+    assert cancelled.error == "Execution was cancelled."
+    execution = db.get(AgentExecution, started.execution_id)
+    assert execution is not None
+    assert execution.status == AgentExecutionStatus.CANCELLED
+    assert execution.completed_at is not None
+    assert execution.failure_category is None
+    with pytest.raises(ConflictError):
+        service.run_execution(
+            organization_id=org_id,
+            agent_id=agent.id,
+            execution_id=started.execution_id,
+        )
+    assert fake_provider.calls == []
+
+
+def test_cancel_completed_and_failed_and_duplicate(
+    db: Session, client: TestClient, fake_provider: FakeAIProvider
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    service = AgentExecutionService(db, fake_provider)
+    started = service.start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Hello"
+    )
+    service.run_execution(
+        organization_id=org_id, agent_id=agent.id, execution_id=started.execution_id
+    )
+    with pytest.raises(ConflictError):
+        service.cancel_execution(
+            organization_id=org_id,
+            agent_id=agent.id,
+            execution_id=started.execution_id,
+        )
+    failed_start = service.start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Hello"
+    )
+    with pytest.raises(ProviderError):
+        AgentExecutionService(
+            db, FakeAIProvider(fail=ProviderError("nope"))
+        ).run_execution(
+            organization_id=org_id,
+            agent_id=agent.id,
+            execution_id=failed_start.execution_id,
+        )
+    with pytest.raises(ConflictError):
+        service.cancel_execution(
+            organization_id=org_id,
+            agent_id=agent.id,
+            execution_id=failed_start.execution_id,
+        )
+    running = service.start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Hello"
+    )
+    service.cancel_execution(
+        organization_id=org_id,
+        agent_id=agent.id,
+        execution_id=running.execution_id,
+    )
+    with pytest.raises(ConflictError):
+        service.cancel_execution(
+            organization_id=org_id,
+            agent_id=agent.id,
+            execution_id=running.execution_id,
+        )
+
+
+def test_cancel_missing_wrong_agent_and_cross_tenant(
+    db: Session, api_client: TestClient, fake_provider: FakeAIProvider
+) -> None:
+    first = _auth(api_client, email="a@example.com", organization_name="Alpha")
+    second = _auth(api_client, email="b@example.com", organization_name="Beta")
+    agent = _create_agent(db, first["organization"]["id"])
+    other = _create_agent(db, first["organization"]["id"], name="Other")
+    headers = _headers(first["access_token"])
+    started = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions",
+        json={"input": "Hello"},
+        headers=headers,
+    ).json()
+    missing = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions/missing/cancel",
+        headers=headers,
+    )
+    assert missing.status_code == 404
+    wrong_agent = api_client.post(
+        f"/api/v1/agents/{other.id}/executions/{started['execution_id']}/cancel",
+        headers=headers,
+    )
+    assert wrong_agent.status_code == 404
+    cross = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/cancel",
+        headers=_headers(second["access_token"]),
+    )
+    assert cross.status_code == 404
+    unauth = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/cancel"
+    )
+    assert unauth.status_code == 401
+    cancelled = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/cancel",
+        headers=headers,
+    )
+    assert cancelled.status_code == 200
+    body = cancelled.json()
+    assert body["status"] == "CANCELLED"
+    assert "claimed" not in str(body)
+    listed = api_client.get(
+        f"/api/v1/agents/{agent.id}/executions",
+        headers=headers,
+    ).json()
+    item = listed["items"][0]
+    assert item["status"] == "CANCELLED"
+    assert item["failure_category"] is None
+    assert item["duration_ms"] is not None
+    assert fake_provider.calls == []
+
+
+def test_cancel_during_provider_call_does_not_complete(
+    db: Session, client: TestClient
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    started = AgentExecutionService(db, FakeAIProvider()).start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Hello"
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingProvider(FakeAIProvider):
+        def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
+            entered.set()
+            assert release.wait(timeout=5)
+            return super().generate(request)
+
+    blocking = BlockingProvider()
+    outcome: list[object] = []
+
+    def runner() -> None:
+        from tests.conftest import TestingSessionLocal
+
+        session = TestingSessionLocal()
+        try:
+            outcome.append(
+                AgentExecutionService(session, blocking).run_execution(
+                    organization_id=org_id,
+                    agent_id=agent.id,
+                    execution_id=started.execution_id,
+                )
+            )
+        except Exception as exc:
+            outcome.append(exc)
+        finally:
+            session.close()
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    assert entered.wait(timeout=5)
+    cancelled = AgentExecutionService(db).cancel_execution(
+        organization_id=org_id,
+        agent_id=agent.id,
+        execution_id=started.execution_id,
+    )
+    assert cancelled.status == AgentExecutionStatus.CANCELLED
+    release.set()
+    thread.join(timeout=5)
+    assert len(outcome) == 1
+    result = outcome[0]
+    assert getattr(result, "status", None) == AgentExecutionStatus.CANCELLED
+    execution = db.get(AgentExecution, started.execution_id)
+    assert execution is not None
+    assert execution.status == AgentExecutionStatus.CANCELLED
+    assert execution.status != AgentExecutionStatus.COMPLETED
+    assert len(blocking.calls) == 1
+
+
+def test_cancel_between_tool_iterations(db: Session, client: TestClient) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    started = AgentExecutionService(
+        db, FakeAIProvider(), registry=registry
+    ).start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Use echo"
+    )
+    entered = threading.Event()
+    release = threading.Event()
+    first_tool = AIGenerateResult(
+        output_text="",
+        provider="fake",
+        model="fake-model",
+        tool_calls=[
+            ToolCall(id="call-1", name="echo", arguments={"message": "hello"})
+        ],
+    )
+    second = AIGenerateResult(
+        output_text="should not complete",
+        provider="fake",
+        model="fake-model",
+    )
+
+    class GatedProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
+            self.calls += 1
+            if self.calls == 1:
+                return first_tool
+            entered.set()
+            assert release.wait(timeout=5)
+            return second
+
+    provider = GatedProvider()
+    outcome: list[object] = []
+
+    def runner() -> None:
+        from tests.conftest import TestingSessionLocal
+
+        session = TestingSessionLocal()
+        try:
+            outcome.append(
+                AgentExecutionService(
+                    session, provider, registry=registry
+                ).run_execution(
+                    organization_id=org_id,
+                    agent_id=agent.id,
+                    execution_id=started.execution_id,
+                )
+            )
+        except Exception as exc:
+            outcome.append(exc)
+        finally:
+            session.close()
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    assert entered.wait(timeout=5)
+    AgentExecutionService(db).cancel_execution(
+        organization_id=org_id,
+        agent_id=agent.id,
+        execution_id=started.execution_id,
+    )
+    release.set()
+    thread.join(timeout=5)
+    result = outcome[0]
+    assert getattr(result, "status", None) == AgentExecutionStatus.CANCELLED
+    execution = db.get(AgentExecution, started.execution_id)
+    assert execution is not None
+    assert execution.status == AgentExecutionStatus.CANCELLED
+    assert execution.status != AgentExecutionStatus.COMPLETED
+    assert provider.calls == 2
+
+
+def test_concurrent_duplicate_cancel(
+    db: Session, client: TestClient, fake_provider: FakeAIProvider
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _create_agent(db, org_id)
+    started = AgentExecutionService(db, fake_provider).start_execution(
+        organization_id=org_id, agent_id=agent.id, user_input="Hello"
+    )
+    from tests.conftest import TestingSessionLocal
+
+    payload = {
+        "status": AgentExecutionStatus.CANCELLED,
+        "error": "Execution was cancelled.",
+        "failure_category": None,
+        "output": None,
+        "completed_at": datetime.now(UTC),
+    }
+    first_session = TestingSessionLocal()
+    second_session = TestingSessionLocal()
+    try:
+        first_rows = AgentExecutionService(first_session).executions.finalize_running(
+            org_id, agent.id, started.execution_id, payload
+        )
+        second_rows = AgentExecutionService(second_session).executions.finalize_running(
+            org_id, agent.id, started.execution_id, payload
+        )
+    finally:
+        first_session.close()
+        second_session.close()
+    assert first_rows == 1
+    assert second_rows == 0
+    db.expire_all()
+    execution = db.get(AgentExecution, started.execution_id)
+    assert execution is not None
+    assert execution.status == AgentExecutionStatus.CANCELLED
+
+
+def test_cancel_completed_returns_http_409(
+    api_client: TestClient, db: Session
+) -> None:
+    created = _auth(api_client)
+    agent = _create_agent(db, created["organization"]["id"])
+    headers = _headers(created["access_token"])
+    started = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions",
+        json={"input": "Hello"},
+        headers=headers,
+    ).json()
+    run = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/run",
+        headers=headers,
+    )
+    assert run.status_code == 200
+    cancelled = api_client.post(
+        f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/cancel",
+        headers=headers,
+    )
+    assert cancelled.status_code == 409

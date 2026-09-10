@@ -186,6 +186,12 @@ export async function runAgentExecution(agentId: string, executionId: string) {
   }
 }
 
+export function cancelAgentExecution(agentId: string, executionId: string) {
+  return apiPost<AgentExecutionResult>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/executions/${encodeURIComponent(executionId)}/cancel`,
+  );
+}
+
 export function listAgentExecutions(
   agentId: string,
   params: AgentHistoryPageParams = {},
