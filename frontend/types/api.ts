@@ -222,6 +222,7 @@ export type Lead = {
   created_at: string;
   updated_at: string;
   latest_qualification?: LeadQualificationSummary | null;
+  latest_response_draft?: LeadResponseDraftSummary | null;
 };
 
 export type LeadAiQualification =
@@ -281,6 +282,33 @@ export type LeadQualificationResult = {
 };
 
 export type LeadQualifyRequest = {
+  enquiry: string;
+};
+
+export type LeadResponseDraftSummary = {
+  id: string;
+  status: "COMPLETED" | "FAILED";
+  created_at: string;
+};
+
+export type LeadResponseDraftResult = {
+  id: string;
+  lead_id: string;
+  status: "COMPLETED" | "FAILED";
+  enquiry: string;
+  response: string | null;
+  error: string | null;
+  failure_category: ExecutionFailureCategory | null;
+  provider: string | null;
+  model: string | null;
+  usage: AgentTokenUsage | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  duration_ms: number | null;
+};
+
+export type LeadRespondRequest = {
   enquiry: string;
 };
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createLead, getLead, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
+import { createLead, generateLeadResponseDraft, getLead, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
 
 describe("Lead API client", () => {
   beforeEach(() => {
@@ -118,6 +118,25 @@ describe("Lead API client", () => {
     await qualifyLead("lead/1", { enquiry: "We want a demo" });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/api/v1/leads/lead%2F1/qualify",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ enquiry: "We want a demo" }),
+      }),
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).not.toHaveProperty("organization_id");
+  });
+
+  it("posts a response draft to an encoded lead id without organization_id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "d-1", status: "COMPLETED" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await generateLeadResponseDraft("lead/1", { enquiry: "We want a demo" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/leads/lead%2F1/respond",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ enquiry: "We want a demo" }),

@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
+import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadOverview } from "@/components/leads/lead-overview";
 import { LeadsTable } from "@/components/leads/leads-table";
@@ -41,6 +42,9 @@ export default function LeadsPage() {
   const [qualifying, setQualifying] = useState<Lead | null>(null);
   const [qualifyOpen, setQualifyOpen] = useState(false);
   const [qualifyKey, setQualifyKey] = useState(0);
+  const [drafting, setDrafting] = useState<Lead | null>(null);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftKey, setDraftKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +103,7 @@ export default function LeadsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Leads"
-        description="Capture and manage enquiries for this organization. AI qualification analyzes an enquiry without changing CRM status."
+        description="Capture and manage enquiries for this organization. AI can analyze an enquiry and draft a reply without sending it or changing CRM status."
         primaryAction={
           <Button
             type="button"
@@ -134,6 +138,19 @@ export default function LeadsPage() {
         onOpenChange={(open) => {
           setQualifyOpen(open);
           if (!open) setQualifying(null);
+        }}
+        onCompleted={() => {
+          beginFetch();
+          setRetryKey((value) => value + 1);
+        }}
+      />
+      <DraftLeadResponseDialog
+        key={draftKey}
+        open={draftOpen}
+        lead={drafting}
+        onOpenChange={(open) => {
+          setDraftOpen(open);
+          if (!open) setDrafting(null);
         }}
         onCompleted={() => {
           beginFetch();
@@ -209,6 +226,11 @@ export default function LeadsPage() {
                 setQualifyKey((value) => value + 1);
                 setQualifyOpen(true);
               }}
+              onDraftResponse={(lead) => {
+                setDrafting(lead);
+                setDraftKey((value) => value + 1);
+                setDraftOpen(true);
+              }}
             />
             {total > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -251,6 +273,18 @@ export default function LeadsPage() {
           description="AI qualification is stored as analysis history. It is not the same as CRM pipeline status."
         />
         <QualificationReadiness />
+      </section>
+      <section className="grid gap-5">
+        <SectionHeader
+          title="AI response drafts"
+          description="Generated replies are drafts only. Sending email or chat is not implemented."
+        />
+        <StatePanel
+          kind="information"
+          className="max-w-none"
+          title="Nothing has been sent"
+          description="Use Draft response on a lead to generate a customer-facing reply. The draft is stored for review. FlowPilot does not send messages in this version."
+        />
       </section>
     </div>
   );

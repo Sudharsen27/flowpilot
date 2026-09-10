@@ -164,7 +164,8 @@ Lead API
 ├── GET    /api/v1/leads                 List (q, status, source, limit, offset)
 ├── GET    /api/v1/leads/{lead_id}
 ├── PATCH  /api/v1/leads/{lead_id}
-└── POST   /api/v1/leads/{lead_id}/qualify  AI enquiry analysis (does not mutate CRM status)
+├── POST   /api/v1/leads/{lead_id}/qualify  AI enquiry analysis (does not mutate CRM status)
+└── POST   /api/v1/leads/{lead_id}/respond  AI customer-response draft (does not send)
 ```
 
 Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
@@ -184,6 +185,14 @@ The provider is invoked through `AIProvider.generate` with a JSON Schema `respon
 AI qualification (`QUALIFIED` / `UNQUALIFIED` / `NEEDS_MORE_INFORMATION`) is **not** CRM `Lead.status`. The CRM row is not updated. Analysis is stored in `lead_qualifications` (validated result JSON, provider/model, usage, duration, failure category). This is not an `AgentExecution`; agent history stays agent-scoped. No tools run for this endpoint.
 
 `confidence` is a model self-report in `[0, 1]`, not a calibrated probability. List/detail include `latest_qualification` as a summary of the newest analysis row.
+
+## AI lead response drafts (Phase 4C)
+
+`POST /api/v1/leads/{lead_id}/respond` with `{ enquiry }` generates a customer-facing reply **draft**. Nothing is sent. `Lead.status` is not updated. No tools run. This is not an `AgentExecution`.
+
+`LeadResponseDraftService` calls `AIProvider.generate` with a JSON Schema `{ "response": string }`. Failed and successful attempts are stored in `lead_response_drafts`. Retry creates a new row. List/detail include `latest_response_draft` for the newest **completed** draft.
+
+If a completed `LeadQualification` exists for the same org/lead, a small validated analysis snapshot is passed as untrusted background context. The draft must not expose internal qualification fields to the customer.
 
 ## LLM providers
 
@@ -246,3 +255,7 @@ Organization-owned `Lead` model and CRUD APIs, connected to the existing Leads s
 ## Phase 4B (AI lead understanding)
 
 Structured enquiry analysis via `AIProvider` JSON Schema output, stored on `lead_qualifications`. Does not mutate `Lead.status` or run tools.
+
+## Phase 4C (AI lead response drafting)
+
+Structured customer-facing reply drafts via `AIProvider` JSON Schema `{ response }`, stored on `lead_response_drafts`. Does not send messages, mutate `Lead.status`, or run tools.

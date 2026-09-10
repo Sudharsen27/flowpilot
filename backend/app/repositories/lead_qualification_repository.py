@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.lead_qualification import LeadQualification
+from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
 
 
 class LeadQualificationRepository:
@@ -34,6 +34,31 @@ class LeadQualificationRepository:
                 .where(
                     LeadQualification.organization_id == organization_id,
                     LeadQualification.lead_id.in_(lead_ids),
+                )
+                .order_by(
+                    LeadQualification.created_at.desc(),
+                    LeadQualification.id.desc(),
+                )
+            )
+        )
+        latest: dict[str, LeadQualification] = {}
+        for row in rows:
+            if row.lead_id not in latest:
+                latest[row.lead_id] = row
+        return latest
+
+    def latest_completed_for_leads(
+        self, organization_id: str, lead_ids: list[str]
+    ) -> dict[str, LeadQualification]:
+        if not lead_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(LeadQualification)
+                .where(
+                    LeadQualification.organization_id == organization_id,
+                    LeadQualification.lead_id.in_(lead_ids),
+                    LeadQualification.status == LeadQualificationRecordStatus.COMPLETED,
                 )
                 .order_by(
                     LeadQualification.created_at.desc(),

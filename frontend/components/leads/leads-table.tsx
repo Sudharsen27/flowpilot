@@ -78,6 +78,7 @@ type LeadsTableProps = {
   loading?: boolean;
   onEdit?: (lead: Lead) => void;
   onQualify?: (lead: Lead) => void;
+  onDraftResponse?: (lead: Lead) => void;
 };
 
 export function LeadsTable({
@@ -85,6 +86,7 @@ export function LeadsTable({
   loading = false,
   onEdit,
   onQualify,
+  onDraftResponse,
 }: LeadsTableProps) {
   return (
     <DataTable
@@ -96,7 +98,7 @@ export function LeadsTable({
       emptyTitle="No leads yet"
       emptyDescription="Create a lead to start capturing enquiries, or wait until a connected channel sends one."
       rowActions={
-        onEdit || onQualify
+        onEdit || onQualify || onDraftResponse
           ? (lead) => (
               <div className="flex justify-end gap-2">
                 {onQualify ? (
@@ -107,6 +109,16 @@ export function LeadsTable({
                     onClick={() => onQualify(lead)}
                   >
                     Analyze with AI
+                  </Button>
+                ) : null}
+                {onDraftResponse ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onDraftResponse(lead)}
+                  >
+                    Draft response
                   </Button>
                 ) : null}
                 {onEdit ? (

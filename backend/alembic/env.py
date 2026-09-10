@@ -12,6 +12,7 @@ from app.models import (
     AgentExecution,
     Lead,
     LeadQualification,
+    LeadResponseDraft,
     Membership,
     Organization,
     ToolInvocation,
@@ -23,6 +24,7 @@ assert (
     and AgentExecution
     and Lead
     and LeadQualification
+    and LeadResponseDraft
     and Membership
     and Organization
     and ToolInvocation

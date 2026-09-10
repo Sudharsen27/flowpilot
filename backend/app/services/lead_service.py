@@ -5,17 +5,20 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
+from app.models.lead_response_draft import LeadResponseDraft, LeadResponseDraftStatus
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import (
     LEAD_LIST_DEFAULT_LIMIT,
     LEAD_LIST_MAX_LIMIT,
     LeadRepository,
 )
+from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.schemas.lead_qualification import (
     LeadQualificationAnalysis,
     LeadQualificationPublic,
     LeadQualificationSummary,
 )
+from app.schemas.lead_response_draft import LeadResponseDraftSummary
 from app.schemas.leads import LeadListResponse, LeadPublic, LeadUpdate
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
@@ -33,6 +36,7 @@ class LeadService:
         self.session = session
         self.leads = LeadRepository(session)
         self.qualifications = LeadQualificationRepository(session)
+        self.response_drafts = LeadResponseDraftRepository(session)
 
     def create(
         self,
@@ -97,8 +101,14 @@ class LeadService:
         latest = self.qualifications.latest_for_leads(
             organization_id, [item.id for item in items]
         )
+        drafts = self.response_drafts.latest_completed_for_leads(
+            organization_id, [item.id for item in items]
+        )
         return LeadListResponse(
-            items=[self._to_public(item, latest.get(item.id)) for item in items],
+            items=[
+                self._to_public(item, latest.get(item.id), drafts.get(item.id))
+                for item in items
+            ],
             limit=safe_limit,
             offset=safe_offset,
             total=total,
@@ -131,15 +141,24 @@ class LeadService:
         self,
         lead: Lead,
         qualification: LeadQualification | None = None,
+        draft: LeadResponseDraft | None = None,
     ) -> LeadPublic:
         if qualification is None:
             latest = self.qualifications.latest_for_leads(
                 lead.organization_id, [lead.id]
             )
             qualification = latest.get(lead.id)
+        if draft is None:
+            drafts = self.response_drafts.latest_completed_for_leads(
+                lead.organization_id, [lead.id]
+            )
+            draft = drafts.get(lead.id)
         public = LeadPublic.model_validate(lead)
         return public.model_copy(
-            update={"latest_qualification": _qualification_summary(qualification)}
+            update={
+                "latest_qualification": _qualification_summary(qualification),
+                "latest_response_draft": _draft_summary(draft),
+            }
         )
 
 
@@ -165,6 +184,16 @@ def _qualification_summary(
         confidence=analysis.confidence if analysis else None,
         created_at=row.created_at,
         error=row.error,
+    )
+
+
+def _draft_summary(row: LeadResponseDraft | None) -> LeadResponseDraftSummary | None:
+    if row is None or row.status != LeadResponseDraftStatus.COMPLETED:
+        return None
+    return LeadResponseDraftSummary(
+        id=row.id,
+        status=row.status,
+        created_at=row.created_at,
     )
 
 

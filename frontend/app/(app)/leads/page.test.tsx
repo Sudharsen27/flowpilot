@@ -7,7 +7,7 @@ import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { QualificationStatus } from "@/components/leads/qualification-status";
 import { ApiError } from "@/lib/api/client";
-import { createLead, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
+import { createLead, generateLeadResponseDraft, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
 import type { Lead, LeadListResponse } from "@/types/api";
 
 vi.mock("@/lib/api/leads", () => ({
@@ -15,6 +15,7 @@ vi.mock("@/lib/api/leads", () => ({
   createLead: vi.fn(),
   updateLead: vi.fn(),
   qualifyLead: vi.fn(),
+  generateLeadResponseDraft: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -54,6 +55,7 @@ const getLeadsMock = vi.mocked(getLeads);
 const createLeadMock = vi.mocked(createLead);
 const updateLeadMock = vi.mocked(updateLead);
 const qualifyLeadMock = vi.mocked(qualifyLead);
+const generateLeadResponseDraftMock = vi.mocked(generateLeadResponseDraft);
 
 describe("Leads page", () => {
   beforeEach(() => {
@@ -61,6 +63,7 @@ describe("Leads page", () => {
     createLeadMock.mockReset();
     updateLeadMock.mockReset();
     qualifyLeadMock.mockReset();
+    generateLeadResponseDraftMock.mockReset();
   });
 
   it("renders the page hierarchy and loading state", () => {
@@ -74,6 +77,7 @@ describe("Leads page", () => {
       "Lead overview",
       "Lead directory",
       "AI qualification",
+      "AI response drafts",
     ]) {
       expect(
         screen.getByRole("heading", { level: 2, name: section }),
@@ -95,6 +99,11 @@ describe("Leads page", () => {
     expect(
       screen.getByRole("heading", {
         name: "AI qualification is an analysis, not CRM status",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", {
+        name: "Nothing has been sent",
       }),
     ).toBeVisible();
     const cards = screen.getAllByRole("article");
@@ -433,5 +442,148 @@ describe("Leads page", () => {
       "AI provider is not configured",
     );
     expect(screen.getByRole("button", { name: "Retry analysis" })).toBeVisible();
+  });
+
+  it("drafts a response without implying it was sent", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockResolvedValue({
+      id: "d-1",
+      lead_id: "lead-1",
+      status: "COMPLETED",
+      enquiry: "We want a demo next week",
+      response: "Thanks for reaching out. Could we schedule a demo?",
+      error: null,
+      failure_category: null,
+      provider: "fake",
+      model: "fake-model",
+      usage: { total_tokens: 30 },
+      started_at: "2026-09-10T10:00:00Z",
+      completed_at: "2026-09-10T10:00:01Z",
+      created_at: "2026-09-10T10:00:00Z",
+      duration_ms: 1000,
+    });
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    expect(screen.getByText("This is an AI-generated draft. Nothing has been sent.")).toBeVisible();
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(
+      await screen.findByText("Thanks for reaching out. Could we schedule a demo?"),
+    ).toBeVisible();
+    expect(screen.getByText("AI draft")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Copy draft" }));
+    expect(writeText).toHaveBeenCalledWith(
+      "Thanks for reaching out. Could we schedule a demo?",
+    );
+    expect(screen.getByText(/CRM status for Ada Prospect: NEW/)).toBeVisible();
+    expect(generateLeadResponseDraftMock).toHaveBeenCalledWith("lead-1", {
+      enquiry: "We want a demo next week",
+    });
+  });
+
+  it("protects draft generation from duplicate submits and can retry errors", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    let resolveDraft: (value: never) => void = () => undefined;
+    generateLeadResponseDraftMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDraft = resolve as (value: never) => void;
+      }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "Need a demo");
+    const submit = screen.getByRole("button", { name: "Generate draft" });
+    await user.click(submit);
+    expect(screen.getByRole("button", { name: "Generating…" })).toBeDisabled();
+    expect(generateLeadResponseDraftMock).toHaveBeenCalledTimes(1);
+    resolveDraft(
+      {
+        id: "d-1",
+        lead_id: "lead-1",
+        status: "COMPLETED",
+        enquiry: "Need a demo",
+        response: "First draft",
+        error: null,
+        failure_category: null,
+        provider: "fake",
+        model: "fake-model",
+        usage: null,
+        started_at: "2026-09-10T10:00:00Z",
+        completed_at: "2026-09-10T10:00:01Z",
+        created_at: "2026-09-10T10:00:00Z",
+        duration_ms: 10,
+      } as never,
+    );
+    expect(await screen.findByText("First draft")).toBeVisible();
+  });
+
+  it("retries a failed draft generation", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 502", 502, { detail: "AI provider request failed" }),
+    );
+    generateLeadResponseDraftMock.mockResolvedValueOnce({
+      id: "d-2",
+      lead_id: "lead-1",
+      status: "COMPLETED",
+      enquiry: "Need a demo",
+      response: "Happy to help with a demo.",
+      error: null,
+      failure_category: null,
+      provider: "fake",
+      model: "fake-model",
+      usage: null,
+      started_at: "2026-09-10T10:00:00Z",
+      completed_at: "2026-09-10T10:00:01Z",
+      created_at: "2026-09-10T10:00:00Z",
+      duration_ms: 10,
+    });
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "Need a demo");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "AI provider request failed",
+    );
+    expect(enquiry).toHaveValue("Need a demo");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Happy to help with a demo.")).toBeVisible();
+    expect(generateLeadResponseDraftMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows provider unavailable errors from draft response", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockRejectedValue(
+      new ApiError("Request failed: 503", 503, { detail: "not configured" }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "Need a demo");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "AI provider is not configured",
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
   });
 });

@@ -9,8 +9,13 @@ from app.models.membership import Membership
 from app.models.organization import Organization
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
 from app.schemas.lead_qualification import LeadQualificationPublic, LeadQualifyRequest
+from app.schemas.lead_response_draft import LeadRespondRequest, LeadResponseDraftPublic
 from app.schemas.leads import LeadCreate, LeadListResponse, LeadPublic, LeadUpdate
 from app.services.lead_qualification_service import LeadQualificationService
+from app.services.lead_response_draft_service import (
+    LeadResponseDraftService,
+    to_response_draft_public,
+)
 from app.services.lead_service import LeadService, to_qualification_public
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
@@ -96,3 +101,21 @@ def qualify_lead(
         initiated_by_user_id=membership.user_id,
     )
     return to_qualification_public(row)
+
+
+@router.post("/{lead_id}/respond", response_model=LeadResponseDraftPublic)
+def generate_lead_response_draft(
+    lead_id: str,
+    payload: LeadRespondRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    provider: AIProvider = Depends(get_ai_provider),
+) -> LeadResponseDraftPublic:
+    row = LeadResponseDraftService(db, provider).generate(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        enquiry=payload.enquiry,
+        initiated_by_user_id=membership.user_id,
+    )
+    return to_response_draft_public(row)

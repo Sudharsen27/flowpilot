@@ -5,6 +5,8 @@ import type {
   LeadListResponse,
   LeadQualificationResult,
   LeadQualifyRequest,
+  LeadRespondRequest,
+  LeadResponseDraftResult,
   LeadSource,
   LeadStatus,
   LeadUpdateRequest,
@@ -62,6 +64,16 @@ export function updateLead(leadId: string, input: LeadUpdateRequest) {
 export function qualifyLead(leadId: string, input: LeadQualifyRequest) {
   return apiPost<LeadQualificationResult>(
     `/api/v1/leads/${encodeURIComponent(leadId)}/qualify`,
+    input,
+  );
+}
+
+export function generateLeadResponseDraft(
+  leadId: string,
+  input: LeadRespondRequest,
+) {
+  return apiPost<LeadResponseDraftResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/respond`,
     input,
   );
 }
