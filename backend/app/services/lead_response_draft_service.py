@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.ai.openai_provider import sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider
@@ -22,6 +22,7 @@ from app.models.lead_response_draft import (
     LeadResponseDraftStatus,
     LeadResponseReviewStatus,
 )
+from app.repositories.lead_email_send_repository import LeadEmailSendRepository
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
@@ -31,6 +32,7 @@ from app.schemas.lead_response_draft import (
     LeadResponseDraftOutput,
     LeadResponseDraftPublic,
 )
+from app.services.lead_email_send_service import to_email_send_public
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
 
@@ -384,6 +386,14 @@ def to_response_draft_public(row: LeadResponseDraft) -> LeadResponseDraftPublic:
     review_status = None
     if row.review_status:
         review_status = LeadResponseReviewStatus(row.review_status)
+    latest_send = None
+    session = object_session(row)
+    if session is not None:
+        send_row = LeadEmailSendRepository(session).latest_for_draft(
+            row.organization_id, row.id
+        )
+        if send_row is not None:
+            latest_send = to_email_send_public(send_row)
     return LeadResponseDraftPublic(
         id=row.id,
         lead_id=row.lead_id,
@@ -407,4 +417,5 @@ def to_response_draft_public(row: LeadResponseDraft) -> LeadResponseDraftPublic:
         created_at=row.created_at,
         updated_at=row.updated_at,
         duration_ms=duration_ms(row.started_at, row.completed_at),
+        latest_email_send=latest_send,
     )

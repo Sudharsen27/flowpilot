@@ -298,6 +298,28 @@ export type LeadResponseReviewStatus =
   | "APPROVED"
   | "REJECTED";
 
+export type LeadEmailSendStatus = "PENDING" | "SENT" | "FAILED";
+
+export type LeadEmailSendResult = {
+  id: string;
+  lead_id: string;
+  response_draft_id: string;
+  status: LeadEmailSendStatus;
+  recipient_email: string;
+  sender_email: string;
+  subject: string;
+  body_text: string;
+  draft_revision: number;
+  provider: string | null;
+  provider_message_id: string | null;
+  error: string | null;
+  failure_category: ExecutionFailureCategory | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  duration_ms: number | null;
+};
+
 export type LeadResponseDraftResult = {
   id: string;
   lead_id: string;
@@ -321,6 +343,7 @@ export type LeadResponseDraftResult = {
   created_at: string;
   updated_at?: string;
   duration_ms: number | null;
+  latest_email_send?: LeadEmailSendResult | null;
 };
 
 export type LeadRespondRequest = {

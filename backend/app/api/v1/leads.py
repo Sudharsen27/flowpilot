@@ -2,21 +2,30 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.ai.provider import AIProvider
-from app.api.deps import get_ai_provider, get_current_membership, get_current_organization
+from app.api.deps import (
+    get_ai_provider,
+    get_current_membership,
+    get_current_organization,
+    get_email_provider,
+)
 from app.db.session import get_db
+from app.email.provider import EmailProvider
 from app.models.lead import LeadSource, LeadStatus
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
+from app.schemas.lead_email_send import LeadEmailSendPublic
 from app.schemas.lead_qualification import LeadQualificationPublic, LeadQualifyRequest
 from app.schemas.lead_response_draft import (
     LeadRespondRequest,
     LeadResponseDraftApproveRequest,
     LeadResponseDraftPublic,
     LeadResponseDraftRejectRequest,
+    LeadResponseDraftSendRequest,
     LeadResponseDraftUpdate,
 )
 from app.schemas.leads import LeadCreate, LeadListResponse, LeadPublic, LeadUpdate
+from app.services.lead_email_send_service import LeadEmailSendService, to_email_send_public
 from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_response_draft_service import (
     LeadResponseDraftService,
@@ -209,3 +218,26 @@ def reject_lead_response_draft(
         reason=payload.reason,
     )
     return to_response_draft_public(row)
+
+
+@router.post(
+    "/{lead_id}/response-drafts/{draft_id}/send",
+    response_model=LeadEmailSendPublic,
+)
+def send_lead_response_draft(
+    lead_id: str,
+    draft_id: str,
+    payload: LeadResponseDraftSendRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    email_provider: EmailProvider = Depends(get_email_provider),
+) -> LeadEmailSendPublic:
+    del payload
+    row = LeadEmailSendService(db, email_provider).send(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        draft_id=draft_id,
+        initiated_by_user_id=membership.user_id,
+    )
+    return to_email_send_public(row)

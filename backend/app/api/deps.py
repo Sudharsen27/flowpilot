@@ -7,6 +7,8 @@ from app.ai.provider import AIProvider
 from app.core.exceptions import UnauthorizedError
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.email.provider import EmailProvider
+from app.email.resend_provider import ResendEmailProvider
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.models.user import User
@@ -102,6 +104,10 @@ def get_current_organization(
 
 def get_ai_provider() -> AIProvider:
     return OpenAIProvider()
+
+
+def get_email_provider() -> EmailProvider:
+    return ResendEmailProvider()
 
 
 def get_tool_registry() -> ToolRegistry:

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.ai.provider import TokenUsage
 from app.models.lead_response_draft import LeadResponseReviewStatus
+from app.schemas.lead_email_send import LeadEmailSendPublic
 
 
 class LeadResponseDraftOutput(BaseModel):
@@ -68,6 +69,7 @@ class LeadResponseDraftPublic(BaseModel):
     created_at: datetime
     updated_at: datetime
     duration_ms: int | None = None
+    latest_email_send: LeadEmailSendPublic | None = None
 
 
 class LeadResponseDraftSummary(BaseModel):
@@ -98,6 +100,10 @@ class LeadResponseDraftApproveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=1)
+
+
+class LeadResponseDraftSendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class LeadResponseDraftRejectRequest(BaseModel):

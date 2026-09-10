@@ -20,9 +20,15 @@ import {
   generateLeadResponseDraft,
   getLeadResponseDraft,
   rejectLeadResponseDraft,
+  sendLeadResponseDraft,
   updateLeadResponseDraft,
 } from "@/lib/api/leads";
-import type { Lead, LeadResponseDraftResult, LeadResponseReviewStatus } from "@/types/api";
+import type {
+  Lead,
+  LeadEmailSendResult,
+  LeadResponseDraftResult,
+  LeadResponseReviewStatus,
+} from "@/types/api";
 
 type DraftLeadResponseDialogProps = {
   open: boolean;
@@ -39,7 +45,19 @@ const reviewLabels: Record<LeadResponseReviewStatus, string> = {
   REJECTED: "Rejected",
 };
 
-function errorMessage(cause: unknown) {
+const EMAIL_SUBJECT = "Re: Your enquiry";
+
+function isEmailSendResult(value: unknown): value is LeadEmailSendResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    "recipient_email" in value &&
+    "id" in value
+  );
+}
+
+function errorMessage(cause: unknown, kind: "review" | "send" = "review") {
   if (!(cause instanceof ApiError)) {
     return "The request could not be completed. Please try again.";
   }
@@ -47,16 +65,42 @@ function errorMessage(cause: unknown) {
     return "Your session expired. Sign in again.";
   }
   if (cause.status === 403) {
-    return "You do not have permission to review this draft.";
+    return kind === "send"
+      ? "You do not have permission to send this email."
+      : "You do not have permission to review this draft.";
   }
   if (cause.status === 404) {
     return "This draft could not be found.";
   }
   if (cause.status === 409) {
+    if (kind === "send") {
+      if (isEmailSendResult(cause.body) && cause.body.status === "SENT") {
+        return "This email was already sent.";
+      }
+      if (
+        typeof cause.body === "object" &&
+        cause.body &&
+        "detail" in cause.body &&
+        typeof cause.body.detail === "string" &&
+        cause.body.detail.toLowerCase().includes("already sent")
+      ) {
+        return "This email was already sent.";
+      }
+      return "This draft is not approved for sending.";
+    }
     return "This draft changed. Refresh and review the latest version.";
   }
+  if (cause.status === 422 && kind === "send") {
+    return "This lead has no email address.";
+  }
   if (cause.status === 503) {
+    if (kind === "send") {
+      return "Email provider is not configured.";
+    }
     return "AI provider is not configured.";
+  }
+  if (cause.status === 502 && kind === "send") {
+    return "The email provider could not send this message.";
   }
   if (cause.status === 422) {
     return "Review the text and correct invalid fields.";
@@ -85,6 +129,8 @@ export function DraftLeadResponseDialog({
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [confirmingApprove, setConfirmingApprove] = useState(false);
+  const [confirmingSend, setConfirmingSend] = useState(false);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!open || !lead || !draftId) return;
@@ -184,6 +230,25 @@ export function DraftLeadResponseDialog({
     }
   }
 
+  async function sendEmail() {
+    if (!lead || !result || sending || pending) return;
+    setConfirmingSend(false);
+    setError(null);
+    setSending(true);
+    try {
+      const saved = await sendLeadResponseDraft(lead.id, result.id);
+      setResult({ ...result, latest_email_send: saved });
+      onCompleted({ ...result, latest_email_send: saved });
+    } catch (cause) {
+      if (cause instanceof ApiError && isEmailSendResult(cause.body)) {
+        setResult({ ...result, latest_email_send: cause.body });
+      }
+      setError(errorMessage(cause, "send"));
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function copyDraft() {
     if (!result?.response) return;
     await navigator.clipboard.writeText(result.response);
@@ -196,6 +261,12 @@ export function DraftLeadResponseDialog({
     Boolean(result.response);
   const canDecide =
     result?.review_status === "GENERATED" || result?.review_status === "EDITED";
+  const alreadySent = result?.latest_email_send?.status === "SENT";
+  const canSend =
+    result?.review_status === "APPROVED" &&
+    Boolean(lead?.email) &&
+    !alreadySent &&
+    !editing;
 
   return (
     <Dialog
@@ -210,6 +281,8 @@ export function DraftLeadResponseDialog({
           setRejecting(false);
           setRejectReason("");
           setConfirmingApprove(false);
+          setConfirmingSend(false);
+          setSending(false);
           setEnquiry(lead?.notes ?? "");
         }
         onOpenChange(next);
@@ -252,6 +325,11 @@ export function DraftLeadResponseDialog({
               <p className="text-sm font-medium">AI draft</p>
               {result.review_status ? (
                 <p className="text-sm">{reviewLabels[result.review_status]}</p>
+              ) : null}
+              {alreadySent ? (
+                <p className="text-sm" role="status">
+                  SENT
+                </p>
               ) : null}
               {result.human_edited && result.original_response ? (
                 <p className="text-muted-foreground text-xs leading-5 whitespace-pre-wrap">
@@ -336,6 +414,16 @@ export function DraftLeadResponseDialog({
                     </Button>
                   </>
                 ) : null}
+                {canSend ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={pending || sending}
+                    onClick={() => setConfirmingSend(true)}
+                  >
+                    {sending ? "Sending…" : "Send email"}
+                  </Button>
+                ) : null}
               </div>
               {rejecting ? (
                 <div className="grid gap-2">
@@ -389,6 +477,42 @@ export function DraftLeadResponseDialog({
               <DialogCancel>Cancel</DialogCancel>
               <Button type="button" disabled={pending} onClick={() => void approve()}>
                 {pending ? "Approving…" : "Approve"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog
+          open={confirmingSend}
+          onOpenChange={(next) => {
+            if (!next) setConfirmingSend(false);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Send this email?</DialogTitle>
+              <DialogDescription>
+                This will send the approved response to the lead. This is an
+                external action.
+              </DialogDescription>
+            </DialogHeader>
+            <dl className="mt-4 grid gap-2 text-sm">
+              <div>
+                <dt className="text-muted-foreground">To</dt>
+                <dd>{lead?.email}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Subject</dt>
+                <dd>{EMAIL_SUBJECT}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Message</dt>
+                <dd className="whitespace-pre-wrap">{result?.response}</dd>
+              </div>
+            </dl>
+            <DialogFooter>
+              <DialogCancel>Cancel</DialogCancel>
+              <Button type="button" disabled={sending} onClick={() => void sendEmail()}>
+                {sending ? "Sending…" : "Send email"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -9,6 +9,7 @@ import {
   getLeadResponseDraft,
   qualifyLead,
   rejectLeadResponseDraft,
+  sendLeadResponseDraft,
   updateLead,
   updateLeadResponseDraft,
 } from "@/lib/api/leads";
@@ -200,5 +201,26 @@ describe("Lead API client", () => {
         expect(JSON.parse(payload)).not.toHaveProperty("organization_id");
       }
     }
+  });
+
+  it("posts send without recipient or sender overrides", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "s-1", status: "SENT" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await sendLeadResponseDraft("lead/1", "d/1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/leads/lead%2F1/response-drafts/d%2F1/send",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).not.toHaveProperty("to");
+    expect(body).not.toHaveProperty("from");
+    expect(body).not.toHaveProperty("organization_id");
   });
 });

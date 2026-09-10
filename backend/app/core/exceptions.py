@@ -20,8 +20,8 @@ class NotFoundError(AppError):
 
 
 class ConflictError(AppError):
-    def __init__(self, detail: str) -> None:
-        super().__init__(409, detail)
+    def __init__(self, detail: str, content: dict[str, Any] | None = None) -> None:
+        super().__init__(409, detail, content)
 
 
 class UnauthorizedError(AppError):
@@ -37,6 +37,11 @@ class ForbiddenError(AppError):
 class ValidationError(AppError):
     def __init__(self, detail: str) -> None:
         super().__init__(400, detail)
+
+
+class UnprocessableError(AppError):
+    def __init__(self, detail: str, content: dict[str, Any] | None = None) -> None:
+        super().__init__(422, detail, content)
 
 
 class ProviderNotConfiguredError(AppError):

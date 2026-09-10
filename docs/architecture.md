@@ -32,7 +32,7 @@ AI Runtime
     → AI Runtime
 ```
 
-Only tools registered in `ToolRegistry` may run. Arguments are validated against the tool’s Pydantic schema before `execute()`. The model never writes to the database; tools run through `ToolExecutionService` with server-side tenant context. External CRM, email, WhatsApp, calendar, Slack, webhooks, and other business integrations are deferred.
+Only tools registered in `ToolRegistry` may run. Arguments are validated against the tool’s Pydantic schema before `execute()`. The model never writes to the database; tools run through `ToolExecutionService` with server-side tenant context. CRM, WhatsApp, calendar, Slack, webhooks, and other business integrations remain deferred. Approved lead-response **email** sending is a separate human-triggered API (Phase 4E), not a tool.
 
 The model never writes to the database. Tools call application services.
 
@@ -169,7 +169,8 @@ Lead API
 ├── GET    /api/v1/leads/{lead_id}/response-drafts/{draft_id}
 ├── PATCH  /api/v1/leads/{lead_id}/response-drafts/{draft_id}
 ├── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/approve
-└── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/reject
+├── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/reject
+└── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/send
 ```
 
 Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
@@ -203,6 +204,20 @@ If a completed `LeadQualification` exists for the same org/lead, a small validat
 Completed drafts have a review lifecycle on the same `lead_response_drafts` row: `GENERATED` → `EDITED` (optional) → `APPROVED` or `REJECTED`. The original AI text is stored in `original_response` and is never overwritten. `current_response` is what a human may edit. `revision` is an optimistic concurrency token (`expected_revision`); mismatches return 409.
 
 `APPROVED` means a human approved that exact current text for **future** sending. It is not sent. Editing an approved draft clears the approval (`EDITED`). Rejected drafts stay persisted and cannot be edited or approved; generate a new draft instead. `Lead.status` is unchanged. There is no Activity event model; reviewer id and timestamps live on the draft row.
+
+## Approved response email sending (Phase 4E)
+
+Sending is a separate explicit action. Approval is not delivery.
+
+`POST /api/v1/leads/{lead_id}/response-drafts/{draft_id}/send` (empty body) loads the lead and draft in the JWT organization, verifies persisted `review_status == APPROVED`, uses `lead.email` as the only recipient, uses `EMAIL_FROM_ADDRESS` / optional `EMAIL_FROM_NAME` as sender, and sends persisted `current_response` as plain text with subject `Re: Your enquiry`. The client cannot choose recipient, sender, or body.
+
+`EmailProvider` is the send abstraction (same pattern as `AIProvider`). `ResendEmailProvider` is the first implementation (`RESEND_API_KEY`). Missing configuration returns the existing 503 `ProviderNotConfiguredError` after persisting a `FAILED` `CONFIGURATION_ERROR` row. Provider failures return 502 and persist `FAILED`. Missing lead email returns 422 and does not send.
+
+History lives in `lead_email_sends` (`PENDING` → `SENT` or `FAILED`). `SENT` is recorded only after the provider call succeeds. Duplicate protection: a partial unique index on `(organization_id, response_draft_id, draft_revision)` for `PENDING`/`SENT`, plus Resend `Idempotency-Key` `{organization_id}:{draft_id}:{revision}`. A later approved revision may send again. Failed attempts may be retried. There is no automatic retry, no agent/tool send, and no background send.
+
+Limitation: a crash after the provider accepts a message and before `SENT` is committed can still produce a duplicate on retry. Provider idempotency reduces but does not eliminate that window. This is not exactly-once delivery.
+
+`OWNER`, `ADMIN`, and `MEMBER` may send. Cross-tenant ids return 404. `Lead.status` is not mutated. This is not an `AgentExecution` or `ToolInvocation`.
 
 ## LLM providers
 
@@ -273,3 +288,7 @@ Structured customer-facing reply drafts via `AIProvider` JSON Schema `{ response
 ## Phase 4D (human approval and editing)
 
 Humans edit, approve, or reject a completed response draft. Original AI text is preserved. Approval is not sending.
+
+## Phase 4E (approved email sending)
+
+Humans send an approved draft by email. Sending is an explicit external side effect. Approval is not sending. Sent means the email provider confirmed acceptance.

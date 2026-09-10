@@ -10,6 +10,7 @@ import type {
   LeadResponseDraftRejectRequest,
   LeadResponseDraftResult,
   LeadResponseDraftUpdateRequest,
+  LeadEmailSendResult,
   LeadSource,
   LeadStatus,
   LeadUpdateRequest,
@@ -117,5 +118,12 @@ export function rejectLeadResponseDraft(
   return apiPost<LeadResponseDraftResult>(
     `/api/v1/leads/${encodeURIComponent(leadId)}/response-drafts/${encodeURIComponent(draftId)}/reject`,
     input,
+  );
+}
+
+export function sendLeadResponseDraft(leadId: string, draftId: string) {
+  return apiPost<LeadEmailSendResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/response-drafts/${encodeURIComponent(draftId)}/send`,
+    {},
   );
 }

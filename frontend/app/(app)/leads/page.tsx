@@ -120,7 +120,7 @@ export default function LeadsPage() {
         }
       />
       <LeadFormDialog
-        key={formKey}
+        key={`lead-form-${formKey}`}
         open={formOpen}
         lead={editing}
         onOpenChange={(open) => {
@@ -133,7 +133,7 @@ export default function LeadsPage() {
         }}
       />
       <QualifyLeadDialog
-        key={qualifyKey}
+        key={`lead-qualify-${qualifyKey}`}
         open={qualifyOpen}
         lead={qualifying}
         onOpenChange={(open) => {
@@ -146,7 +146,7 @@ export default function LeadsPage() {
         }}
       />
       <DraftLeadResponseDialog
-        key={draftKey}
+        key={`lead-draft-${draftKey}`}
         open={draftOpen}
         lead={drafting}
         draftId={reviewDraftId}

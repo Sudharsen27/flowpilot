@@ -14,6 +14,7 @@ from app.models import (  # noqa: F401 — register tables on Base.metadata
     Agent,
     AgentExecution,
     Lead,
+    LeadEmailSend,
     LeadQualification,
     LeadResponseDraft,
     Membership,

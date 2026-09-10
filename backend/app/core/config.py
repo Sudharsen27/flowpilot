@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_request_timeout_seconds: float = 60
+    email_provider: str = "resend"
+    resend_api_key: str | None = None
+    email_from_address: str | None = None
+    email_from_name: str | None = None
+    email_request_timeout_seconds: float = 30
     agent_max_tool_iterations: int = 3
     # RUNNING rows older than this (and the provider-loop floor) may be recovered
     # as FAILED. Must stay large enough that a legitimate in-process run is not

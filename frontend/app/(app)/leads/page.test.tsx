@@ -15,10 +15,11 @@ import {
   getLeads,
   qualifyLead,
   rejectLeadResponseDraft,
+  sendLeadResponseDraft,
   updateLead,
   updateLeadResponseDraft,
 } from "@/lib/api/leads";
-import type { Lead, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
+import type { Lead, LeadEmailSendResult, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
 
 vi.mock("@/lib/api/leads", () => ({
   getLeads: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/api/leads", () => ({
   updateLeadResponseDraft: vi.fn(),
   approveLeadResponseDraft: vi.fn(),
   rejectLeadResponseDraft: vi.fn(),
+  sendLeadResponseDraft: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -104,6 +106,7 @@ const getLeadResponseDraftMock = vi.mocked(getLeadResponseDraft);
 const updateLeadResponseDraftMock = vi.mocked(updateLeadResponseDraft);
 const approveLeadResponseDraftMock = vi.mocked(approveLeadResponseDraft);
 const rejectLeadResponseDraftMock = vi.mocked(rejectLeadResponseDraft);
+const sendLeadResponseDraftMock = vi.mocked(sendLeadResponseDraft);
 
 describe("Leads page", () => {
   beforeEach(() => {
@@ -116,6 +119,7 @@ describe("Leads page", () => {
     updateLeadResponseDraftMock.mockReset();
     approveLeadResponseDraftMock.mockReset();
     rejectLeadResponseDraftMock.mockReset();
+    sendLeadResponseDraftMock.mockReset();
   });
 
   it("renders the page hierarchy and loading state", () => {
@@ -658,6 +662,7 @@ describe("Leads page", () => {
       expected_revision: 2,
     });
     expect(await screen.findByText("Approved (not sent)")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send email" })).toBeVisible();
   });
 
   it("cancels an edit and can reject with a reason", async () => {
@@ -771,4 +776,158 @@ describe("Leads page", () => {
       "This draft could not be found.",
     );
   });
+
+  function approvedDraft() {
+    return completedDraft({
+      review_status: "APPROVED",
+      reviewed_by_user_id: "user-1",
+      reviewed_at: "2026-09-10T10:04:00Z",
+    });
+  }
+
+  function emailSend(overrides: Partial<LeadEmailSendResult> = {}): LeadEmailSendResult {
+    return {
+      id: "s-1",
+      lead_id: "lead-1",
+      response_draft_id: "d-1",
+      status: "SENT",
+      recipient_email: "ada@example.com",
+      sender_email: "noreply@example.com",
+      subject: "Re: Your enquiry",
+      body_text: "Thanks for reaching out. Could we schedule a demo?",
+      draft_revision: 1,
+      provider: "fake-email",
+      provider_message_id: "msg_1",
+      error: null,
+      failure_category: null,
+      started_at: "2026-09-10T10:05:00Z",
+      completed_at: "2026-09-10T10:05:01Z",
+      created_at: "2026-09-10T10:05:00Z",
+      duration_ms: 1000,
+      ...overrides,
+    };
+  }
+
+  async function openApproved(user: ReturnType<typeof userEvent.setup>) {
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockResolvedValue(approvedDraft());
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByRole("button", { name: "Send email" })).toBeVisible();
+  }
+
+  it("does not show send for generated drafts", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    await screen.findByText("Awaiting review");
+    expect(screen.queryByRole("button", { name: "Send email" })).not.toBeInTheDocument();
+  });
+
+  it("confirms and sends an approved email", async () => {
+    const user = userEvent.setup();
+    sendLeadResponseDraftMock.mockResolvedValue(emailSend());
+    await openApproved(user);
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    const sendHeading = screen.getByRole("heading", { name: "Send this email?" });
+    expect(sendHeading).toBeVisible();
+    const sendDialog = sendHeading.closest("[data-slot='dialog-content']") ?? sendHeading.parentElement;
+    expect(sendDialog).not.toBeNull();
+    expect(within(sendDialog as HTMLElement).getByText("ada@example.com")).toBeVisible();
+    expect(within(sendDialog as HTMLElement).getByText("Re: Your enquiry")).toBeVisible();
+    expect(
+      screen.getByText("This will send the approved response to the lead. This is an external action."),
+    ).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Send email" }).at(-1)!);
+    expect(sendLeadResponseDraftMock).toHaveBeenCalledWith("lead-1", "d-1");
+    expect(sendLeadResponseDraftMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("SENT")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Send email" })).not.toBeInTheDocument();
+  });
+
+  it("disables send while the request is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveSend: (value: ReturnType<typeof emailSend>) => void = () => undefined;
+    sendLeadResponseDraftMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    await openApproved(user);
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await user.click(screen.getAllByRole("button", { name: "Send email" }).at(-1)!);
+    expect(screen.getAllByRole("button", { name: "Sending…" }).length).toBeGreaterThan(0);
+    resolveSend(emailSend());
+    expect(await screen.findByText("SENT")).toBeVisible();
+  });
+
+  it("maps send failures without inventing a sent state", async () => {
+    const user = userEvent.setup();
+    sendLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 503", 503, { detail: "Email provider is not configured" }),
+    );
+    sendLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 502", 502, emailSend({ status: "FAILED", error: "fail", failure_category: "PROVIDER_ERROR" })),
+    );
+    sendLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 409", 409, { detail: "This draft is not approved for sending." }),
+    );
+    sendLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 409", 409, {
+        ...emailSend(),
+        detail: "This email was already sent.",
+      } as LeadEmailSendResult),
+    );
+    sendLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 422", 422, { detail: "This lead has no email address." }),
+    );
+    await openApproved(user);
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await user.click(screen.getAllByRole("button", { name: "Send email" }).at(-1)!);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Email provider is not configured");
+    expect(screen.queryByText("SENT")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await user.click(screen.getAllByRole("button", { name: "Send email" }).at(-1)!);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The email provider could not send this message.",
+    );
+    expect(screen.getByText("Approved (not sent)")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await user.click(screen.getAllByRole("button", { name: "Send email" }).at(-1)!);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This draft is not approved for sending.",
+    );
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await user.click(screen.getAllByRole("button", { name: "Send email" }).at(-1)!);
+    expect(await screen.findByText("SENT")).toBeVisible();
+    expect(await screen.findByRole("alert")).toHaveTextContent("This email was already sent.");
+  });
+
+  it("does not offer send when the lead has no email", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([{ ...lead, email: null }]));
+    generateLeadResponseDraftMock.mockResolvedValue(approvedDraft());
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    await screen.findByText("Approved (not sent)");
+    expect(screen.queryByRole("button", { name: "Send email" })).not.toBeInTheDocument();
+  });
 });
+
