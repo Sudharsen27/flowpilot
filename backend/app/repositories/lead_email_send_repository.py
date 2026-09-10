@@ -8,6 +8,14 @@ class LeadEmailSendRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def get_by_id(self, organization_id: str, send_id: str) -> LeadEmailSend | None:
+        return self.session.scalar(
+            select(LeadEmailSend).where(
+                LeadEmailSend.organization_id == organization_id,
+                LeadEmailSend.id == send_id,
+            )
+        )
+
     def add(self, row: LeadEmailSend) -> LeadEmailSend:
         self.session.add(row)
         return row

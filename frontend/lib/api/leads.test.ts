@@ -12,6 +12,12 @@ import {
   sendLeadResponseDraft,
   updateLead,
   updateLeadResponseDraft,
+  cancelLeadFollowUp,
+  completeLeadFollowUp,
+  createLeadFollowUp,
+  getLeadFollowUp,
+  getLeadFollowUps,
+  updateLeadFollowUp,
 } from "@/lib/api/leads";
 
 describe("Lead API client", () => {
@@ -222,5 +228,42 @@ describe("Lead API client", () => {
     expect(body).not.toHaveProperty("to");
     expect(body).not.toHaveProperty("from");
     expect(body).not.toHaveProperty("organization_id");
+  });
+
+  it("encodes follow-up paths without organization_id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], limit: 20, offset: 0, total: 0, id: "fu/1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    await getLeadFollowUps("lead/1", { status: "PENDING", overdue: true, limit: 20, offset: 0 });
+    await getLeadFollowUp("lead/1", "fu/1");
+    await createLeadFollowUp("lead/1", {
+      due_at: "2030-06-15T10:30:00.000Z",
+      type: "EMAIL_FOLLOW_UP",
+      notes: "Ping",
+    });
+    await updateLeadFollowUp("lead/1", "fu/1", {
+      expected_revision: 1,
+      due_at: "2030-06-16T10:30:00.000Z",
+    });
+    await completeLeadFollowUp("lead/1", "fu/1", { expected_revision: 2 });
+    await cancelLeadFollowUp("lead/1", "fu/1", { expected_revision: 3 });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "http://localhost:8000/api/v1/leads/lead%2F1/follow-ups?status=PENDING&overdue=true&limit=20&offset=0",
+    );
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      "http://localhost:8000/api/v1/leads/lead%2F1/follow-ups/fu%2F1",
+    );
+    expect(String(fetchMock.mock.calls[5]?.[0])).toContain("/follow-ups/fu%2F1/cancel");
+    for (const call of fetchMock.mock.calls) {
+      const payload = call[1]?.body;
+      if (typeof payload === "string") {
+        expect(JSON.parse(payload)).not.toHaveProperty("organization_id");
+      }
+    }
   });
 });

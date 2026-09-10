@@ -12,6 +12,7 @@ from app.models import (
     AgentExecution,
     Lead,
     LeadEmailSend,
+    LeadFollowUp,
     LeadQualification,
     LeadResponseDraft,
     Membership,
@@ -25,6 +26,7 @@ assert (
     and AgentExecution
     and Lead
     and LeadEmailSend
+    and LeadFollowUp
     and LeadQualification
     and LeadResponseDraft
     and Membership

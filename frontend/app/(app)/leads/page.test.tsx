@@ -18,6 +18,7 @@ import {
   sendLeadResponseDraft,
   updateLead,
   updateLeadResponseDraft,
+  getLeadFollowUps,
 } from "@/lib/api/leads";
 import type { Lead, LeadEmailSendResult, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
 
@@ -32,6 +33,7 @@ vi.mock("@/lib/api/leads", () => ({
   approveLeadResponseDraft: vi.fn(),
   rejectLeadResponseDraft: vi.fn(),
   sendLeadResponseDraft: vi.fn(),
+  getLeadFollowUps: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -107,6 +109,7 @@ const updateLeadResponseDraftMock = vi.mocked(updateLeadResponseDraft);
 const approveLeadResponseDraftMock = vi.mocked(approveLeadResponseDraft);
 const rejectLeadResponseDraftMock = vi.mocked(rejectLeadResponseDraft);
 const sendLeadResponseDraftMock = vi.mocked(sendLeadResponseDraft);
+const getLeadFollowUpsMock = vi.mocked(getLeadFollowUps);
 
 describe("Leads page", () => {
   beforeEach(() => {
@@ -120,6 +123,13 @@ describe("Leads page", () => {
     approveLeadResponseDraftMock.mockReset();
     rejectLeadResponseDraftMock.mockReset();
     sendLeadResponseDraftMock.mockReset();
+    getLeadFollowUpsMock.mockReset();
+    getLeadFollowUpsMock.mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      total: 0,
+    });
   });
 
   it("renders the page hierarchy and loading state", () => {
@@ -134,6 +144,7 @@ describe("Leads page", () => {
       "Lead directory",
       "AI qualification",
       "AI response drafts",
+      "Follow-ups",
     ]) {
       expect(
         screen.getByRole("heading", { level: 2, name: section }),
@@ -928,6 +939,16 @@ describe("Leads page", () => {
     await user.click(screen.getByRole("button", { name: "Generate draft" }));
     await screen.findByText("Approved (not sent)");
     expect(screen.queryByRole("button", { name: "Send email" })).not.toBeInTheDocument();
+  });
+
+  it("opens follow-ups for a lead", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Follow-ups" })[0]);
+    expect(await screen.findByText("No follow-ups yet.")).toBeVisible();
+    expect(getLeadFollowUpsMock).toHaveBeenCalledWith("lead-1");
   });
 });
 

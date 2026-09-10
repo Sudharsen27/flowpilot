@@ -170,7 +170,13 @@ Lead API
 ├── PATCH  /api/v1/leads/{lead_id}/response-drafts/{draft_id}
 ├── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/approve
 ├── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/reject
-└── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/send
+├── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/send
+├── POST   /api/v1/leads/{lead_id}/follow-ups
+├── GET    /api/v1/leads/{lead_id}/follow-ups
+├── GET    /api/v1/leads/{lead_id}/follow-ups/{follow_up_id}
+├── PATCH  /api/v1/leads/{lead_id}/follow-ups/{follow_up_id}
+├── POST   /api/v1/leads/{lead_id}/follow-ups/{follow_up_id}/complete
+└── POST   /api/v1/leads/{lead_id}/follow-ups/{follow_up_id}/cancel
 ```
 
 Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
@@ -218,6 +224,14 @@ History lives in `lead_email_sends` (`PENDING` → `SENT` or `FAILED`). `SENT` i
 Limitation: a crash after the provider accepts a message and before `SENT` is committed can still produce a duplicate on retry. Provider idempotency reduces but does not eliminate that window. This is not exactly-once delivery.
 
 `OWNER`, `ADMIN`, and `MEMBER` may send. Cross-tenant ids return 404. `Lead.status` is not mutated. This is not an `AgentExecution` or `ToolInvocation`.
+
+## Lead follow-ups (Phase 4F)
+
+`LeadFollowUp` is a tenant-owned reminder row (`lead_follow_ups`), not a field on `Lead` or `LeadResponseDraft`. Types: `EMAIL_FOLLOW_UP`, `MANUAL_FOLLOW_UP`. Status: `PENDING` → `COMPLETED` or `CANCELLED` (terminal). `OVERDUE` is derived (`PENDING` and `due_at` before now) and is not persisted. Passing the due time does not complete the row and does not send email.
+
+Create/list/get/patch plus explicit complete/cancel. `due_at` is timezone-aware UTC. List order is `due_at ASC`, `id ASC` (default 20, max 50). Optional `email_send_id` must be a `SENT` send for the same org and lead. Optimistic `revision` / `expected_revision` returns 409 on stale lifecycle actions. There is no Activity model; timestamps on the row are the audit trail.
+
+Due follow-ups are **not** executed automatically. No cron, workers, agent runs, or Resend calls from this domain.
 
 ## LLM providers
 
@@ -292,3 +306,7 @@ Humans edit, approve, or reject a completed response draft. Original AI text is 
 ## Phase 4E (approved email sending)
 
 Humans send an approved draft by email. Sending is an explicit external side effect. Approval is not sending. Sent means the email provider confirmed acceptance.
+
+## Phase 4F (lead follow-up scheduling)
+
+Humans create, list, reschedule, complete, and cancel follow-ups. Overdue is derived. Due follow-ups are not sent or executed automatically.

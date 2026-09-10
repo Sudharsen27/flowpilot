@@ -364,6 +364,51 @@ export type LeadResponseDraftRejectRequest = {
   reason?: string | null;
 };
 
+export type LeadFollowUpStatus = "PENDING" | "COMPLETED" | "CANCELLED";
+
+export type LeadFollowUpType = "EMAIL_FOLLOW_UP" | "MANUAL_FOLLOW_UP";
+
+export type LeadFollowUp = {
+  id: string;
+  lead_id: string;
+  email_send_id?: string | null;
+  type: LeadFollowUpType;
+  status: LeadFollowUpStatus;
+  due_at: string;
+  notes?: string | null;
+  revision: number;
+  is_overdue: boolean;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LeadFollowUpListResponse = {
+  items: LeadFollowUp[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type LeadFollowUpCreateRequest = {
+  due_at: string;
+  type: LeadFollowUpType;
+  notes?: string | null;
+  email_send_id?: string | null;
+};
+
+export type LeadFollowUpUpdateRequest = {
+  expected_revision: number;
+  due_at?: string;
+  type?: LeadFollowUpType;
+  notes?: string | null;
+};
+
+export type LeadFollowUpLifecycleRequest = {
+  expected_revision: number;
+};
+
 export type LeadListResponse = {
   items: Lead[];
   limit: number;

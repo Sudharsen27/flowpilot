@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
 import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
+import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadOverview } from "@/components/leads/lead-overview";
 import { LeadsTable } from "@/components/leads/leads-table";
@@ -46,6 +47,9 @@ export default function LeadsPage() {
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftKey, setDraftKey] = useState(0);
   const [reviewDraftId, setReviewDraftId] = useState<string | null>(null);
+  const [followUpLead, setFollowUpLead] = useState<Lead | null>(null);
+  const [followUpsOpen, setFollowUpsOpen] = useState(false);
+  const [followUpsKey, setFollowUpsKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +149,15 @@ export default function LeadsPage() {
           setRetryKey((value) => value + 1);
         }}
       />
+      <LeadFollowUpsDialog
+        key={`lead-follow-ups-${followUpsKey}`}
+        open={followUpsOpen}
+        lead={followUpLead}
+        onOpenChange={(open) => {
+          setFollowUpsOpen(open);
+          if (!open) setFollowUpLead(null);
+        }}
+      />
       <DraftLeadResponseDialog
         key={`lead-draft-${draftKey}`}
         open={draftOpen}
@@ -166,7 +179,7 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Lead overview"
-          description="Counts come from saved leads in this organization. Follow-up tracking is not implemented yet."
+          description="Counts come from saved leads in this organization."
         />
         <LeadOverview summary={summary} loading={isLoading && page === null} />
       </section>
@@ -243,6 +256,11 @@ export default function LeadsPage() {
                 setDraftKey((value) => value + 1);
                 setDraftOpen(true);
               }}
+              onFollowUps={(lead) => {
+                setFollowUpLead(lead);
+                setFollowUpsKey((value) => value + 1);
+                setFollowUpsOpen(true);
+              }}
             />
             {total > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -296,6 +314,12 @@ export default function LeadsPage() {
           className="max-w-none"
           title="Nothing has been sent"
           description="Use Draft response to generate a reply, then edit, approve, or reject it. Approval does not send a message."
+        />
+      </section>
+      <section className="grid gap-5">
+        <SectionHeader
+          title="Follow-ups"
+          description="Follow-ups are business reminders. Opening Follow-ups on a lead lets you create, reschedule, complete, or cancel them. Due items are not emailed automatically."
         />
       </section>
     </div>

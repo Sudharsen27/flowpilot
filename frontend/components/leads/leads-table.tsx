@@ -80,6 +80,7 @@ type LeadsTableProps = {
   onQualify?: (lead: Lead) => void;
   onDraftResponse?: (lead: Lead) => void;
   onReviewDraft?: (lead: Lead) => void;
+  onFollowUps?: (lead: Lead) => void;
 };
 
 export function LeadsTable({
@@ -89,6 +90,7 @@ export function LeadsTable({
   onQualify,
   onDraftResponse,
   onReviewDraft,
+  onFollowUps,
 }: LeadsTableProps) {
   return (
     <DataTable
@@ -100,7 +102,7 @@ export function LeadsTable({
       emptyTitle="No leads yet"
       emptyDescription="Create a lead to start capturing enquiries, or wait until a connected channel sends one."
       rowActions={
-        onEdit || onQualify || onDraftResponse || onReviewDraft
+        onEdit || onQualify || onDraftResponse || onReviewDraft || onFollowUps
           ? (lead) => (
               <div className="flex justify-end gap-2">
                 {onQualify ? (
@@ -131,6 +133,16 @@ export function LeadsTable({
                     onClick={() => onReviewDraft(lead)}
                   >
                     Review draft
+                  </Button>
+                ) : null}
+                {onFollowUps ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onFollowUps(lead)}
+                  >
+                    Follow-ups
                   </Button>
                 ) : null}
                 {onEdit ? (
