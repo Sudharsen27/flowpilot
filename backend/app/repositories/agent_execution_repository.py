@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -110,5 +111,30 @@ class AgentExecutionRepository:
             )
             .values(**values)
         )
+        self.session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    def recover_stale_running(
+        self,
+        organization_id: str,
+        agent_id: str,
+        *,
+        cutoff: datetime,
+        values: dict[str, Any],
+        execution_id: str | None = None,
+    ) -> int:
+        for obj in list(self.session.identity_map.values()):
+            if isinstance(obj, AgentExecution):
+                self.session.expire(obj)
+        started = func.coalesce(AgentExecution.started_at, AgentExecution.created_at)
+        filters = [
+            AgentExecution.organization_id == organization_id,
+            AgentExecution.agent_id == agent_id,
+            AgentExecution.status == AgentExecutionStatus.RUNNING,
+            started <= cutoff,
+        ]
+        if execution_id is not None:
+            filters.append(AgentExecution.id == execution_id)
+        result = self.session.execute(update(AgentExecution).where(*filters).values(**values))
         self.session.commit()
         return int(getattr(result, "rowcount", 0) or 0)

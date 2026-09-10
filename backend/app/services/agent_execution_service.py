@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -58,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 RUN_CLAIM_KEY = "claimed"
 CANCELLED_MESSAGE = "Execution was cancelled."
+STALE_EXECUTION_MESSAGE = "This execution did not finish and was marked failed."
 
 
 class ExecutionFailure(Exception):
@@ -71,6 +72,10 @@ class ExecutionCancelled(Exception):
     pass
 
 
+class ExecutionInterrupted(Exception):
+    pass
+
+
 class AgentExecutionService:
     def __init__(
         self,
@@ -81,6 +86,7 @@ class AgentExecutionService:
         tool_executor: ToolExecutionService | None = None,
         policy: ToolPolicy | None = None,
         max_tool_iterations: int | None = None,
+        stale_timeout_seconds: float | None = None,
     ) -> None:
         self.session = session
         self.provider = provider
@@ -98,6 +104,7 @@ class AgentExecutionService:
             if max_tool_iterations is not None
             else settings.agent_max_tool_iterations
         )
+        self._stale_timeout_seconds = stale_timeout_seconds
 
     def start_execution(
         self,
@@ -112,6 +119,11 @@ class AgentExecutionService:
             raise NotFoundError("Agent not found")
         if AgentStatus(agent.status) not in EXECUTABLE_AGENT_STATUSES:
             raise ValidationError(f"Agent cannot be executed while status is {agent.status}")
+
+        self.recover_stale_running_executions(
+            organization_id=organization_id,
+            agent_id=agent.id,
+        )
 
         now = datetime.now(UTC)
         execution = AgentExecution(
@@ -138,6 +150,11 @@ class AgentExecutionService:
         agent_id: str,
         execution_id: str,
     ) -> AgentExecutionResult:
+        self.recover_stale_running_executions(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            execution_id=execution_id,
+        )
         execution = self._claim_running_execution(
             organization_id=organization_id,
             agent_id=agent_id,
@@ -180,8 +197,8 @@ class AgentExecutionService:
                 execution,
             )
             return self._complete(execution, generated, tool_results)
-        except ExecutionCancelled:
-            return self._cancelled_result(
+        except (ExecutionCancelled, ExecutionInterrupted):
+            return self._terminal_result(
                 organization_id=organization_id,
                 agent_id=agent_id,
                 execution_id=execution.id,
@@ -308,6 +325,34 @@ class AgentExecutionService:
         self.session.refresh(execution)
         return execution
 
+    def recover_stale_running_executions(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str | None = None,
+    ) -> int:
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(seconds=self._effective_stale_timeout_seconds())
+        return self.executions.recover_stale_running(
+            organization_id,
+            agent_id,
+            cutoff=cutoff,
+            execution_id=execution_id,
+            values={
+                "status": AgentExecutionStatus.FAILED,
+                "error": STALE_EXECUTION_MESSAGE,
+                "failure_category": ExecutionFailureCategory.EXECUTION_ERROR,
+                "output": None,
+                "completed_at": now,
+            },
+        )
+
+    def _effective_stale_timeout_seconds(self) -> float:
+        if self._stale_timeout_seconds is not None:
+            return self._stale_timeout_seconds
+        return settings.agent_execution_stale_timeout_effective_seconds()
+
     def _ensure_not_cancelled(self, execution: AgentExecution) -> None:
         status = self.executions.probe_status(
             execution.organization_id,
@@ -316,8 +361,10 @@ class AgentExecutionService:
         )
         if status == AgentExecutionStatus.CANCELLED:
             raise ExecutionCancelled()
+        if status is not None and status != AgentExecutionStatus.RUNNING:
+            raise ExecutionInterrupted()
 
-    def _cancelled_result(
+    def _terminal_result(
         self,
         *,
         organization_id: str,
@@ -330,7 +377,7 @@ class AgentExecutionService:
         )
         if current is None:
             raise NotFoundError("Agent execution not found")
-        if AgentExecutionStatus(current.status) != AgentExecutionStatus.CANCELLED:
+        if AgentExecutionStatus(current.status) == AgentExecutionStatus.RUNNING:
             raise ConflictError("Execution is no longer running")
         return _to_run_result(current)
 
@@ -437,7 +484,7 @@ class AgentExecutionService:
             },
         )
         if updated != 1:
-            return self._cancelled_result(
+            return self._terminal_result(
                 organization_id=execution.organization_id,
                 agent_id=execution.agent_id,
                 execution_id=execution.id,
@@ -472,15 +519,11 @@ class AgentExecutionService:
             },
         )
         if updated != 1:
-            current = self.executions.get_by_agent(
-                execution.organization_id, execution.agent_id, execution.id
+            return self._terminal_result(
+                organization_id=execution.organization_id,
+                agent_id=execution.agent_id,
+                execution_id=execution.id,
             )
-            if (
-                current is not None
-                and AgentExecutionStatus(current.status)
-                == AgentExecutionStatus.CANCELLED
-            ):
-                return _to_run_result(current)
         else:
             current = self.executions.get_by_agent(
                 execution.organization_id, execution.agent_id, execution.id
@@ -510,6 +553,10 @@ class AgentExecutionService:
     ) -> AgentExecutionListResponse:
         if self.agents.get_by_id(organization_id, agent_id) is None:
             raise NotFoundError("Agent not found")
+        self.recover_stale_running_executions(
+            organization_id=organization_id,
+            agent_id=agent_id,
+        )
         safe_limit = min(max(limit, 1), EXECUTION_LIST_MAX_LIMIT)
         safe_offset = max(offset, 0)
         items, total = self.executions.list_by_agent(
@@ -534,6 +581,11 @@ class AgentExecutionService:
     ) -> AgentExecutionDetail:
         if self.agents.get_by_id(organization_id, agent_id) is None:
             raise NotFoundError("Agent not found")
+        self.recover_stale_running_executions(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            execution_id=execution_id,
+        )
         execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if execution is None:
             raise NotFoundError("Agent execution not found")
@@ -550,6 +602,11 @@ class AgentExecutionService:
     ) -> ToolInvocationListResponse:
         if self.agents.get_by_id(organization_id, agent_id) is None:
             raise NotFoundError("Agent not found")
+        self.recover_stale_running_executions(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            execution_id=execution_id,
+        )
         execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if execution is None:
             raise NotFoundError("Agent execution not found")

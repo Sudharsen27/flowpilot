@@ -81,7 +81,7 @@ This slice produces a structured AI response and an audit row. Tool calling is d
 ### Models
 
 - **Agent** — tenant-owned (`organization_id`). Types: `SALES`, `SUPPORT`, `OPERATIONS`, `COMMUNICATION`. Statuses: `DRAFT`, `READY`, `ACTIVE`, `PAUSED`, `NEEDS_ATTENTION`. Only `READY` and `ACTIVE` may execute.
-- **AgentExecution** — tenant-owned attempt: status (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED` / `CANCELLED`), JSON input/output, provider/model, timestamps, optional initiating user. `POST .../executions` commits `RUNNING`; `POST .../run` executes; `POST .../cancel` CAS-transitions `RUNNING` → `CANCELLED`. In-flight OpenAI HTTP calls are not aborted; the run loop stops at the next cooperative boundary.
+- **AgentExecution** — tenant-owned attempt: status (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED` / `CANCELLED`), JSON input/output, provider/model, timestamps, optional initiating user. `POST .../executions` commits `RUNNING`; `POST .../run` executes; `POST .../cancel` CAS-transitions `RUNNING` → `CANCELLED`. Abandoned `RUNNING` rows (process crash before a terminal CAS) are recovered to `FAILED` with `EXECUTION_ERROR` when they are older than the effective stale timeout. In-flight OpenAI HTTP calls are not aborted; the run loop stops at the next cooperative boundary.
 
 Tenant isolation: repositories always query by `organization_id` from the authenticated membership JWT, never from the client body.
 
@@ -125,6 +125,16 @@ Authenticated members of the current organization may read persisted `AgentExecu
 - `GET /api/v1/agents/{agent_id}/executions/{execution_id}` — safe detail: input text, output text, provider, model, usage when stored, sanitized `error`, timestamps, `initiated_by_user_id`. Does not expose `tool_results`, raw provider payloads, or secrets.
 
 Missing agents, missing executions, cross-tenant ids, and executions that belong to a different agent return 404. Unauthenticated requests return 401.
+
+### Stuck RUNNING recovery (Phase 3L.3)
+
+There is no worker or scheduler. Recovery is opportunistic and tenant-scoped: listing or loading an agent's executions, starting a new execution, running a specific execution, or listing its tool invocations CAS-updates matching rows.
+
+A row is stale when `status = RUNNING` and `coalesce(started_at, created_at)` is at or before `now - timeout`. The timeout is `AGENT_EXECUTION_STALE_TIMEOUT_SECONDS` (default 300), raised to at least `(AGENT_MAX_TOOL_ITERATIONS + 1) * OPENAI_REQUEST_TIMEOUT_SECONDS` so a full in-process provider/tool loop is not treated as abandoned. There is no heartbeat column; a legitimate run that exceeds the effective timeout can be recovered as failed while `generate()` is still blocking. Existing `finalize_running` CAS still prevents a later `COMPLETED` write.
+
+Recovery itself is `UPDATE … WHERE organization_id AND agent_id AND status = RUNNING AND timestamp ≤ cutoff` (optionally a single `execution_id`). It sets `FAILED`, sanitized error `This execution did not finish and was marked failed.`, `failure_category = EXECUTION_ERROR`, `completed_at`, and clears `output`. It never overwrites `COMPLETED`, `FAILED`, or `CANCELLED`. Re-running recovery is a no-op.
+
+This does **not** guarantee crash recovery in the background. A crashed `RUNNING` row stays `RUNNING` until authenticated traffic for that organization and agent hits one of the operations above. There is no public “recover” API and no MEMBER-global sweep.
 
 ### Tool invocation history (Phase 3H.2)
 
