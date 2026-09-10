@@ -54,7 +54,7 @@ function errorMessage(cause: unknown) {
     return "This follow-up changed. Refresh and review the latest status.";
   }
   if (cause.status === 422) {
-    return "Review the due date and type, then try again.";
+    return "Review the due date, type, and email body, then try again.";
   }
   if (typeof cause.body === "object" && cause.body && "detail" in cause.body) {
     const detail = cause.body.detail;
@@ -98,8 +98,11 @@ export function LeadFollowUpsDialog({
   const [type, setType] = useState<LeadFollowUpType>("EMAIL_FOLLOW_UP");
   const [dueAt, setDueAt] = useState("");
   const [notes, setNotes] = useState("");
+  const [bodyText, setBodyText] = useState("");
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
   const [rescheduleDue, setRescheduleDue] = useState("");
+  const [editingBody, setEditingBody] = useState("");
+  const [editingNotes, setEditingNotes] = useState("");
   const [confirmingCancelId, setConfirmingCancelId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -134,6 +137,10 @@ export function LeadFollowUpsDialog({
       setError("A valid due date and time is required.");
       return;
     }
+    if (type === "EMAIL_FOLLOW_UP" && !bodyText.trim()) {
+      setError("Email body is required for email follow-ups.");
+      return;
+    }
     setError(null);
     setPending(true);
     try {
@@ -141,9 +148,11 @@ export function LeadFollowUpsDialog({
         due_at: iso,
         type,
         notes: notes.trim() || null,
+        ...(type === "EMAIL_FOLLOW_UP" ? { body_text: bodyText.trim() } : {}),
       });
       setDueAt("");
       setNotes("");
+      setBodyText("");
       await refresh();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -159,12 +168,25 @@ export function LeadFollowUpsDialog({
       setError("A valid due date and time is required.");
       return;
     }
+    if (followUp.type === "EMAIL_FOLLOW_UP") {
+      const trimmed = editingBody.trim();
+      if (!trimmed && followUp.body_text) {
+        setError("Email body is required for email follow-ups.");
+        return;
+      }
+    }
     setError(null);
     setPending(true);
     try {
       await updateLeadFollowUp(lead.id, followUp.id, {
         expected_revision: followUp.revision,
         due_at: iso,
+        ...(followUp.type === "EMAIL_FOLLOW_UP" && editingBody.trim()
+          ? { body_text: editingBody.trim() }
+          : {}),
+        ...(followUp.type === "MANUAL_FOLLOW_UP"
+          ? { notes: editingNotes.trim() || null }
+          : {}),
       });
       setReschedulingId(null);
       await refresh();
@@ -241,14 +263,26 @@ export function LeadFollowUpsDialog({
               required
             />
           </FormField>
-          <FormField label="Notes" htmlFor="follow-up-notes">
-            <Textarea
-              id="follow-up-notes"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              maxLength={4000}
-            />
-          </FormField>
+          {type === "EMAIL_FOLLOW_UP" ? (
+            <FormField label="Email body" htmlFor="follow-up-body" required>
+              <Textarea
+                id="follow-up-body"
+                value={bodyText}
+                onChange={(event) => setBodyText(event.target.value)}
+                maxLength={8000}
+                required
+              />
+            </FormField>
+          ) : (
+            <FormField label="Notes" htmlFor="follow-up-notes">
+              <Textarea
+                id="follow-up-notes"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                maxLength={4000}
+              />
+            </FormField>
+          )}
           {loading ? (
             <p role="status" className="text-muted-foreground text-sm">
               Loading follow-ups…
@@ -260,7 +294,14 @@ export function LeadFollowUpsDialog({
             </p>
           ) : null}
           <div>
-            <Button type="submit" disabled={pending || !dueAt}>
+            <Button
+              type="submit"
+              disabled={
+                pending ||
+                !dueAt ||
+                (type === "EMAIL_FOLLOW_UP" && !bodyText.trim())
+              }
+            >
               {pending ? "Saving…" : "Create follow-up"}
             </Button>
           </div>
@@ -279,7 +320,20 @@ export function LeadFollowUpsDialog({
               </p>
               <p>{formatDue(item.due_at)}</p>
               <p className="text-muted-foreground">{typeLabels[item.type]}</p>
-              {item.notes ? <p className="mt-1">{item.notes}</p> : null}
+              {item.type === "EMAIL_FOLLOW_UP" ? (
+                <div className="mt-2">
+                  <p className="text-muted-foreground text-xs font-medium uppercase">
+                    Email body
+                  </p>
+                  {item.body_text ? (
+                    <p className="mt-1 whitespace-pre-wrap">{item.body_text}</p>
+                  ) : (
+                    <p className="text-muted-foreground mt-1">No email body stored.</p>
+                  )}
+                </div>
+              ) : item.notes ? (
+                <p className="mt-1">{item.notes}</p>
+              ) : null}
               {item.status === "PENDING" ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button
@@ -290,6 +344,8 @@ export function LeadFollowUpsDialog({
                     onClick={() => {
                       setReschedulingId(item.id);
                       setRescheduleDue(toLocalInput(item.due_at));
+                      setEditingBody(item.body_text ?? "");
+                      setEditingNotes(item.notes ?? "");
                     }}
                   >
                     Reschedule
@@ -328,6 +384,31 @@ export function LeadFollowUpsDialog({
                       required
                     />
                   </FormField>
+                  {item.type === "EMAIL_FOLLOW_UP" ? (
+                    <FormField
+                      label="Edit email body"
+                      htmlFor={`follow-up-edit-body-${item.id}`}
+                    >
+                      <Textarea
+                        id={`follow-up-edit-body-${item.id}`}
+                        value={editingBody}
+                        onChange={(event) => setEditingBody(event.target.value)}
+                        maxLength={8000}
+                      />
+                    </FormField>
+                  ) : (
+                    <FormField
+                      label="Notes"
+                      htmlFor={`follow-up-edit-notes-${item.id}`}
+                    >
+                      <Textarea
+                        id={`follow-up-edit-notes-${item.id}`}
+                        value={editingNotes}
+                        onChange={(event) => setEditingNotes(event.target.value)}
+                        maxLength={4000}
+                      />
+                    </FormField>
+                  )}
                   <div className="flex gap-2">
                     <Button
                       type="button"

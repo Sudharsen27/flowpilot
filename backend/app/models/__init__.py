@@ -3,6 +3,7 @@ from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend
 from app.models.lead_follow_up import LeadFollowUp
+from app.models.lead_follow_up_execution import LeadFollowUpExecution
 from app.models.lead_qualification import LeadQualification
 from app.models.lead_response_draft import LeadResponseDraft
 from app.models.membership import Membership, MembershipRole
@@ -19,6 +20,7 @@ __all__ = [
     "Lead",
     "LeadEmailSend",
     "LeadFollowUp",
+    "LeadFollowUpExecution",
     "LeadQualification",
     "LeadResponseDraft",
     "LeadSource",

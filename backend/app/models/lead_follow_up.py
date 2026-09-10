@@ -99,6 +99,7 @@ class LeadFollowUp(Base):
     )
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
+    body_text: Mapped[str | None] = mapped_column(String(8000), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

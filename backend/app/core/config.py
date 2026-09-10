@@ -32,10 +32,17 @@ class Settings(BaseSettings):
     # as FAILED. Must stay large enough that a legitimate in-process run is not
     # treated as abandoned. There is no per-execution heartbeat.
     agent_execution_stale_timeout_seconds: float = Field(default=300, ge=1)
+    lead_follow_up_execution_stale_timeout_seconds: float = Field(default=300, ge=1)
 
     def agent_execution_stale_timeout_effective_seconds(self) -> float:
         floor = (self.agent_max_tool_iterations + 1) * self.openai_request_timeout_seconds
         return max(self.agent_execution_stale_timeout_seconds, floor)
+
+    def lead_follow_up_execution_stale_timeout_effective_seconds(self) -> float:
+        return max(
+            self.lead_follow_up_execution_stale_timeout_seconds,
+            self.email_request_timeout_seconds,
+        )
 
     @property
     def cors_origin_list(self) -> list[str]:

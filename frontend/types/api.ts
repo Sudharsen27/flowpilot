@@ -376,6 +376,7 @@ export type LeadFollowUp = {
   status: LeadFollowUpStatus;
   due_at: string;
   notes?: string | null;
+  body_text?: string | null;
   revision: number;
   is_overdue: boolean;
   completed_at: string | null;
@@ -395,6 +396,7 @@ export type LeadFollowUpCreateRequest = {
   due_at: string;
   type: LeadFollowUpType;
   notes?: string | null;
+  body_text?: string | null;
   email_send_id?: string | null;
 };
 
@@ -403,6 +405,7 @@ export type LeadFollowUpUpdateRequest = {
   due_at?: string;
   type?: LeadFollowUpType;
   notes?: string | null;
+  body_text?: string | null;
 };
 
 export type LeadFollowUpLifecycleRequest = {

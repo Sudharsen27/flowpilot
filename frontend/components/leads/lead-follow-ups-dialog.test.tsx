@@ -43,6 +43,7 @@ function followUp(overrides: Partial<LeadFollowUp> = {}): LeadFollowUp {
     status: "PENDING",
     due_at: "2030-06-15T10:30:00.000Z",
     notes: "Check reply",
+    body_text: "Checking in on your enquiry.",
     revision: 1,
     is_overdue: false,
     completed_at: null,
@@ -98,7 +99,7 @@ describe("Lead follow-ups dialog", () => {
     );
     expect(await screen.findByText("No follow-ups yet.")).toBeVisible();
     await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
-    await user.type(screen.getByLabelText(/^Notes/), "Check reply");
+    await user.type(screen.getByLabelText(/Email body/), "Checking in on your enquiry.");
     await user.click(screen.getByRole("button", { name: "Create follow-up" }));
     await waitFor(() => {
       expect(createLeadFollowUpMock).toHaveBeenCalledTimes(1);
@@ -106,9 +107,48 @@ describe("Lead follow-ups dialog", () => {
     const payload = createLeadFollowUpMock.mock.calls[0]?.[1];
     expect(payload).not.toHaveProperty("organization_id");
     expect(payload?.type).toBe("EMAIL_FOLLOW_UP");
-    expect(payload?.notes).toBe("Check reply");
+    expect(payload?.body_text).toBe("Checking in on your enquiry.");
     expect(await screen.findByText("PENDING")).toBeVisible();
     expect(screen.getAllByText("Email follow-up").length).toBeGreaterThan(0);
+    expect(screen.getByText("Checking in on your enquiry.")).toBeVisible();
+  });
+
+  it("requires email body for email follow-ups and does not submit", async () => {
+    const user = userEvent.setup();
+    render(
+      <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
+    );
+    await screen.findByText("No follow-ups yet.");
+    await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
+    await user.type(screen.getByLabelText(/Email body/), "   ");
+    expect(screen.getByRole("button", { name: "Create follow-up" })).toBeDisabled();
+    expect(createLeadFollowUpMock).not.toHaveBeenCalled();
+  });
+
+  it("does not require email body for manual follow-ups", async () => {
+    const user = userEvent.setup();
+    createLeadFollowUpMock.mockResolvedValue(
+      followUp({ type: "MANUAL_FOLLOW_UP", body_text: null, notes: "Call them" }),
+    );
+    render(
+      <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
+    );
+    await screen.findByText("No follow-ups yet.");
+    await user.selectOptions(screen.getByLabelText(/^Type/), "MANUAL_FOLLOW_UP");
+    expect(screen.queryByLabelText(/Email body/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
+    await user.type(screen.getByLabelText(/^Notes/), "Call them");
+    await user.click(screen.getByRole("button", { name: "Create follow-up" }));
+    await waitFor(() => {
+      expect(createLeadFollowUpMock).toHaveBeenCalledTimes(1);
+    });
+    expect(createLeadFollowUpMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        type: "MANUAL_FOLLOW_UP",
+        notes: "Call them",
+      }),
+    );
+    expect(createLeadFollowUpMock.mock.calls[0]?.[1]).not.toHaveProperty("body_text");
   });
 
   it("shows overdue and can complete, reschedule, and cancel", async () => {
@@ -166,8 +206,102 @@ describe("Lead follow-ups dialog", () => {
     expect(updateLeadFollowUpMock).toHaveBeenCalledWith(
       "lead-1",
       "fu-1",
-      expect.objectContaining({ expected_revision: 1 }),
+      expect.objectContaining({
+        expected_revision: 1,
+        body_text: "Checking in on your enquiry.",
+      }),
     );
+  });
+
+  it("updates the stored email body on a pending follow-up", async () => {
+    const user = userEvent.setup();
+    getLeadFollowUpsMock.mockResolvedValue({
+      items: [followUp()],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    updateLeadFollowUpMock.mockResolvedValue(
+      followUp({ revision: 2, body_text: "Updated body" }),
+    );
+    render(
+      <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
+    );
+    await screen.findByText("PENDING");
+    await user.click(screen.getByRole("button", { name: "Reschedule" }));
+    const body = screen.getByLabelText(/Edit email body/);
+    await user.clear(body);
+    await user.type(body, "Updated body");
+    getLeadFollowUpsMock.mockResolvedValue({
+      items: [followUp({ revision: 2, body_text: "Updated body" })],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(updateLeadFollowUpMock).toHaveBeenCalledWith(
+      "lead-1",
+      "fu-1",
+      expect.objectContaining({ expected_revision: 1, body_text: "Updated body" }),
+    );
+  });
+
+  it("shows saving and create error states without duplicate submits", async () => {
+    const user = userEvent.setup();
+    let resolveCreate: (value: LeadFollowUp) => void = () => undefined;
+    createLeadFollowUpMock.mockImplementation(
+      () =>
+        new Promise<LeadFollowUp>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+    render(
+      <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
+    );
+    await screen.findByText("No follow-ups yet.");
+    await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
+    await user.type(screen.getByLabelText(/Email body/), "Checking in on your enquiry.");
+    await user.click(screen.getByRole("button", { name: "Create follow-up" }));
+    expect(await screen.findByRole("button", { name: "Saving…" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Saving…" }));
+    expect(createLeadFollowUpMock).toHaveBeenCalledTimes(1);
+    resolveCreate(followUp());
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create follow-up" })).toBeInTheDocument();
+    });
+    expect(createLeadFollowUpMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps create 422 errors", async () => {
+    const user = userEvent.setup();
+    createLeadFollowUpMock.mockRejectedValue(
+      new ApiError("Request failed: 422", 422, { detail: "invalid" }),
+    );
+    render(
+      <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
+    );
+    await screen.findByText("No follow-ups yet.");
+    await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
+    await user.type(screen.getByLabelText(/Email body/), "Checking in on your enquiry.");
+    await user.click(screen.getByRole("button", { name: "Create follow-up" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Review the due date, type, and email body, then try again.",
+    );
+  });
+
+  it("does not offer send or execution actions", async () => {
+    getLeadFollowUpsMock.mockResolvedValue({
+      items: [followUp()],
+      limit: 20,
+      offset: 0,
+      total: 1,
+    });
+    render(
+      <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
+    );
+    await screen.findByText("PENDING");
+    expect(screen.queryByRole("button", { name: /send now/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/scheduled/i)).not.toBeInTheDocument();
   });
 
   it("cancels after confirmation and maps 409", async () => {

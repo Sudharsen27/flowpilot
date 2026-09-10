@@ -229,9 +229,13 @@ Limitation: a crash after the provider accepts a message and before `SENT` is co
 
 `LeadFollowUp` is a tenant-owned reminder row (`lead_follow_ups`), not a field on `Lead` or `LeadResponseDraft`. Types: `EMAIL_FOLLOW_UP`, `MANUAL_FOLLOW_UP`. Status: `PENDING` → `COMPLETED` or `CANCELLED` (terminal). `OVERDUE` is derived (`PENDING` and `due_at` before now) and is not persisted. Passing the due time does not complete the row and does not send email.
 
+`EMAIL_FOLLOW_UP` stores a dedicated human-authored `body_text` (required, trimmed, max 8000). This is not `notes`. `MANUAL_FOLLOW_UP` does not require `body_text`. Existing rows may have NULL `body_text`; new EMAIL follow-ups cannot. Only `PENDING` rows may be edited.
+
 Create/list/get/patch plus explicit complete/cancel. `due_at` is timezone-aware UTC. List order is `due_at ASC`, `id ASC` (default 20, max 50). Optional `email_send_id` must be a `SENT` send for the same org and lead. Optimistic `revision` / `expected_revision` returns 409 on stale lifecycle actions. There is no Activity model; timestamps on the row are the audit trail.
 
-Due follow-ups are **not** executed automatically. No cron, workers, agent runs, or Resend calls from this domain.
+Due follow-ups are **not** executed automatically. No cron, workers, agent runs, or Resend calls from this domain. Storing `body_text` does not schedule or send mail.
+
+`LeadFollowUpExecution` (`lead_follow_ups` vs `lead_follow_up_executions`) is a separate tenant-owned attempt row. Status: `PENDING` → `RUNNING` → `SENT` or `FAILED`. `LeadFollowUp` status is unchanged. Snapshots (`recipient_email`, `sender_email`, `subject`, `body_text`) are frozen per attempt. Unique `(follow_up_id, attempt)`; at most one `PENDING`/`RUNNING` execution per follow-up. Future provider idempotency key shape: `follow-up:{follow_up_id}:attempt:{attempt}`. Claiming uses `SELECT … FOR UPDATE SKIP LOCKED` on PostgreSQL, then commits before any provider call. This is not exactly-once delivery. There is no worker, polling, or send in this slice.
 
 ## LLM providers
 
@@ -309,4 +313,8 @@ Humans send an approved draft by email. Sending is an explicit external side eff
 
 ## Phase 4F (lead follow-up scheduling)
 
-Humans create, list, reschedule, complete, and cancel follow-ups. Overdue is derived. Due follow-ups are not sent or executed automatically.
+Humans create, list, reschedule, complete, and cancel follow-ups. Overdue is derived. EMAIL follow-ups require stored `body_text`. Due follow-ups are not sent or executed automatically.
+
+## Phase 4G (follow-up execution domain)
+
+`LeadFollowUpExecution` persists automated EMAIL follow-up attempts. No worker or email send yet.

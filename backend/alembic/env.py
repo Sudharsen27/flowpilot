@@ -13,6 +13,7 @@ from app.models import (
     Lead,
     LeadEmailSend,
     LeadFollowUp,
+    LeadFollowUpExecution,
     LeadQualification,
     LeadResponseDraft,
     Membership,
@@ -27,6 +28,7 @@ assert (
     and Lead
     and LeadEmailSend
     and LeadFollowUp
+    and LeadFollowUpExecution
     and LeadQualification
     and LeadResponseDraft
     and Membership

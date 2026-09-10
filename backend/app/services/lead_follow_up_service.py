@@ -26,11 +26,13 @@ class LeadFollowUpService:
         due_at: datetime,
         follow_up_type: LeadFollowUpType,
         notes: str | None,
+        body_text: str | None,
         email_send_id: str | None,
         initiated_by_user_id: str | None,
     ) -> LeadFollowUp:
         self._require_lead(organization_id, lead_id)
         send_id = self._validated_send_id(organization_id, lead_id, email_send_id)
+        _require_email_body(follow_up_type, body_text)
         row = LeadFollowUp(
             organization_id=organization_id,
             lead_id=lead_id,
@@ -40,6 +42,7 @@ class LeadFollowUpService:
             status=LeadFollowUpStatus.PENDING,
             due_at=due_at,
             notes=notes,
+            body_text=body_text,
             revision=1,
         )
         self.follow_ups.add(row)
@@ -93,6 +96,8 @@ class LeadFollowUpService:
         follow_up_type: LeadFollowUpType | None,
         notes: str | None,
         notes_provided: bool,
+        body_text: str | None,
+        body_provided: bool,
     ) -> LeadFollowUp:
         row = self._lock_pending(organization_id, lead_id, follow_up_id, expected_revision)
         if due_at is not None:
@@ -101,6 +106,13 @@ class LeadFollowUpService:
             row.type = follow_up_type
         if notes_provided:
             row.notes = notes
+        if body_provided:
+            row.body_text = body_text
+        resulting_type = LeadFollowUpType(row.type)
+        if resulting_type == LeadFollowUpType.EMAIL_FOLLOW_UP and (
+            body_provided or follow_up_type == LeadFollowUpType.EMAIL_FOLLOW_UP
+        ):
+            _require_email_body(resulting_type, row.body_text)
         row.revision = row.revision + 1
         row.updated_at = datetime.now(UTC)
         self.session.commit()
@@ -178,6 +190,11 @@ class LeadFollowUpService:
         return row
 
 
+def _require_email_body(follow_up_type: LeadFollowUpType | str, body_text: str | None) -> None:
+    if follow_up_type == LeadFollowUpType.EMAIL_FOLLOW_UP and not (body_text and body_text.strip()):
+        raise ValidationError("body_text is required for EMAIL_FOLLOW_UP")
+
+
 def to_follow_up_public(
     row: LeadFollowUp, *, now: datetime | None = None
 ) -> LeadFollowUpPublic:
@@ -194,6 +211,7 @@ def to_follow_up_public(
         status=LeadFollowUpStatus(row.status),
         due_at=row.due_at,
         notes=row.notes,
+        body_text=row.body_text,
         revision=row.revision,
         is_overdue=is_overdue,
         completed_at=row.completed_at,

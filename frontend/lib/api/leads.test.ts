@@ -245,6 +245,7 @@ describe("Lead API client", () => {
       due_at: "2030-06-15T10:30:00.000Z",
       type: "EMAIL_FOLLOW_UP",
       notes: "Ping",
+      body_text: "Checking in on your enquiry.",
     });
     await updateLeadFollowUp("lead/1", "fu/1", {
       expected_revision: 1,

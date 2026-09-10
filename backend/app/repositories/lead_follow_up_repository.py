@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus
+from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
 
 FOLLOW_UP_LIST_DEFAULT_LIMIT = 20
 FOLLOW_UP_LIST_MAX_LIMIT = 50
@@ -66,3 +66,25 @@ class LeadFollowUpRepository:
             )
         )
         return items, int(total or 0)
+
+    def list_due_email_follow_ups(
+        self,
+        *,
+        as_of: datetime,
+        limit: int,
+        for_update_skip_locked: bool = False,
+    ) -> list[LeadFollowUp]:
+        stmt = (
+            select(LeadFollowUp)
+            .where(
+                LeadFollowUp.status == LeadFollowUpStatus.PENDING,
+                LeadFollowUp.type == LeadFollowUpType.EMAIL_FOLLOW_UP,
+                LeadFollowUp.due_at <= as_of,
+            )
+            .order_by(LeadFollowUp.due_at.asc(), LeadFollowUp.id.asc())
+            .limit(limit)
+        )
+        bind = self.session.get_bind()
+        if for_update_skip_locked and bind is not None and bind.dialect.name == "postgresql":
+            stmt = stmt.with_for_update(skip_locked=True)
+        return list(self.session.scalars(stmt))

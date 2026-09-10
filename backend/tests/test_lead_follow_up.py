@@ -37,6 +37,7 @@ def _create_follow_up(
         "due_at": FUTURE,
         "type": "EMAIL_FOLLOW_UP",
         "notes": "Check whether they replied",
+        "body_text": "Checking in on your enquiry.",
     }
     body.update(overrides)
     response = client.post(_path(lead_id), json=body, headers=_headers(token))
@@ -89,6 +90,7 @@ def test_create_list_get_follow_up(client: TestClient, db: Session) -> None:
     got = client.get(_path(lead["id"], str(created["id"])), headers=_headers(token))
     assert got.status_code == 200
     assert got.json()["notes"] == "Check whether they replied"
+    assert got.json()["body_text"] == "Checking in on your enquiry."
     assert db.scalar(select(func.count()).select_from(LeadFollowUp)) == 1
     assert db.get(Lead, lead["id"]).status == "NEW"
     assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
@@ -114,6 +116,7 @@ def test_organization_id_is_rejected(client: TestClient) -> None:
         json={
             "due_at": FUTURE,
             "type": "EMAIL_FOLLOW_UP",
+            "body_text": "Checking in on your enquiry.",
             "organization_id": "org-1",
         },
         headers=_headers(token),
@@ -296,7 +299,12 @@ def test_email_send_source_must_match_tenant_lead_and_sent(
     send_id = sent.json()["id"]
     linked = client.post(
         _path(lead["id"]),
-        json={"due_at": FUTURE, "type": "EMAIL_FOLLOW_UP", "email_send_id": send_id},
+        json={
+            "due_at": FUTURE,
+            "type": "EMAIL_FOLLOW_UP",
+            "body_text": "Checking in on your enquiry.",
+            "email_send_id": send_id,
+        },
         headers=_headers(token),
     )
     assert linked.status_code == 200
@@ -304,7 +312,12 @@ def test_email_send_source_must_match_tenant_lead_and_sent(
     assert (
         client.post(
             _path(other["id"]),
-            json={"due_at": FUTURE, "type": "EMAIL_FOLLOW_UP", "email_send_id": send_id},
+            json={
+                "due_at": FUTURE,
+                "type": "EMAIL_FOLLOW_UP",
+                "body_text": "Checking in on your enquiry.",
+                "email_send_id": send_id,
+            },
             headers=_headers(token),
         ).status_code
         == 404
@@ -313,7 +326,12 @@ def test_email_send_source_must_match_tenant_lead_and_sent(
     assert (
         client.post(
             _path(other_lead["id"]),
-            json={"due_at": FUTURE, "type": "EMAIL_FOLLOW_UP", "email_send_id": send_id},
+            json={
+                "due_at": FUTURE,
+                "type": "EMAIL_FOLLOW_UP",
+                "body_text": "Checking in on your enquiry.",
+                "email_send_id": send_id,
+            },
             headers=_headers(second["access_token"]),
         ).status_code
         == 404
@@ -333,7 +351,166 @@ def test_email_send_source_must_match_tenant_lead_and_sent(
     failed_id = failed_send.json()["id"]
     rejected = client.post(
         _path(failed_lead["id"]),
-        json={"due_at": FUTURE, "type": "EMAIL_FOLLOW_UP", "email_send_id": failed_id},
+        json={
+            "due_at": FUTURE,
+            "type": "EMAIL_FOLLOW_UP",
+            "body_text": "Checking in on your enquiry.",
+            "email_send_id": failed_id,
+        },
         headers=_headers(token),
     )
     assert rejected.status_code == 400
+
+
+def test_email_follow_up_requires_nonempty_body(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token).json()
+    missing = client.post(
+        _path(lead["id"]),
+        json={"due_at": FUTURE, "type": "EMAIL_FOLLOW_UP"},
+        headers=_headers(token),
+    )
+    assert missing.status_code == 422
+    whitespace = client.post(
+        _path(lead["id"]),
+        json={"due_at": FUTURE, "type": "EMAIL_FOLLOW_UP", "body_text": "   "},
+        headers=_headers(token),
+    )
+    assert whitespace.status_code == 422
+    too_long = client.post(
+        _path(lead["id"]),
+        json={
+            "due_at": FUTURE,
+            "type": "EMAIL_FOLLOW_UP",
+            "body_text": "x" * 8001,
+        },
+        headers=_headers(token),
+    )
+    assert too_long.status_code == 422
+    created = client.post(
+        _path(lead["id"]),
+        json={
+            "due_at": FUTURE,
+            "type": "EMAIL_FOLLOW_UP",
+            "body_text": "Checking in on your enquiry.",
+        },
+        headers=_headers(token),
+    )
+    assert created.status_code == 200
+    assert created.json()["body_text"] == "Checking in on your enquiry."
+
+
+def test_manual_follow_up_does_not_require_body(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token).json()
+    created = client.post(
+        _path(lead["id"]),
+        json={"due_at": FUTURE, "type": "MANUAL_FOLLOW_UP", "notes": "Call back"},
+        headers=_headers(token),
+    )
+    assert created.status_code == 200
+    assert created.json()["type"] == "MANUAL_FOLLOW_UP"
+    assert created.json()["body_text"] is None
+
+
+def test_pending_body_update_and_concurrency(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token).json()
+    created = _create_follow_up(client, token, lead["id"])
+    updated = client.patch(
+        _path(lead["id"], str(created["id"])),
+        json={"expected_revision": 1, "body_text": "Updated follow-up body"},
+        headers=_headers(token),
+    )
+    assert updated.status_code == 200
+    assert updated.json()["body_text"] == "Updated follow-up body"
+    assert updated.json()["revision"] == 2
+    stale = client.patch(
+        _path(lead["id"], str(created["id"])),
+        json={"expected_revision": 1, "body_text": "Stale body"},
+        headers=_headers(token),
+    )
+    assert stale.status_code == 409
+    whitespace = client.patch(
+        _path(lead["id"], str(created["id"])),
+        json={"expected_revision": 2, "body_text": "   "},
+        headers=_headers(token),
+    )
+    assert whitespace.status_code == 400
+
+
+def test_body_cannot_be_updated_after_complete_or_cancel(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token).json()
+    completed = _create_follow_up(client, token, lead["id"])
+    client.post(
+        f"{_path(lead['id'], str(completed['id']))}/complete",
+        json={"expected_revision": 1},
+        headers=_headers(token),
+    )
+    assert (
+        client.patch(
+            _path(lead["id"], str(completed["id"])),
+            json={"expected_revision": 2, "body_text": "Too late"},
+            headers=_headers(token),
+        ).status_code
+        == 409
+    )
+    cancelled = _create_follow_up(client, token, lead["id"], notes="Other")
+    client.post(
+        f"{_path(lead['id'], str(cancelled['id']))}/cancel",
+        json={"expected_revision": 1},
+        headers=_headers(token),
+    )
+    assert (
+        client.patch(
+            _path(lead["id"], str(cancelled["id"])),
+            json={"expected_revision": 2, "body_text": "Too late"},
+            headers=_headers(token),
+        ).status_code
+        == 409
+    )
+
+
+def test_follow_up_body_is_tenant_isolated(client: TestClient) -> None:
+    first = _auth(client, email="a@example.com", organization_name="Alpha")
+    second = _auth(client, email="b@example.com", organization_name="Beta")
+    lead = _create(client, first["access_token"]).json()
+    created = _create_follow_up(client, first["access_token"], lead["id"])
+    headers = _headers(second["access_token"])
+    assert (
+        client.patch(
+            _path(lead["id"], str(created["id"])),
+            json={"expected_revision": 1, "body_text": "Cross tenant"},
+            headers=headers,
+        ).status_code
+        == 404
+    )
+
+
+def test_switching_to_email_requires_body(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token).json()
+    created = client.post(
+        _path(lead["id"]),
+        json={"due_at": FUTURE, "type": "MANUAL_FOLLOW_UP"},
+        headers=_headers(token),
+    ).json()
+    missing = client.patch(
+        _path(lead["id"], str(created["id"])),
+        json={"expected_revision": 1, "type": "EMAIL_FOLLOW_UP"},
+        headers=_headers(token),
+    )
+    assert missing.status_code == 400
+    updated = client.patch(
+        _path(lead["id"], str(created["id"])),
+        json={
+            "expected_revision": 1,
+            "type": "EMAIL_FOLLOW_UP",
+            "body_text": "Now an email follow-up",
+        },
+        headers=_headers(token),
+    )
+    assert updated.status_code == 200
+    assert updated.json()["type"] == "EMAIL_FOLLOW_UP"
+    assert updated.json()["body_text"] == "Now an email follow-up"

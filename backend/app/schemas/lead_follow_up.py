@@ -27,6 +27,7 @@ class LeadFollowUpCreate(BaseModel):
     due_at: datetime
     type: LeadFollowUpType = LeadFollowUpType.EMAIL_FOLLOW_UP
     notes: str | None = Field(default=None, max_length=4000)
+    body_text: str | None = Field(default=None, max_length=8000)
     email_send_id: str | None = Field(default=None, max_length=36)
 
     @field_validator("due_at")
@@ -34,13 +35,19 @@ class LeadFollowUpCreate(BaseModel):
     def aware_due_at(cls, value: datetime) -> datetime:
         return _within_horizon(_require_aware(value))
 
-    @field_validator("notes", "email_send_id", mode="before")
+    @field_validator("notes", "email_send_id", "body_text", mode="before")
     @classmethod
     def empty_optional(cls, value: object) -> object:
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @model_validator(mode="after")
+    def email_requires_body(self) -> Self:
+        if self.type == LeadFollowUpType.EMAIL_FOLLOW_UP and not self.body_text:
+            raise ValueError("body_text is required for EMAIL_FOLLOW_UP")
+        return self
 
 
 class LeadFollowUpUpdate(BaseModel):
@@ -50,6 +57,7 @@ class LeadFollowUpUpdate(BaseModel):
     due_at: datetime | None = None
     type: LeadFollowUpType | None = None
     notes: str | None = Field(default=None, max_length=4000)
+    body_text: str | None = Field(default=None, max_length=8000)
 
     @field_validator("due_at")
     @classmethod
@@ -58,7 +66,7 @@ class LeadFollowUpUpdate(BaseModel):
             return None
         return _within_horizon(_require_aware(value))
 
-    @field_validator("notes", mode="before")
+    @field_validator("notes", "body_text", mode="before")
     @classmethod
     def empty_optional(cls, value: object) -> object:
         if isinstance(value, str):
@@ -68,8 +76,19 @@ class LeadFollowUpUpdate(BaseModel):
 
     @model_validator(mode="after")
     def require_change(self) -> Self:
-        if self.due_at is None and self.type is None and "notes" not in self.model_fields_set:
-            raise ValueError("At least one of due_at, type, or notes is required")
+        if (
+            self.due_at is None
+            and self.type is None
+            and "notes" not in self.model_fields_set
+            and "body_text" not in self.model_fields_set
+        ):
+            raise ValueError("At least one of due_at, type, notes, or body_text is required")
+        if (
+            self.type == LeadFollowUpType.EMAIL_FOLLOW_UP
+            and "body_text" in self.model_fields_set
+            and not self.body_text
+        ):
+            raise ValueError("body_text is required for EMAIL_FOLLOW_UP")
         return self
 
 
@@ -89,6 +108,7 @@ class LeadFollowUpPublic(BaseModel):
     status: LeadFollowUpStatus
     due_at: datetime
     notes: str | None = None
+    body_text: str | None = None
     revision: int
     is_overdue: bool
     completed_at: datetime | None = None

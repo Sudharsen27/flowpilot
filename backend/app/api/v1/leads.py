@@ -270,6 +270,7 @@ def create_lead_follow_up(
         due_at=payload.due_at,
         follow_up_type=payload.type,
         notes=payload.notes,
+        body_text=payload.body_text,
         email_send_id=payload.email_send_id,
         initiated_by_user_id=membership.user_id,
     )
@@ -328,6 +329,8 @@ def update_lead_follow_up(
         follow_up_type=payload.type,
         notes=payload.notes,
         notes_provided="notes" in payload.model_fields_set,
+        body_text=payload.body_text,
+        body_provided="body_text" in payload.model_fields_set,
     )
     return to_follow_up_public(row)
 
