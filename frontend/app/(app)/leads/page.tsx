@@ -1,33 +1,226 @@
+"use client";
+
+import { Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { StatePanel } from "@/components/data-display/state-panel";
+import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadOverview } from "@/components/leads/lead-overview";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { LeadsToolbar } from "@/components/leads/leads-toolbar";
 import { QualificationReadiness } from "@/components/leads/qualification-readiness";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { getLeads } from "@/lib/api/leads";
+import type { Lead, LeadListResponse, LeadSource, LeadStatus } from "@/types/api";
+
+const PAGE_SIZE = 20;
+
+const emptyCounts: Record<LeadStatus, number> = {
+  NEW: 0,
+  CONTACTED: 0,
+  QUALIFIED: 0,
+  UNQUALIFIED: 0,
+  CONVERTED: 0,
+};
 
 export default function LeadsPage() {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<LeadStatus | "">("");
+  const [source, setSource] = useState<LeadSource | "">("");
+  const [offset, setOffset] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [page, setPage] = useState<LeadListResponse | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Lead | null>(null);
+  const [formKey, setFormKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getLeads({
+      q: query.trim() || undefined,
+      status: status || undefined,
+      source: source || undefined,
+      limit: PAGE_SIZE,
+      offset,
+    })
+      .then((data) => {
+        if (!cancelled) {
+          setPage(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHasError(true);
+          setPage(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [offset, query, retryKey, source, status]);
+
+  function beginFetch() {
+    setIsLoading(true);
+    setHasError(false);
+  }
+
+  function clearFilters() {
+    beginFetch();
+    setQuery("");
+    setStatus("");
+    setSource("");
+    setOffset(0);
+  }
+
+  const summary: LeadListResponse | null = page
+    ? {
+        ...page,
+        status_counts: { ...emptyCounts, ...page.status_counts },
+      }
+    : null;
+  const total = page?.total ?? 0;
+  const start = total === 0 ? 0 : offset + 1;
+  const end = Math.min(offset + PAGE_SIZE, total);
+
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Leads"
-        description="Capture, qualify, and follow up with enquiries as they move through your sales process."
+        description="Capture and manage enquiries for this organization. Qualification scores and automated follow-up are not part of this foundation."
+        primaryAction={
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setFormKey((value) => value + 1);
+              setFormOpen(true);
+            }}
+          >
+            <Plus aria-hidden="true" />
+            Create lead
+          </Button>
+        }
+      />
+      <LeadFormDialog
+        key={formKey}
+        open={formOpen}
+        lead={editing}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) setEditing(null);
+        }}
+        onSaved={() => {
+          beginFetch();
+          setRetryKey((value) => value + 1);
+        }}
       />
 
       <section className="grid gap-5">
         <SectionHeader
           title="Lead overview"
-          description="Live lead signals will appear after a lead source and data API are connected."
+          description="Counts come from saved leads in this organization. Follow-up tracking is not implemented yet."
         />
-        <LeadOverview />
+        <LeadOverview summary={summary} loading={isLoading && page === null} />
       </section>
 
       <section className="grid gap-5">
         <SectionHeader
           title="Lead directory"
-          description="Search and review leads received from your connected business channels."
+          description="Search and review leads stored for the current organization."
         />
-        <LeadsToolbar />
-        <LeadsTable leads={[]} />
+        <LeadsToolbar
+          query={query}
+          status={status}
+          source={source}
+        onQueryChange={(value) => {
+            beginFetch();
+            setQuery(value);
+            setOffset(0);
+          }}
+          onStatusChange={(value) => {
+            beginFetch();
+            setStatus(value);
+            setOffset(0);
+          }}
+          onSourceChange={(value) => {
+            beginFetch();
+            setSource(value);
+            setOffset(0);
+          }}
+          onClearFilters={clearFilters}
+        />
+        {hasError ? (
+          <StatePanel
+            kind="error"
+            className="max-w-none"
+            title="Leads could not be loaded"
+            description="The lead directory is unavailable right now. Retry to load the current organization's leads."
+            action={
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  beginFetch();
+                  setRetryKey((value) => value + 1);
+                }}
+              >
+                Retry
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            <LeadsTable
+              leads={page?.items ?? []}
+              loading={isLoading}
+              onEdit={(lead) => {
+                setEditing(lead);
+                setFormKey((value) => value + 1);
+                setFormOpen(true);
+              }}
+            />
+            {total > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-muted-foreground text-sm">
+                  Showing {start}–{end} of {total}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={offset === 0 || isLoading}
+                    onClick={() => {
+                      beginFetch();
+                      setOffset(Math.max(0, offset - PAGE_SIZE));
+                    }}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={offset + PAGE_SIZE >= total || isLoading}
+                    onClick={() => {
+                      beginFetch();
+                      setOffset(offset + PAGE_SIZE);
+                    }}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </section>
 
       <section className="grid gap-5">

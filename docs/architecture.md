@@ -144,6 +144,32 @@ Pagination matches execution history (`limit` default 20, min 1, max 50; `offset
 
 Public fields: `id`, `execution_id`, `agent_id`, `call_id`, `tool_name`, `risk_level`, `decision`, `status`, `argument_keys` (names only), `error`, timestamps. Argument values, tool outputs, `tool_results`, raw provider payloads, secrets, and stack traces are not returned. There is no per-invocation GET, Activity feed, or frontend history UI in this slice.
 
+## Lead domain (Phase 4A)
+
+`Lead` is an organization-owned sales record. It is independent of `AgentExecution`. Future sales-agent tools must call `LeadService` / `LeadRepository`; they must not write lead rows from the runtime loop.
+
+Fields: `name` (required), optional `email` / `phone` / `company` / `notes`, `source`, `status`, timestamps. There is no score, AI qualification state, follow-up schedule, or activity feed in this slice. Email is **not** unique globally or inside an organization; duplicates are allowed so later qualification/merge can decide.
+
+Status lifecycle (any of these may be set on create/update in V1; there is no enforced transition graph yet):
+
+`NEW` → `CONTACTED` → `QUALIFIED` | `UNQUALIFIED` | `CONVERTED`
+
+`UNQUALIFIED` means not a fit. `CONVERTED` means won. Pipeline `QUALIFIED` is not an AI score.
+
+Sources: `MANUAL`, `WEBSITE`, `EMAIL`, `CHAT`, `API`, `IMPORT`.
+
+```
+Lead API
+├── POST   /api/v1/leads
+├── GET    /api/v1/leads                 List (q, status, source, limit, offset)
+├── GET    /api/v1/leads/{lead_id}
+└── PATCH  /api/v1/leads/{lead_id}
+```
+
+Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
+
+There is no Activity event model yet; lead writes do not emit activity rows. AI extraction, scoring, outbound email, and lead tools are out of scope.
+
 ## LLM providers
 
 `AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` remains planned for knowledge retrieval. OpenAI is the first `AIProvider` implementation.
@@ -197,3 +223,7 @@ Paginated list and safe detail over existing `AgentExecution` rows. No Activity 
 ## Phase 3H.2 (tool invocation history read API)
 
 Paginated, chronological list of `ToolInvocation` audit rows for a specific execution. Argument values and tool outputs are not exposed.
+
+## Phase 4A (lead domain foundation)
+
+Organization-owned `Lead` model and CRUD APIs, connected to the existing Leads screen. No AI qualification, scoring, or sales-agent tools.

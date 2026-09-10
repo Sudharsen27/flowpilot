@@ -10,9 +10,9 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Agent, AgentExecution, Membership, Organization, ToolInvocation, User
+from app.models import Agent, AgentExecution, Lead, Membership, Organization, ToolInvocation, User
 
-assert Agent and AgentExecution and Membership and Organization and ToolInvocation and User
+assert Agent and AgentExecution and Lead and Membership and Organization and ToolInvocation and User
 
 engine = create_engine(
     "sqlite://",

@@ -7,9 +7,9 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.db.base import Base
-from app.models import Agent, AgentExecution, Membership, Organization, ToolInvocation, User
+from app.models import Agent, AgentExecution, Lead, Membership, Organization, ToolInvocation, User
 
-assert Agent and AgentExecution and Membership and Organization and ToolInvocation and User
+assert Agent and AgentExecution and Lead and Membership and Organization and ToolInvocation and User
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

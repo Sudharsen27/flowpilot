@@ -194,3 +194,51 @@ export type ToolInvocationListResponse = {
   offset: number;
   total: number;
 };
+
+export type LeadStatus =
+  | "NEW"
+  | "CONTACTED"
+  | "QUALIFIED"
+  | "UNQUALIFIED"
+  | "CONVERTED";
+
+export type LeadSource =
+  | "MANUAL"
+  | "WEBSITE"
+  | "EMAIL"
+  | "CHAT"
+  | "API"
+  | "IMPORT";
+
+export type Lead = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  source: LeadSource;
+  status: LeadStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LeadListResponse = {
+  items: Lead[];
+  limit: number;
+  offset: number;
+  total: number;
+  status_counts: Record<LeadStatus, number>;
+};
+
+export type LeadCreateRequest = {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  source?: LeadSource;
+  status?: LeadStatus;
+  notes?: string | null;
+};
+
+export type LeadUpdateRequest = Partial<LeadCreateRequest>;

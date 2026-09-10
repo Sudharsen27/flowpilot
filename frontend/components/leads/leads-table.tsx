@@ -2,31 +2,31 @@ import {
   DataTable,
   type DataTableColumn,
 } from "@/components/data-display/data-table";
-import {
-  LeadStatusBadge,
-  type LeadStatus,
-} from "@/components/leads/lead-status-badge";
-import {
-  QualificationStatus,
-  type QualificationState,
-} from "@/components/leads/qualification-status";
+import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
+import { QualificationStatus } from "@/components/leads/qualification-status";
+import { Button } from "@/components/ui/button";
+import type { Lead, LeadSource } from "@/types/api";
 
-export type LeadListItem = {
-  id: string;
-  name: string;
-  email?: string;
-  company?: string;
-  status: LeadStatus;
-  qualification: {
-    status: QualificationState;
-    score?: number;
-    explanation?: string;
-  };
-  source?: string;
-  lastActivity?: string;
+const sourceLabels: Record<LeadSource, string> = {
+  MANUAL: "Manual",
+  WEBSITE: "Website",
+  EMAIL: "Email",
+  CHAT: "Chat",
+  API: "API",
+  IMPORT: "Import",
 };
 
-const leadColumns: DataTableColumn<LeadListItem>[] = [
+function formatUpdatedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Date unavailable"
+    : new Intl.DateTimeFormat("en", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+}
+
+const leadColumns: DataTableColumn<Lead>[] = [
   {
     key: "lead",
     header: "Lead",
@@ -52,33 +52,31 @@ const leadColumns: DataTableColumn<LeadListItem>[] = [
   {
     key: "qualification",
     header: "AI qualification",
-    cell: (lead) => <QualificationStatus {...lead.qualification} />,
+    cell: () => <QualificationStatus status="unavailable" />,
   },
   {
     key: "source",
     header: "Source",
-    cell: (lead) => lead.source ?? "—",
+    cell: (lead) => sourceLabels[lead.source],
   },
   {
-    key: "last-activity",
-    header: "Last activity",
-    cell: (lead) => lead.lastActivity ?? "—",
-  },
-  {
-    key: "actions",
-    header: "Actions",
-    cell: () => (
-      <span className="text-muted-foreground text-xs">Not available</span>
-    ),
+    key: "updated",
+    header: "Updated",
+    cell: (lead) => formatUpdatedAt(lead.updated_at),
   },
 ];
 
 type LeadsTableProps = {
-  leads: LeadListItem[];
+  leads: Lead[];
   loading?: boolean;
+  onEdit?: (lead: Lead) => void;
 };
 
-export function LeadsTable({ leads, loading = false }: LeadsTableProps) {
+export function LeadsTable({
+  leads,
+  loading = false,
+  onEdit,
+}: LeadsTableProps) {
   return (
     <DataTable
       className="max-w-none"
@@ -87,7 +85,21 @@ export function LeadsTable({ leads, loading = false }: LeadsTableProps) {
       getRowKey={(lead) => lead.id}
       loading={loading}
       emptyTitle="No leads yet"
-      emptyDescription="Leads will appear here after forms, inboxes, or integrations are connected and begin sending enquiries to FlowPilot."
+      emptyDescription="Create a lead to start capturing enquiries, or wait until a connected channel sends one."
+      rowActions={
+        onEdit
+          ? (lead) => (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onEdit(lead)}
+              >
+                Edit
+              </Button>
+            )
+          : undefined
+      }
     />
   );
 }
