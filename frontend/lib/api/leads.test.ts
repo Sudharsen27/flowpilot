@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createLead, generateLeadResponseDraft, getLead, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
+import {
+  approveLeadResponseDraft,
+  createLead,
+  generateLeadResponseDraft,
+  getLead,
+  getLeads,
+  getLeadResponseDraft,
+  qualifyLead,
+  rejectLeadResponseDraft,
+  updateLead,
+  updateLeadResponseDraft,
+} from "@/lib/api/leads";
 
 describe("Lead API client", () => {
   beforeEach(() => {
@@ -144,5 +155,50 @@ describe("Lead API client", () => {
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body).not.toHaveProperty("organization_id");
+  });
+
+  it("gets, patches, approves, and rejects encoded draft ids without organization_id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ id: "d/1", status: "COMPLETED" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    await getLeadResponseDraft("lead/1", "d/1");
+    await updateLeadResponseDraft("lead/1", "d/1", {
+      response: "Edited",
+      expected_revision: 1,
+    });
+    await approveLeadResponseDraft("lead/1", "d/1", { expected_revision: 2 });
+    await rejectLeadResponseDraft("lead/1", "d/1", {
+      expected_revision: 3,
+      reason: "Too generic",
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:8000/api/v1/leads/lead%2F1/response-drafts/d%2F1",
+    );
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          response: "Edited",
+          expected_revision: 1,
+        }),
+      }),
+    );
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain(
+      "/response-drafts/d%2F1/approve",
+    );
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain(
+      "/response-drafts/d%2F1/reject",
+    );
+    for (const call of fetchMock.mock.calls) {
+      const payload = call[1]?.body;
+      if (typeof payload === "string") {
+        expect(JSON.parse(payload)).not.toHaveProperty("organization_id");
+      }
+    }
   });
 });

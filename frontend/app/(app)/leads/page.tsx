@@ -45,6 +45,7 @@ export default function LeadsPage() {
   const [drafting, setDrafting] = useState<Lead | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftKey, setDraftKey] = useState(0);
+  const [reviewDraftId, setReviewDraftId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,9 +149,13 @@ export default function LeadsPage() {
         key={draftKey}
         open={draftOpen}
         lead={drafting}
+        draftId={reviewDraftId}
         onOpenChange={(open) => {
           setDraftOpen(open);
-          if (!open) setDrafting(null);
+          if (!open) {
+            setDrafting(null);
+            setReviewDraftId(null);
+          }
         }}
         onCompleted={() => {
           beginFetch();
@@ -227,6 +232,13 @@ export default function LeadsPage() {
                 setQualifyOpen(true);
               }}
               onDraftResponse={(lead) => {
+                setReviewDraftId(null);
+                setDrafting(lead);
+                setDraftKey((value) => value + 1);
+                setDraftOpen(true);
+              }}
+              onReviewDraft={(lead) => {
+                setReviewDraftId(lead.latest_response_draft?.id ?? null);
                 setDrafting(lead);
                 setDraftKey((value) => value + 1);
                 setDraftOpen(true);
@@ -283,7 +295,7 @@ export default function LeadsPage() {
           kind="information"
           className="max-w-none"
           title="Nothing has been sent"
-          description="Use Draft response on a lead to generate a customer-facing reply. The draft is stored for review. FlowPilot does not send messages in this version."
+          description="Use Draft response to generate a reply, then edit, approve, or reject it. Approval does not send a message."
         />
       </section>
     </div>

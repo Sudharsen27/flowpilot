@@ -6,7 +6,10 @@ import type {
   LeadQualificationResult,
   LeadQualifyRequest,
   LeadRespondRequest,
+  LeadResponseDraftApproveRequest,
+  LeadResponseDraftRejectRequest,
   LeadResponseDraftResult,
+  LeadResponseDraftUpdateRequest,
   LeadSource,
   LeadStatus,
   LeadUpdateRequest,
@@ -74,6 +77,45 @@ export function generateLeadResponseDraft(
 ) {
   return apiPost<LeadResponseDraftResult>(
     `/api/v1/leads/${encodeURIComponent(leadId)}/respond`,
+    input,
+  );
+}
+
+export function getLeadResponseDraft(leadId: string, draftId: string) {
+  return apiGet<LeadResponseDraftResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/response-drafts/${encodeURIComponent(draftId)}`,
+  );
+}
+
+export function updateLeadResponseDraft(
+  leadId: string,
+  draftId: string,
+  input: LeadResponseDraftUpdateRequest,
+) {
+  return apiPatch<LeadResponseDraftResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/response-drafts/${encodeURIComponent(draftId)}`,
+    input,
+  );
+}
+
+export function approveLeadResponseDraft(
+  leadId: string,
+  draftId: string,
+  input: LeadResponseDraftApproveRequest,
+) {
+  return apiPost<LeadResponseDraftResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/response-drafts/${encodeURIComponent(draftId)}/approve`,
+    input,
+  );
+}
+
+export function rejectLeadResponseDraft(
+  leadId: string,
+  draftId: string,
+  input: LeadResponseDraftRejectRequest,
+) {
+  return apiPost<LeadResponseDraftResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/response-drafts/${encodeURIComponent(draftId)}/reject`,
     input,
   );
 }

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.ai.openai_provider import sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider
 from app.core.exceptions import (
+    ConflictError,
     NotFoundError,
     ProviderError,
     ProviderNotConfiguredError,
@@ -16,7 +17,11 @@ from app.core.exceptions import (
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
-from app.models.lead_response_draft import LeadResponseDraft, LeadResponseDraftStatus
+from app.models.lead_response_draft import (
+    LeadResponseDraft,
+    LeadResponseDraftStatus,
+    LeadResponseReviewStatus,
+)
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
@@ -118,6 +123,11 @@ class LeadResponseDraftService:
                 result["usage"] = generated.usage.model_dump(mode="json")
             row.status = LeadResponseDraftStatus.COMPLETED
             row.result = result
+            row.original_response = output.response
+            row.current_response = output.response
+            row.review_status = LeadResponseReviewStatus.GENERATED
+            row.revision = 1
+            row.updated_at = datetime.now(UTC)
             row.error = None
             row.failure_category = None
             row.provider = generated.provider
@@ -188,6 +198,130 @@ class LeadResponseDraftService:
             raise ProviderError(error, content=result_payload)
         raise ProviderNotConfiguredError(error, content=result_payload)
 
+    def get(
+        self, *, organization_id: str, lead_id: str, draft_id: str
+    ) -> LeadResponseDraft:
+        return self._get_or_raise(organization_id, lead_id, draft_id)
+
+    def update_response(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        draft_id: str,
+        response: str,
+        expected_revision: int,
+    ) -> LeadResponseDraft:
+        row = self._lock_for_update(organization_id, lead_id, draft_id, expected_revision)
+        if row.status != LeadResponseDraftStatus.COMPLETED:
+            raise ConflictError("This draft cannot be edited")
+        if row.review_status == LeadResponseReviewStatus.REJECTED:
+            raise ConflictError("Rejected drafts cannot be edited. Generate a new draft.")
+        if row.original_response is None:
+            raise ConflictError("This draft cannot be edited")
+        now = datetime.now(UTC)
+        row.current_response = response
+        if response == row.original_response:
+            row.review_status = LeadResponseReviewStatus.GENERATED
+        else:
+            row.review_status = LeadResponseReviewStatus.EDITED
+        row.reviewed_by_user_id = None
+        row.reviewed_at = None
+        row.rejection_reason = None
+        row.revision = row.revision + 1
+        row.updated_at = now
+        self.session.commit()
+        self.session.refresh(row)
+        return row
+
+    def approve(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        draft_id: str,
+        expected_revision: int,
+        actor_user_id: str,
+    ) -> LeadResponseDraft:
+        row = self._lock_for_update(organization_id, lead_id, draft_id, expected_revision)
+        if row.status != LeadResponseDraftStatus.COMPLETED or not row.current_response:
+            raise ConflictError("This draft cannot be approved")
+        if row.review_status == LeadResponseReviewStatus.APPROVED:
+            raise ConflictError("This draft is already approved")
+        if row.review_status == LeadResponseReviewStatus.REJECTED:
+            raise ConflictError("Rejected drafts cannot be approved. Generate a new draft.")
+        if row.review_status not in {
+            LeadResponseReviewStatus.GENERATED,
+            LeadResponseReviewStatus.EDITED,
+        }:
+            raise ConflictError("This draft cannot be approved")
+        now = datetime.now(UTC)
+        row.review_status = LeadResponseReviewStatus.APPROVED
+        row.reviewed_by_user_id = actor_user_id
+        row.reviewed_at = now
+        row.rejection_reason = None
+        row.revision = row.revision + 1
+        row.updated_at = now
+        self.session.commit()
+        self.session.refresh(row)
+        return row
+
+    def reject(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        draft_id: str,
+        expected_revision: int,
+        actor_user_id: str,
+        reason: str | None,
+    ) -> LeadResponseDraft:
+        row = self._lock_for_update(organization_id, lead_id, draft_id, expected_revision)
+        if row.status != LeadResponseDraftStatus.COMPLETED:
+            raise ConflictError("This draft cannot be rejected")
+        if row.review_status == LeadResponseReviewStatus.REJECTED:
+            raise ConflictError("This draft is already rejected")
+        if row.review_status not in {
+            LeadResponseReviewStatus.GENERATED,
+            LeadResponseReviewStatus.EDITED,
+            LeadResponseReviewStatus.APPROVED,
+        }:
+            raise ConflictError("This draft cannot be rejected")
+        now = datetime.now(UTC)
+        row.review_status = LeadResponseReviewStatus.REJECTED
+        row.reviewed_by_user_id = actor_user_id
+        row.reviewed_at = now
+        row.rejection_reason = reason
+        row.revision = row.revision + 1
+        row.updated_at = now
+        self.session.commit()
+        self.session.refresh(row)
+        return row
+
+    def _get_or_raise(
+        self, organization_id: str, lead_id: str, draft_id: str
+    ) -> LeadResponseDraft:
+        if self.leads.get_by_id(organization_id, lead_id) is None:
+            raise NotFoundError("Lead not found")
+        row = self.drafts.get_by_id(organization_id, lead_id, draft_id)
+        if row is None:
+            raise NotFoundError("Lead not found")
+        return row
+
+    def _lock_for_update(
+        self,
+        organization_id: str,
+        lead_id: str,
+        draft_id: str,
+        expected_revision: int,
+    ) -> LeadResponseDraft:
+        row = self._get_or_raise(organization_id, lead_id, draft_id)
+        if row.revision != expected_revision:
+            raise ConflictError(
+                "This draft changed. Refresh and review the latest version."
+            )
+        return row
+
 
 def _parse_output(output_text: str) -> LeadResponseDraftOutput:
     try:
@@ -244,20 +378,25 @@ def _user_payload(
 
 
 def to_response_draft_public(row: LeadResponseDraft) -> LeadResponseDraftPublic:
-    response = None
     usage = usage_from_result(row.result)
-    if (
-        row.status == LeadResponseDraftStatus.COMPLETED
-        and isinstance(row.result, dict)
-        and isinstance(row.result.get("response"), str)
-    ):
-        response = row.result["response"]
+    current = row.current_response
+    original = row.original_response
+    review_status = None
+    if row.review_status:
+        review_status = LeadResponseReviewStatus(row.review_status)
     return LeadResponseDraftPublic(
         id=row.id,
         lead_id=row.lead_id,
         status=row.status,
         enquiry=row.enquiry,
-        response=response,
+        original_response=original,
+        response=current,
+        human_edited=bool(original and current and current != original),
+        review_status=review_status,
+        reviewed_by_user_id=row.reviewed_by_user_id,
+        reviewed_at=row.reviewed_at,
+        rejection_reason=row.rejection_reason,
+        revision=row.revision,
         error=row.error,
         failure_category=row.failure_category,
         provider=row.provider,
@@ -266,5 +405,6 @@ def to_response_draft_public(row: LeadResponseDraft) -> LeadResponseDraftPublic:
         started_at=row.started_at,
         completed_at=row.completed_at,
         created_at=row.created_at,
+        updated_at=row.updated_at,
         duration_ms=duration_ms(row.started_at, row.completed_at),
     )

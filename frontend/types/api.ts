@@ -288,15 +288,29 @@ export type LeadQualifyRequest = {
 export type LeadResponseDraftSummary = {
   id: string;
   status: "COMPLETED" | "FAILED";
+  review_status?: LeadResponseReviewStatus | null;
   created_at: string;
 };
+
+export type LeadResponseReviewStatus =
+  | "GENERATED"
+  | "EDITED"
+  | "APPROVED"
+  | "REJECTED";
 
 export type LeadResponseDraftResult = {
   id: string;
   lead_id: string;
   status: "COMPLETED" | "FAILED";
   enquiry: string;
+  original_response?: string | null;
   response: string | null;
+  human_edited?: boolean;
+  review_status?: LeadResponseReviewStatus | null;
+  reviewed_by_user_id?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  revision: number;
   error: string | null;
   failure_category: ExecutionFailureCategory | null;
   provider: string | null;
@@ -305,11 +319,26 @@ export type LeadResponseDraftResult = {
   started_at: string;
   completed_at: string | null;
   created_at: string;
+  updated_at?: string;
   duration_ms: number | null;
 };
 
 export type LeadRespondRequest = {
   enquiry: string;
+};
+
+export type LeadResponseDraftUpdateRequest = {
+  response: string;
+  expected_revision: number;
+};
+
+export type LeadResponseDraftApproveRequest = {
+  expected_revision: number;
+};
+
+export type LeadResponseDraftRejectRequest = {
+  expected_revision: number;
+  reason?: string | null;
 };
 
 export type LeadListResponse = {

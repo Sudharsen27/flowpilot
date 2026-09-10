@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
-from app.models.lead_response_draft import LeadResponseDraft, LeadResponseDraftStatus
+from app.models.lead_response_draft import (
+    LeadResponseDraft,
+    LeadResponseDraftStatus,
+    LeadResponseReviewStatus,
+)
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import (
     LEAD_LIST_DEFAULT_LIMIT,
@@ -193,6 +197,9 @@ def _draft_summary(row: LeadResponseDraft | None) -> LeadResponseDraftSummary | 
     return LeadResponseDraftSummary(
         id=row.id,
         status=row.status,
+        review_status=(
+            LeadResponseReviewStatus(row.review_status) if row.review_status else None
+        ),
         created_at=row.created_at,
     )
 

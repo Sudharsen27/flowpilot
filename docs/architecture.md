@@ -165,7 +165,11 @@ Lead API
 ├── GET    /api/v1/leads/{lead_id}
 ├── PATCH  /api/v1/leads/{lead_id}
 ├── POST   /api/v1/leads/{lead_id}/qualify  AI enquiry analysis (does not mutate CRM status)
-└── POST   /api/v1/leads/{lead_id}/respond  AI customer-response draft (does not send)
+├── POST   /api/v1/leads/{lead_id}/respond  AI customer-response draft (does not send)
+├── GET    /api/v1/leads/{lead_id}/response-drafts/{draft_id}
+├── PATCH  /api/v1/leads/{lead_id}/response-drafts/{draft_id}
+├── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/approve
+└── POST   /api/v1/leads/{lead_id}/response-drafts/{draft_id}/reject
 ```
 
 Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
@@ -193,6 +197,12 @@ AI qualification (`QUALIFIED` / `UNQUALIFIED` / `NEEDS_MORE_INFORMATION`) is **n
 `LeadResponseDraftService` calls `AIProvider.generate` with a JSON Schema `{ "response": string }`. Failed and successful attempts are stored in `lead_response_drafts`. Retry creates a new row. List/detail include `latest_response_draft` for the newest **completed** draft.
 
 If a completed `LeadQualification` exists for the same org/lead, a small validated analysis snapshot is passed as untrusted background context. The draft must not expose internal qualification fields to the customer.
+
+## Human review of response drafts (Phase 4D)
+
+Completed drafts have a review lifecycle on the same `lead_response_drafts` row: `GENERATED` → `EDITED` (optional) → `APPROVED` or `REJECTED`. The original AI text is stored in `original_response` and is never overwritten. `current_response` is what a human may edit. `revision` is an optimistic concurrency token (`expected_revision`); mismatches return 409.
+
+`APPROVED` means a human approved that exact current text for **future** sending. It is not sent. Editing an approved draft clears the approval (`EDITED`). Rejected drafts stay persisted and cannot be edited or approved; generate a new draft instead. `Lead.status` is unchanged. There is no Activity event model; reviewer id and timestamps live on the draft row.
 
 ## LLM providers
 
@@ -259,3 +269,7 @@ Structured enquiry analysis via `AIProvider` JSON Schema output, stored on `lead
 ## Phase 4C (AI lead response drafting)
 
 Structured customer-facing reply drafts via `AIProvider` JSON Schema `{ response }`, stored on `lead_response_drafts`. Does not send messages, mutate `Lead.status`, or run tools.
+
+## Phase 4D (human approval and editing)
+
+Humans edit, approve, or reject a completed response draft. Original AI text is preserved. Approval is not sending.

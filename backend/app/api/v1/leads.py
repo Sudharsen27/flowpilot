@@ -9,7 +9,13 @@ from app.models.membership import Membership
 from app.models.organization import Organization
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
 from app.schemas.lead_qualification import LeadQualificationPublic, LeadQualifyRequest
-from app.schemas.lead_response_draft import LeadRespondRequest, LeadResponseDraftPublic
+from app.schemas.lead_response_draft import (
+    LeadRespondRequest,
+    LeadResponseDraftApproveRequest,
+    LeadResponseDraftPublic,
+    LeadResponseDraftRejectRequest,
+    LeadResponseDraftUpdate,
+)
 from app.schemas.leads import LeadCreate, LeadListResponse, LeadPublic, LeadUpdate
 from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_response_draft_service import (
@@ -117,5 +123,89 @@ def generate_lead_response_draft(
         lead_id=lead_id,
         enquiry=payload.enquiry,
         initiated_by_user_id=membership.user_id,
+    )
+    return to_response_draft_public(row)
+
+
+@router.get(
+    "/{lead_id}/response-drafts/{draft_id}",
+    response_model=LeadResponseDraftPublic,
+)
+def get_lead_response_draft(
+    lead_id: str,
+    draft_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadResponseDraftPublic:
+    row = LeadResponseDraftService(db).get(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        draft_id=draft_id,
+    )
+    return to_response_draft_public(row)
+
+
+@router.patch(
+    "/{lead_id}/response-drafts/{draft_id}",
+    response_model=LeadResponseDraftPublic,
+)
+def update_lead_response_draft(
+    lead_id: str,
+    draft_id: str,
+    payload: LeadResponseDraftUpdate,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadResponseDraftPublic:
+    row = LeadResponseDraftService(db).update_response(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        draft_id=draft_id,
+        response=payload.response,
+        expected_revision=payload.expected_revision,
+    )
+    return to_response_draft_public(row)
+
+
+@router.post(
+    "/{lead_id}/response-drafts/{draft_id}/approve",
+    response_model=LeadResponseDraftPublic,
+)
+def approve_lead_response_draft(
+    lead_id: str,
+    draft_id: str,
+    payload: LeadResponseDraftApproveRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> LeadResponseDraftPublic:
+    row = LeadResponseDraftService(db).approve(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        draft_id=draft_id,
+        expected_revision=payload.expected_revision,
+        actor_user_id=membership.user_id,
+    )
+    return to_response_draft_public(row)
+
+
+@router.post(
+    "/{lead_id}/response-drafts/{draft_id}/reject",
+    response_model=LeadResponseDraftPublic,
+)
+def reject_lead_response_draft(
+    lead_id: str,
+    draft_id: str,
+    payload: LeadResponseDraftRejectRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> LeadResponseDraftPublic:
+    row = LeadResponseDraftService(db).reject(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        draft_id=draft_id,
+        expected_revision=payload.expected_revision,
+        actor_user_id=membership.user_id,
+        reason=payload.reason,
     )
     return to_response_draft_public(row)

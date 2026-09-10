@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     func,
@@ -29,6 +30,13 @@ class LeadResponseDraftStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class LeadResponseReviewStatus(StrEnum):
+    GENERATED = "GENERATED"
+    EDITED = "EDITED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class LeadResponseDraft(Base):
     __tablename__ = "lead_response_drafts"
     __table_args__ = (
@@ -42,6 +50,11 @@ class LeadResponseDraft(Base):
         CheckConstraint(
             "status IN ('COMPLETED', 'FAILED')",
             name="ck_lead_response_drafts_status",
+        ),
+        CheckConstraint(
+            "review_status IS NULL OR review_status IN ("
+            "'GENERATED', 'EDITED', 'APPROVED', 'REJECTED')",
+            name="ck_lead_response_drafts_review_status",
         ),
         CheckConstraint(
             "failure_category IS NULL OR failure_category IN ("
@@ -73,12 +86,24 @@ class LeadResponseDraft(Base):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     enquiry: Mapped[str] = mapped_column(String(8000), nullable=False)
+    original_response: Mapped[str | None] = mapped_column(String(8000), nullable=True)
+    current_response: Mapped[str | None] = mapped_column(String(8000), nullable=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     failure_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -87,7 +112,15 @@ class LeadResponseDraft(Base):
         server_default=func.now(),
         default=lambda: datetime.now(UTC),
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
     organization: Mapped["Organization"] = relationship()
     lead: Mapped["Lead"] = relationship(overlaps="organization")
-    initiated_by: Mapped["User | None"] = relationship()
+    initiated_by: Mapped["User | None"] = relationship(foreign_keys=[initiated_by_user_id])
+    reviewed_by: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by_user_id])

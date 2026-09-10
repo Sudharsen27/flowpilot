@@ -7,8 +7,18 @@ import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { QualificationStatus } from "@/components/leads/qualification-status";
 import { ApiError } from "@/lib/api/client";
-import { createLead, generateLeadResponseDraft, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
-import type { Lead, LeadListResponse } from "@/types/api";
+import {
+  approveLeadResponseDraft,
+  createLead,
+  generateLeadResponseDraft,
+  getLeadResponseDraft,
+  getLeads,
+  qualifyLead,
+  rejectLeadResponseDraft,
+  updateLead,
+  updateLeadResponseDraft,
+} from "@/lib/api/leads";
+import type { Lead, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
 
 vi.mock("@/lib/api/leads", () => ({
   getLeads: vi.fn(),
@@ -16,6 +26,10 @@ vi.mock("@/lib/api/leads", () => ({
   updateLead: vi.fn(),
   qualifyLead: vi.fn(),
   generateLeadResponseDraft: vi.fn(),
+  getLeadResponseDraft: vi.fn(),
+  updateLeadResponseDraft: vi.fn(),
+  approveLeadResponseDraft: vi.fn(),
+  rejectLeadResponseDraft: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -51,11 +65,45 @@ function listResponse(
   };
 }
 
+function completedDraft(
+  overrides: Partial<LeadResponseDraftResult> = {},
+): LeadResponseDraftResult {
+  return {
+    id: "d-1",
+    lead_id: "lead-1",
+    status: "COMPLETED",
+    enquiry: "We want a demo next week",
+    original_response: "Thanks for reaching out. Could we schedule a demo?",
+    response: "Thanks for reaching out. Could we schedule a demo?",
+    human_edited: false,
+    review_status: "GENERATED",
+    reviewed_by_user_id: null,
+    reviewed_at: null,
+    rejection_reason: null,
+    revision: 1,
+    error: null,
+    failure_category: null,
+    provider: "fake",
+    model: "fake-model",
+    usage: { total_tokens: 30 },
+    started_at: "2026-09-10T10:00:00Z",
+    completed_at: "2026-09-10T10:00:01Z",
+    created_at: "2026-09-10T10:00:00Z",
+    updated_at: "2026-09-10T10:00:01Z",
+    duration_ms: 1000,
+    ...overrides,
+  };
+}
+
 const getLeadsMock = vi.mocked(getLeads);
 const createLeadMock = vi.mocked(createLead);
 const updateLeadMock = vi.mocked(updateLead);
 const qualifyLeadMock = vi.mocked(qualifyLead);
 const generateLeadResponseDraftMock = vi.mocked(generateLeadResponseDraft);
+const getLeadResponseDraftMock = vi.mocked(getLeadResponseDraft);
+const updateLeadResponseDraftMock = vi.mocked(updateLeadResponseDraft);
+const approveLeadResponseDraftMock = vi.mocked(approveLeadResponseDraft);
+const rejectLeadResponseDraftMock = vi.mocked(rejectLeadResponseDraft);
 
 describe("Leads page", () => {
   beforeEach(() => {
@@ -64,6 +112,10 @@ describe("Leads page", () => {
     updateLeadMock.mockReset();
     qualifyLeadMock.mockReset();
     generateLeadResponseDraftMock.mockReset();
+    getLeadResponseDraftMock.mockReset();
+    updateLeadResponseDraftMock.mockReset();
+    approveLeadResponseDraftMock.mockReset();
+    rejectLeadResponseDraftMock.mockReset();
   });
 
   it("renders the page hierarchy and loading state", () => {
@@ -452,26 +504,13 @@ describe("Leads page", () => {
       value: { writeText },
     });
     getLeadsMock.mockResolvedValue(listResponse([lead]));
-    generateLeadResponseDraftMock.mockResolvedValue({
-      id: "d-1",
-      lead_id: "lead-1",
-      status: "COMPLETED",
-      enquiry: "We want a demo next week",
-      response: "Thanks for reaching out. Could we schedule a demo?",
-      error: null,
-      failure_category: null,
-      provider: "fake",
-      model: "fake-model",
-      usage: { total_tokens: 30 },
-      started_at: "2026-09-10T10:00:00Z",
-      completed_at: "2026-09-10T10:00:01Z",
-      created_at: "2026-09-10T10:00:00Z",
-      duration_ms: 1000,
-    });
+    generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
     render(<LeadsPage />);
     await screen.findByRole("table");
     await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
-    expect(screen.getByText("This is an AI-generated draft. Nothing has been sent.")).toBeVisible();
+    expect(screen.getAllByText(/Nothing has been sent/).length).toBeGreaterThan(
+      0,
+    );
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -510,22 +549,13 @@ describe("Leads page", () => {
     expect(screen.getByRole("button", { name: "Generating…" })).toBeDisabled();
     expect(generateLeadResponseDraftMock).toHaveBeenCalledTimes(1);
     resolveDraft(
-      {
-        id: "d-1",
-        lead_id: "lead-1",
-        status: "COMPLETED",
+      completedDraft({
         enquiry: "Need a demo",
+        original_response: "First draft",
         response: "First draft",
-        error: null,
-        failure_category: null,
-        provider: "fake",
-        model: "fake-model",
         usage: null,
-        started_at: "2026-09-10T10:00:00Z",
-        completed_at: "2026-09-10T10:00:01Z",
-        created_at: "2026-09-10T10:00:00Z",
         duration_ms: 10,
-      } as never,
+      }) as never,
     );
     expect(await screen.findByText("First draft")).toBeVisible();
   });
@@ -536,22 +566,16 @@ describe("Leads page", () => {
     generateLeadResponseDraftMock.mockRejectedValueOnce(
       new ApiError("Request failed: 502", 502, { detail: "AI provider request failed" }),
     );
-    generateLeadResponseDraftMock.mockResolvedValueOnce({
-      id: "d-2",
-      lead_id: "lead-1",
-      status: "COMPLETED",
-      enquiry: "Need a demo",
-      response: "Happy to help with a demo.",
-      error: null,
-      failure_category: null,
-      provider: "fake",
-      model: "fake-model",
-      usage: null,
-      started_at: "2026-09-10T10:00:00Z",
-      completed_at: "2026-09-10T10:00:01Z",
-      created_at: "2026-09-10T10:00:00Z",
-      duration_ms: 10,
-    });
+    generateLeadResponseDraftMock.mockResolvedValueOnce(
+      completedDraft({
+        id: "d-2",
+        enquiry: "Need a demo",
+        original_response: "Happy to help with a demo.",
+        response: "Happy to help with a demo.",
+        usage: null,
+        duration_ms: 10,
+      }),
+    );
     render(<LeadsPage />);
     await screen.findByRole("table");
     await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
@@ -585,5 +609,166 @@ describe("Leads page", () => {
       "AI provider is not configured",
     );
     expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+  });
+
+  it("edits, approves, and rejects a generated draft", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
+    updateLeadResponseDraftMock.mockResolvedValue(
+      completedDraft({
+        response: "Edited reply",
+        human_edited: true,
+        review_status: "EDITED",
+        revision: 2,
+      }),
+    );
+    approveLeadResponseDraftMock.mockResolvedValue(
+      completedDraft({
+        response: "Edited reply",
+        human_edited: true,
+        review_status: "APPROVED",
+        revision: 3,
+        reviewed_by_user_id: "user-1",
+        reviewed_at: "2026-09-10T10:02:00Z",
+      }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByText("Awaiting review")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = screen.getByRole("textbox", { name: /^Edited response/ });
+    await user.clear(editor);
+    await user.type(editor, "Edited reply");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(updateLeadResponseDraftMock).toHaveBeenCalledWith("lead-1", "d-1", {
+      response: "Edited reply",
+      expected_revision: 1,
+    });
+    expect(await screen.findByText("Edited — needs review")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.getByRole("heading", { name: "Approve this response?" })).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Approve" }).at(-1)!);
+    expect(approveLeadResponseDraftMock).toHaveBeenCalledWith("lead-1", "d-1", {
+      expected_revision: 2,
+    });
+    expect(await screen.findByText("Approved (not sent)")).toBeVisible();
+  });
+
+  it("cancels an edit and can reject with a reason", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
+    rejectLeadResponseDraftMock.mockResolvedValue(
+      completedDraft({
+        review_status: "REJECTED",
+        rejection_reason: "Too vague",
+        revision: 2,
+        reviewed_by_user_id: "user-1",
+        reviewed_at: "2026-09-10T10:03:00Z",
+      }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    await screen.findByText("AI draft");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox", { name: /^Edited response/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    await user.type(
+      screen.getByRole("textbox", { name: /^Rejection reason/ }),
+      "Too vague",
+    );
+    await user.click(screen.getByRole("button", { name: "Confirm reject" }));
+    expect(rejectLeadResponseDraftMock).toHaveBeenCalledWith("lead-1", "d-1", {
+      expected_revision: 1,
+      reason: "Too vague",
+    });
+    expect(await screen.findByText("Rejected")).toBeVisible();
+    expect(screen.getByText("Rejection reason: Too vague")).toBeVisible();
+  });
+
+  it("shows stale draft conflicts from approve", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
+    approveLeadResponseDraftMock.mockRejectedValue(
+      new ApiError("Request failed: 409", 409, { detail: "changed" }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+    await screen.findByRole("button", { name: "Approve" });
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getAllByRole("button", { name: "Approve" }).at(-1)!);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This draft changed. Refresh and review the latest version.",
+    );
+  });
+
+  it("maps review API errors for 403 and 404", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_response_draft: {
+            id: "d-1",
+            status: "COMPLETED",
+            review_status: "GENERATED",
+            created_at: "2026-09-10T10:00:00Z",
+          },
+        },
+      ]),
+    );
+    getLeadResponseDraftMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 403", 403, { detail: "forbidden" }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Review draft" })[0]);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "You do not have permission to review this draft.",
+    );
+  });
+
+  it("maps a missing draft to a 404 message", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_response_draft: {
+            id: "d-1",
+            status: "COMPLETED",
+            review_status: "GENERATED",
+            created_at: "2026-09-10T10:00:00Z",
+          },
+        },
+      ]),
+    );
+    getLeadResponseDraftMock.mockRejectedValue(
+      new ApiError("Request failed: 404", 404, { detail: "missing" }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Review draft" })[0]);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This draft could not be found.",
+    );
   });
 });

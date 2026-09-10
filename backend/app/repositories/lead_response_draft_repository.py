@@ -12,6 +12,17 @@ class LeadResponseDraftRepository:
         self.session.add(row)
         return row
 
+    def get_by_id(
+        self, organization_id: str, lead_id: str, draft_id: str
+    ) -> LeadResponseDraft | None:
+        return self.session.scalar(
+            select(LeadResponseDraft).where(
+                LeadResponseDraft.organization_id == organization_id,
+                LeadResponseDraft.lead_id == lead_id,
+                LeadResponseDraft.id == draft_id,
+            )
+        )
+
     def latest_completed_for_leads(
         self, organization_id: str, lead_ids: list[str]
     ) -> dict[str, LeadResponseDraft]:
