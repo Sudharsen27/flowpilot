@@ -1,6 +1,7 @@
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead_qualification import LeadQualification
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.tool_invocation import ToolInvocation
@@ -13,6 +14,7 @@ __all__ = [
     "AgentStatus",
     "AgentType",
     "Lead",
+    "LeadQualification",
     "LeadSource",
     "LeadStatus",
     "Membership",

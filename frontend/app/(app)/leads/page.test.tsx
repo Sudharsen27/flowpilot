@@ -7,13 +7,14 @@ import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { QualificationStatus } from "@/components/leads/qualification-status";
 import { ApiError } from "@/lib/api/client";
-import { createLead, getLeads, updateLead } from "@/lib/api/leads";
+import { createLead, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
 import type { Lead, LeadListResponse } from "@/types/api";
 
 vi.mock("@/lib/api/leads", () => ({
   getLeads: vi.fn(),
   createLead: vi.fn(),
   updateLead: vi.fn(),
+  qualifyLead: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -52,12 +53,14 @@ function listResponse(
 const getLeadsMock = vi.mocked(getLeads);
 const createLeadMock = vi.mocked(createLead);
 const updateLeadMock = vi.mocked(updateLead);
+const qualifyLeadMock = vi.mocked(qualifyLead);
 
 describe("Leads page", () => {
   beforeEach(() => {
     getLeadsMock.mockReset();
     createLeadMock.mockReset();
     updateLeadMock.mockReset();
+    qualifyLeadMock.mockReset();
   });
 
   it("renders the page hierarchy and loading state", () => {
@@ -91,7 +94,7 @@ describe("Leads page", () => {
     expect(screen.queryByText("Example")).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
-        name: "AI qualification is not connected",
+        name: "AI qualification is an analysis, not CRM status",
       }),
     ).toBeVisible();
     const cards = screen.getAllByRole("article");
@@ -109,7 +112,7 @@ describe("Leads page", () => {
     expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
     expect(screen.getAllByText("New").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Website").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Not assessed").length).toBeGreaterThan(0);
     expect(screen.getByText("Showing 1–1 of 1")).toBeVisible();
   });
 
@@ -310,6 +313,125 @@ describe("Leads page", () => {
     expect(screen.getByRole("list")).toBeInTheDocument();
     expect(screen.getAllByText("Ada Prospect")).toHaveLength(2);
     expect(screen.getAllByText("New")).toHaveLength(2);
-    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getAllByText("Not assessed")).toHaveLength(2);
+  });
+
+  it("analyzes a lead with AI and keeps CRM status distinct", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    qualifyLeadMock.mockResolvedValue({
+      id: "q-1",
+      lead_id: "lead-1",
+      status: "COMPLETED",
+      enquiry: "We want a demo next week",
+      analysis: {
+        summary: "The sender asked for a demo.",
+        intent: "REQUEST_DEMO",
+        qualification: "NEEDS_MORE_INFORMATION",
+        qualification_reasons: ["Budget is not stated"],
+        confidence: 0.61,
+        extracted_contact: { name: null, email: null, phone: null },
+        extracted_company: { name: null },
+        buying_signals: ["Asked for a demo"],
+        missing_information: ["Budget"],
+      },
+      error: null,
+      failure_category: null,
+      provider: "fake",
+      model: "fake-model",
+      usage: { total_tokens: 18 },
+      started_at: "2026-09-10T10:00:00Z",
+      completed_at: "2026-09-10T10:00:01Z",
+      created_at: "2026-09-10T10:00:00Z",
+      duration_ms: 1000,
+    });
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Analyze with AI" })[0]);
+    expect(
+      screen.getByText(/does not change the lead's CRM status/i),
+    ).toBeVisible();
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "We want a demo next week");
+    await user.click(screen.getByRole("button", { name: "Analyze enquiry" }));
+    expect(await screen.findByText("AI: Needs more information")).toBeVisible();
+    expect(screen.getByText("Budget is not stated")).toBeVisible();
+    expect(screen.getByText("Budget")).toBeVisible();
+    expect(
+      screen.getByText(/Self-reported model confidence \(not calibrated\): 0.61/),
+    ).toBeVisible();
+    expect(screen.getByText(/CRM status for Ada Prospect: NEW/)).toBeVisible();
+    expect(qualifyLeadMock).toHaveBeenCalledWith("lead-1", {
+      enquiry: "We want a demo next week",
+    });
+  });
+
+  it("protects analyze from duplicate submits and can retry errors", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    let resolveQualify: (value: never) => void = () => undefined;
+    qualifyLeadMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveQualify = resolve as (value: never) => void;
+      }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Analyze with AI" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "Need a demo");
+    const submit = screen.getByRole("button", { name: "Analyze enquiry" });
+    await user.click(submit);
+    expect(screen.getByRole("button", { name: "Analyzing…" })).toBeDisabled();
+    expect(qualifyLeadMock).toHaveBeenCalledTimes(1);
+    resolveQualify(
+      {
+        id: "q-1",
+        lead_id: "lead-1",
+        status: "COMPLETED",
+        enquiry: "Need a demo",
+        analysis: {
+          summary: "Demo request",
+          intent: "REQUEST_DEMO",
+          qualification: "QUALIFIED",
+          qualification_reasons: [],
+          confidence: 0.4,
+          extracted_contact: { name: null, email: null, phone: null },
+          extracted_company: { name: null },
+          buying_signals: [],
+          missing_information: [],
+        },
+        error: null,
+        failure_category: null,
+        provider: "fake",
+        model: "fake-model",
+        usage: null,
+        started_at: "2026-09-10T10:00:00Z",
+        completed_at: "2026-09-10T10:00:01Z",
+        created_at: "2026-09-10T10:00:00Z",
+        duration_ms: 10,
+      } as never,
+    );
+  });
+
+  it("shows provider unavailable errors from analyze", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    qualifyLeadMock.mockRejectedValue(
+      new ApiError("Request failed: 503", 503, { detail: "not configured" }),
+    );
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Analyze with AI" })[0]);
+    const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    await user.clear(enquiry);
+    await user.type(enquiry, "Need a demo");
+    await user.click(screen.getByRole("button", { name: "Analyze enquiry" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "AI provider is not configured",
+    );
+    expect(screen.getByRole("button", { name: "Retry analysis" })).toBeVisible();
   });
 });

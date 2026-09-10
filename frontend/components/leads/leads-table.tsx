@@ -7,6 +7,13 @@ import { QualificationStatus } from "@/components/leads/qualification-status";
 import { Button } from "@/components/ui/button";
 import type { Lead, LeadSource } from "@/types/api";
 
+function qualificationState(lead: Lead) {
+  const latest = lead.latest_qualification;
+  if (!latest) return "not-assessed" as const;
+  if (latest.status === "FAILED") return "failed" as const;
+  return latest.qualification ?? ("not-assessed" as const);
+}
+
 const sourceLabels: Record<LeadSource, string> = {
   MANUAL: "Manual",
   WEBSITE: "Website",
@@ -52,7 +59,7 @@ const leadColumns: DataTableColumn<Lead>[] = [
   {
     key: "qualification",
     header: "AI qualification",
-    cell: () => <QualificationStatus status="unavailable" />,
+    cell: (lead) => <QualificationStatus status={qualificationState(lead)} />,
   },
   {
     key: "source",
@@ -70,12 +77,14 @@ type LeadsTableProps = {
   leads: Lead[];
   loading?: boolean;
   onEdit?: (lead: Lead) => void;
+  onQualify?: (lead: Lead) => void;
 };
 
 export function LeadsTable({
   leads,
   loading = false,
   onEdit,
+  onQualify,
 }: LeadsTableProps) {
   return (
     <DataTable
@@ -87,16 +96,30 @@ export function LeadsTable({
       emptyTitle="No leads yet"
       emptyDescription="Create a lead to start capturing enquiries, or wait until a connected channel sends one."
       rowActions={
-        onEdit
+        onEdit || onQualify
           ? (lead) => (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onEdit(lead)}
-              >
-                Edit
-              </Button>
+              <div className="flex justify-end gap-2">
+                {onQualify ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onQualify(lead)}
+                  >
+                    Analyze with AI
+                  </Button>
+                ) : null}
+                {onEdit ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onEdit(lead)}
+                  >
+                    Edit
+                  </Button>
+                ) : null}
+              </div>
             )
           : undefined
       }

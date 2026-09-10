@@ -163,12 +163,27 @@ Lead API
 ├── POST   /api/v1/leads
 ├── GET    /api/v1/leads                 List (q, status, source, limit, offset)
 ├── GET    /api/v1/leads/{lead_id}
-└── PATCH  /api/v1/leads/{lead_id}
+├── PATCH  /api/v1/leads/{lead_id}
+└── POST   /api/v1/leads/{lead_id}/qualify  AI enquiry analysis (does not mutate CRM status)
 ```
 
 Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
 
-There is no Activity event model yet; lead writes do not emit activity rows. AI extraction, scoring, outbound email, and lead tools are out of scope.
+There is no Activity event model yet; lead writes do not emit activity rows.
+
+## AI lead qualification (Phase 4B)
+
+Lead CRUD remains usable without AI. Qualification is a separate operation:
+
+`POST /api/v1/leads/{lead_id}/qualify` with `{ enquiry }`.
+
+`OWNER`, `ADMIN`, and `MEMBER` may request it (same as other lead operations and agent execute). Organization comes from the JWT. Cross-tenant leads return 404.
+
+The provider is invoked through `AIProvider.generate` with a JSON Schema `response_format` (OpenAI structured output). `LeadQualificationService` validates the result with Pydantic and drops extracted contact/company values that do not appear in the enquiry text. The model is instructed not to invent facts and to treat the enquiry as untrusted.
+
+AI qualification (`QUALIFIED` / `UNQUALIFIED` / `NEEDS_MORE_INFORMATION`) is **not** CRM `Lead.status`. The CRM row is not updated. Analysis is stored in `lead_qualifications` (validated result JSON, provider/model, usage, duration, failure category). This is not an `AgentExecution`; agent history stays agent-scoped. No tools run for this endpoint.
+
+`confidence` is a model self-report in `[0, 1]`, not a calibrated probability. List/detail include `latest_qualification` as a summary of the newest analysis row.
 
 ## LLM providers
 
@@ -227,3 +242,7 @@ Paginated, chronological list of `ToolInvocation` audit rows for a specific exec
 ## Phase 4A (lead domain foundation)
 
 Organization-owned `Lead` model and CRUD APIs, connected to the existing Leads screen. No AI qualification, scoring, or sales-agent tools.
+
+## Phase 4B (AI lead understanding)
+
+Structured enquiry analysis via `AIProvider` JSON Schema output, stored on `lead_qualifications`. Does not mutate `Lead.status` or run tools.

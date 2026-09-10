@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createLead, getLead, getLeads, updateLead } from "@/lib/api/leads";
+import { createLead, getLead, getLeads, qualifyLead, updateLead } from "@/lib/api/leads";
 
 describe("Lead API client", () => {
   beforeEach(() => {
@@ -106,5 +106,24 @@ describe("Lead API client", () => {
     );
     await expect(getLeads()).rejects.toMatchObject({ status: 401 });
     expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+  });
+
+  it("posts qualification to an encoded lead id without organization_id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "q-1", status: "COMPLETED" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await qualifyLead("lead/1", { enquiry: "We want a demo" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/leads/lead%2F1/qualify",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ enquiry: "We want a demo" }),
+      }),
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).not.toHaveProperty("organization_id");
   });
 });

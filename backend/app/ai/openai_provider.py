@@ -56,6 +56,15 @@ class OpenAIProvider:
         tool_payload = self._tool_definitions(request.tools)
         if tool_payload:
             kwargs["tools"] = tool_payload
+        if request.json_schema is not None:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": request.json_schema_name or "structured_result",
+                    "strict": True,
+                    "schema": request.json_schema,
+                },
+            }
 
         try:
             response = client.chat.completions.create(**kwargs)
@@ -72,6 +81,8 @@ class OpenAIProvider:
         message = response.choices[0].message
         tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
         content = message.content or ""
+        if request.json_schema is not None:
+            content = self._require_json_object(content)
         if not content and not tool_calls:
             raise ProviderError("AI provider returned an empty response")
 
@@ -166,3 +177,12 @@ class OpenAIProvider:
         if not isinstance(loaded, dict):
             return {}, "Tool arguments must be an object"
         return loaded, None
+
+    def _require_json_object(self, content: str) -> str:
+        try:
+            loaded = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ProviderError("AI provider returned invalid structured output") from exc
+        if not isinstance(loaded, dict):
+            raise ProviderError("AI provider returned invalid structured output")
+        return json.dumps(loaded)

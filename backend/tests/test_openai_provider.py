@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -116,3 +117,41 @@ def test_openai_provider_maps_api_errors() -> None:
         provider.generate(AIGenerateRequest(system_instructions="sys", user_input="hi"))
     assert "sk-abc" not in str(exc.value)
     assert "sk-abc" not in exc.value.detail
+
+
+def test_openai_provider_sends_json_schema_response_format() -> None:
+    message = SimpleNamespace(content='{"ok": true}', tool_calls=None)
+    choice = SimpleNamespace(message=message)
+    completion = SimpleNamespace(choices=[choice], usage=None, model="gpt-4o-mini")
+    client = MagicMock()
+    client.chat.completions.create.return_value = completion
+    provider = OpenAIProvider(api_key="sk-test", client=client)
+    result = provider.generate(
+        AIGenerateRequest(
+            system_instructions="sys",
+            user_input="hi",
+            json_schema_name="lead_qualification",
+            json_schema={"type": "object", "additionalProperties": False, "properties": {}},
+        )
+    )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["response_format"]["type"] == "json_schema"
+    assert kwargs["response_format"]["json_schema"]["name"] == "lead_qualification"
+    assert json.loads(result.output_text) == {"ok": True}
+
+
+def test_openai_provider_rejects_non_json_structured_output() -> None:
+    message = SimpleNamespace(content="not-json", tool_calls=None)
+    choice = SimpleNamespace(message=message)
+    completion = SimpleNamespace(choices=[choice], usage=None, model="gpt-4o-mini")
+    client = MagicMock()
+    client.chat.completions.create.return_value = completion
+    provider = OpenAIProvider(api_key="sk-test", client=client)
+    with pytest.raises(ProviderError, match="invalid structured output"):
+        provider.generate(
+            AIGenerateRequest(
+                system_instructions="sys",
+                user_input="hi",
+                json_schema={"type": "object"},
+            )
+        )

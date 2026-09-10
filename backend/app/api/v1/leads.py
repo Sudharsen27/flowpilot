@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_organization
+from app.ai.provider import AIProvider
+from app.api.deps import get_ai_provider, get_current_membership, get_current_organization
 from app.db.session import get_db
 from app.models.lead import LeadSource, LeadStatus
+from app.models.membership import Membership
 from app.models.organization import Organization
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
+from app.schemas.lead_qualification import LeadQualificationPublic, LeadQualifyRequest
 from app.schemas.leads import LeadCreate, LeadListResponse, LeadPublic, LeadUpdate
-from app.services.lead_service import LeadService
+from app.services.lead_qualification_service import LeadQualificationService
+from app.services.lead_service import LeadService, to_qualification_public
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 
@@ -57,8 +61,7 @@ def get_lead(
     organization: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ) -> LeadPublic:
-    lead = LeadService(db).get_or_raise(organization.id, lead_id)
-    return LeadPublic.model_validate(lead)
+    return LeadService(db).get_public(organization.id, lead_id)
 
 
 @router.patch("/{lead_id}", response_model=LeadPublic)
@@ -68,9 +71,28 @@ def update_lead(
     organization: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ) -> LeadPublic:
-    lead = LeadService(db).update(
+    service = LeadService(db)
+    service.update(
         organization_id=organization.id,
         lead_id=lead_id,
         payload=payload,
     )
-    return LeadPublic.model_validate(lead)
+    return service.get_public(organization.id, lead_id)
+
+
+@router.post("/{lead_id}/qualify", response_model=LeadQualificationPublic)
+def qualify_lead(
+    lead_id: str,
+    payload: LeadQualifyRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    provider: AIProvider = Depends(get_ai_provider),
+) -> LeadQualificationPublic:
+    row = LeadQualificationService(db, provider).qualify(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        enquiry=payload.enquiry,
+        initiated_by_user_id=membership.user_id,
+    )
+    return to_qualification_public(row)

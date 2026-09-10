@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.lead import LeadSource, LeadStatus
+from app.schemas.lead_qualification import LeadQualificationSummary
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -95,6 +96,7 @@ class LeadPublic(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+    latest_qualification: LeadQualificationSummary | None = None
 
 
 class LeadListResponse(BaseModel):

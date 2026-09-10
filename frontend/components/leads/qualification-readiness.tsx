@@ -3,10 +3,10 @@ import { StatePanel } from "@/components/data-display/state-panel";
 export function QualificationReadiness() {
   return (
     <StatePanel
-      kind="unavailable"
+      kind="information"
       className="max-w-none"
-      title="AI qualification is not connected"
-      description="Qualification scores and explanations will appear only after the AI qualification service is implemented. Pipeline status on a lead is not an AI score."
+      title="AI qualification is an analysis, not CRM status"
+      description="Use Analyze with AI on a lead to extract intent, missing information, and a qualification judgment from an enquiry. The lead's pipeline status does not change automatically. Model confidence is self-reported and not a calibrated probability."
     />
   );
 }

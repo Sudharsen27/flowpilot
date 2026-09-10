@@ -3,6 +3,8 @@ import type {
   Lead,
   LeadCreateRequest,
   LeadListResponse,
+  LeadQualificationResult,
+  LeadQualifyRequest,
   LeadSource,
   LeadStatus,
   LeadUpdateRequest,
@@ -53,6 +55,13 @@ export function createLead(input: LeadCreateRequest) {
 export function updateLead(leadId: string, input: LeadUpdateRequest) {
   return apiPatch<Lead>(
     `/api/v1/leads/${encodeURIComponent(leadId)}`,
+    input,
+  );
+}
+
+export function qualifyLead(leadId: string, input: LeadQualifyRequest) {
+  return apiPost<LeadQualificationResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/qualify`,
     input,
   );
 }

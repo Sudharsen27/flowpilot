@@ -221,6 +221,67 @@ export type Lead = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  latest_qualification?: LeadQualificationSummary | null;
+};
+
+export type LeadAiQualification =
+  | "QUALIFIED"
+  | "UNQUALIFIED"
+  | "NEEDS_MORE_INFORMATION";
+
+export type LeadIntent =
+  | "REQUEST_DEMO"
+  | "REQUEST_PRICING"
+  | "GENERAL_ENQUIRY"
+  | "SUPPORT_REQUEST"
+  | "OTHER";
+
+export type LeadQualificationSummary = {
+  id: string;
+  status: "COMPLETED" | "FAILED";
+  qualification: LeadAiQualification | null;
+  confidence: number | null;
+  created_at: string;
+  error: string | null;
+};
+
+export type LeadQualificationAnalysis = {
+  summary: string;
+  intent: LeadIntent;
+  qualification: LeadAiQualification;
+  qualification_reasons: string[];
+  confidence: number;
+  extracted_contact: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+  };
+  extracted_company: {
+    name: string | null;
+  };
+  buying_signals: string[];
+  missing_information: string[];
+};
+
+export type LeadQualificationResult = {
+  id: string;
+  lead_id: string;
+  status: "COMPLETED" | "FAILED";
+  enquiry: string;
+  analysis: LeadQualificationAnalysis | null;
+  error: string | null;
+  failure_category: ExecutionFailureCategory | null;
+  provider: string | null;
+  model: string | null;
+  usage: AgentTokenUsage | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  duration_ms: number | null;
+};
+
+export type LeadQualifyRequest = {
+  enquiry: string;
 };
 
 export type LeadListResponse = {

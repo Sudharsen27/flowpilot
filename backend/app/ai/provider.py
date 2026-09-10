@@ -1,4 +1,4 @@
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,8 @@ class AIGenerateRequest(BaseModel):
     model: str | None = None
     tools: list[ToolDefinition] = Field(default_factory=list)
     history: list[ConversationMessage] = Field(default_factory=list)
+    json_schema_name: str | None = None
+    json_schema: dict[str, Any] | None = None
 
 
 class AIGenerateResult(BaseModel):

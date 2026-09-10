@@ -9,6 +9,7 @@ import { LeadOverview } from "@/components/leads/lead-overview";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { LeadsToolbar } from "@/components/leads/leads-toolbar";
 import { QualificationReadiness } from "@/components/leads/qualification-readiness";
+import { QualifyLeadDialog } from "@/components/leads/qualify-lead-dialog";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,9 @@ export default function LeadsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Lead | null>(null);
   const [formKey, setFormKey] = useState(0);
+  const [qualifying, setQualifying] = useState<Lead | null>(null);
+  const [qualifyOpen, setQualifyOpen] = useState(false);
+  const [qualifyKey, setQualifyKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +99,7 @@ export default function LeadsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Leads"
-        description="Capture and manage enquiries for this organization. Qualification scores and automated follow-up are not part of this foundation."
+        description="Capture and manage enquiries for this organization. AI qualification analyzes an enquiry without changing CRM status."
         primaryAction={
           <Button
             type="button"
@@ -119,6 +123,19 @@ export default function LeadsPage() {
           if (!open) setEditing(null);
         }}
         onSaved={() => {
+          beginFetch();
+          setRetryKey((value) => value + 1);
+        }}
+      />
+      <QualifyLeadDialog
+        key={qualifyKey}
+        open={qualifyOpen}
+        lead={qualifying}
+        onOpenChange={(open) => {
+          setQualifyOpen(open);
+          if (!open) setQualifying(null);
+        }}
+        onCompleted={() => {
           beginFetch();
           setRetryKey((value) => value + 1);
         }}
@@ -187,6 +204,11 @@ export default function LeadsPage() {
                 setFormKey((value) => value + 1);
                 setFormOpen(true);
               }}
+              onQualify={(lead) => {
+                setQualifying(lead);
+                setQualifyKey((value) => value + 1);
+                setQualifyOpen(true);
+              }}
             />
             {total > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -226,7 +248,7 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="AI qualification"
-          description="Understand qualification outcomes using explicit status, score, and explanation fields."
+          description="AI qualification is stored as analysis history. It is not the same as CRM pipeline status."
         />
         <QualificationReadiness />
       </section>

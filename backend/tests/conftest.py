@@ -10,9 +10,16 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Agent, AgentExecution, Lead, Membership, Organization, ToolInvocation, User
-
-assert Agent and AgentExecution and Lead and Membership and Organization and ToolInvocation and User
+from app.models import (  # noqa: F401 — register tables on Base.metadata
+    Agent,
+    AgentExecution,
+    Lead,
+    LeadQualification,
+    Membership,
+    Organization,
+    ToolInvocation,
+    User,
+)
 
 engine = create_engine(
     "sqlite://",
