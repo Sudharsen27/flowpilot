@@ -44,6 +44,14 @@ class AgentExecutionRequest(BaseModel):
     input: str = Field(min_length=1, max_length=8000)
 
 
+class AgentExecutionCreated(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    status: AgentExecutionStatus
+    started_at: datetime | None = None
+
+
 class AgentExecutionResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -45,6 +45,9 @@ export function executionErrorMessage(cause: unknown) {
     if (cause.status === 422) {
       return "Review the execution input and try again.";
     }
+    if (cause.status === 409) {
+      return "This execution has already been run or is no longer running.";
+    }
     if (cause.status === 502) {
       return "The AI provider could not complete this run.";
     }

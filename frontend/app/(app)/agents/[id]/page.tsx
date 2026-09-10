@@ -26,10 +26,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import {
   activateAgent,
-  executeAgent,
+  createAgentExecution,
   getAgent,
   markAgentReady,
   pauseAgent,
+  runAgentExecution,
   updateAgent,
 } from "@/lib/api/agents";
 import type {
@@ -223,7 +224,9 @@ export default function AgentDetailPage() {
     setExecutionError(null);
     setIsExecuting(true);
     try {
-      const result = await executeAgent(agent.id, { input });
+      const started = await createAgentExecution(agent.id, { input });
+      setHistoryRefreshKey((key) => key + 1);
+      const result = await runAgentExecution(agent.id, started.execution_id);
       setExecutionResult(result);
       setHistoryRefreshKey((key) => key + 1);
     } catch (cause) {

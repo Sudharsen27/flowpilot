@@ -14,6 +14,7 @@ from app.ai.provider import (
 )
 from app.core.config import settings
 from app.core.exceptions import (
+    ConflictError,
     NotFoundError,
     ProviderError,
     ProviderNotConfiguredError,
@@ -39,6 +40,7 @@ from app.repositories.tool_invocation_repository import (
 )
 from app.schemas.agents import (
     EXECUTION_PREVIEW_LENGTH,
+    AgentExecutionCreated,
     AgentExecutionDetail,
     AgentExecutionListItem,
     AgentExecutionListResponse,
@@ -53,6 +55,8 @@ from app.tools.registry import ToolRegistry
 from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLevel
 
 logger = logging.getLogger(__name__)
+
+RUN_CLAIM_KEY = "claimed"
 
 
 class ExecutionFailure(Exception):
@@ -90,27 +94,21 @@ class AgentExecutionService:
             else settings.agent_max_tool_iterations
         )
 
-    def execute(
+    def start_execution(
         self,
         *,
         organization_id: str,
         agent_id: str,
         user_input: str,
         initiated_by_user_id: str | None = None,
-    ) -> AgentExecutionResult:
-        provider = self.provider
-        if provider is None:
-            raise ProviderNotConfiguredError("AI provider is not configured")
+    ) -> AgentExecutionCreated:
         agent = self.agents.get_by_id(organization_id, agent_id)
         if agent is None:
             raise NotFoundError("Agent not found")
-
         if AgentStatus(agent.status) not in EXECUTABLE_AGENT_STATUSES:
             raise ValidationError(f"Agent cannot be executed while status is {agent.status}")
 
         now = datetime.now(UTC)
-        # Synchronous requests begin work immediately, so the persisted row starts
-        # RUNNING rather than QUEUED (QUEUED is reserved for a future async worker).
         execution = AgentExecution(
             organization_id=organization_id,
             agent_id=agent.id,
@@ -120,7 +118,52 @@ class AgentExecutionService:
             started_at=now,
         )
         self.executions.add(execution)
-        self.session.flush()
+        self.session.commit()
+        self.session.refresh(execution)
+        return AgentExecutionCreated(
+            execution_id=execution.id,
+            status=AgentExecutionStatus.RUNNING,
+            started_at=execution.started_at,
+        )
+
+    def run_execution(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+    ) -> AgentExecutionResult:
+        execution = self._claim_running_execution(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            execution_id=execution_id,
+        )
+        agent = self.agents.get_by_id(organization_id, agent_id)
+        if agent is None:
+            return self._fail(
+                execution,
+                "Agent not found",
+                category=ExecutionFailureCategory.EXECUTION_ERROR,
+                configured=True,
+            )
+
+        provider = self.provider
+        if provider is None:
+            return self._fail(
+                execution,
+                "AI provider is not configured",
+                category=ExecutionFailureCategory.CONFIGURATION_ERROR,
+                configured=False,
+            )
+
+        user_input = _json_text(execution.input, "text")
+        if not user_input:
+            return self._fail(
+                execution,
+                "Execution input is missing",
+                category=ExecutionFailureCategory.VALIDATION_ERROR,
+                configured=True,
+            )
 
         try:
             generated, tool_results = self._run_provider_loop(
@@ -165,6 +208,52 @@ class AgentExecutionService:
                 category=ExecutionFailureCategory.EXECUTION_ERROR,
                 configured=True,
             )
+
+    def execute(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        user_input: str,
+        initiated_by_user_id: str | None = None,
+    ) -> AgentExecutionResult:
+        started = self.start_execution(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            user_input=user_input,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+        return self.run_execution(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            execution_id=started.execution_id,
+        )
+
+    def _claim_running_execution(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution_id: str,
+    ) -> AgentExecution:
+        if self.agents.get_by_id(organization_id, agent_id) is None:
+            raise NotFoundError("Agent not found")
+        execution = self.executions.get_by_agent(
+            organization_id,
+            agent_id,
+            execution_id,
+            for_update=True,
+        )
+        if execution is None:
+            raise NotFoundError("Agent execution not found")
+        if AgentExecutionStatus(execution.status) != AgentExecutionStatus.RUNNING:
+            raise ConflictError("Execution cannot be run in its current status")
+        if _is_run_claimed(execution.output):
+            raise ConflictError("Execution cannot be run in its current status")
+        execution.output = {RUN_CLAIM_KEY: True}
+        self.session.commit()
+        self.session.refresh(execution)
+        return execution
 
     def _run_provider_loop(
         self,
@@ -367,6 +456,10 @@ class AgentExecutionService:
             offset=safe_offset,
             total=total,
         )
+
+
+def _is_run_claimed(output: dict[str, Any] | None) -> bool:
+    return isinstance(output, dict) and output.get(RUN_CLAIM_KEY) is True
 
 
 def _failure_category(execution: AgentExecution) -> ExecutionFailureCategory | None:

@@ -89,6 +89,12 @@ export type AgentExecutionRequest = {
   input: string;
 };
 
+export type AgentExecutionCreated = {
+  execution_id: string;
+  status: AgentExecutionStatus;
+  started_at: string | null;
+};
+
 export type AgentTokenUsage = {
   prompt_tokens?: number | null;
   completion_tokens?: number | null;

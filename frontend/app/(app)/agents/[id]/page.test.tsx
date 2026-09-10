@@ -6,17 +6,19 @@ import AgentDetailPage from "@/app/(app)/agents/[id]/page";
 import { ApiError } from "@/lib/api/client";
 import {
   activateAgent,
-  executeAgent,
+  createAgentExecution,
   getAgent,
   getAgentExecution,
   listAgentExecutions,
   listToolInvocations,
   markAgentReady,
   pauseAgent,
+  runAgentExecution,
   updateAgent,
 } from "@/lib/api/agents";
 import type {
   Agent,
+  AgentExecutionCreated,
   AgentExecutionDetail,
   AgentExecutionListItem,
   AgentExecutionResult,
@@ -44,7 +46,8 @@ vi.mock("@/lib/api/agents", () => ({
   markAgentReady: vi.fn(),
   activateAgent: vi.fn(),
   pauseAgent: vi.fn(),
-  executeAgent: vi.fn(),
+  createAgentExecution: vi.fn(),
+  runAgentExecution: vi.fn(),
   listAgentExecutions: vi.fn(),
   getAgentExecution: vi.fn(),
   listToolInvocations: vi.fn(),
@@ -66,7 +69,8 @@ const updateAgentMock = vi.mocked(updateAgent);
 const markAgentReadyMock = vi.mocked(markAgentReady);
 const activateAgentMock = vi.mocked(activateAgent);
 const pauseAgentMock = vi.mocked(pauseAgent);
-const executeAgentMock = vi.mocked(executeAgent);
+const createAgentExecutionMock = vi.mocked(createAgentExecution);
+const runAgentExecutionMock = vi.mocked(runAgentExecution);
 const listAgentExecutionsMock = vi.mocked(listAgentExecutions);
 const getAgentExecutionMock = vi.mocked(getAgentExecution);
 const listToolInvocationsMock = vi.mocked(listToolInvocations);
@@ -108,6 +112,23 @@ const executionResult: AgentExecutionResult = {
   error: null,
 };
 
+const startedExecution: AgentExecutionCreated = {
+  execution_id: "exec-real-1",
+  status: "RUNNING",
+  started_at: "2026-09-09T10:00:00Z",
+};
+
+function mockStartedRun(
+  result: AgentExecutionResult | Promise<AgentExecutionResult> = executionResult,
+) {
+  createAgentExecutionMock.mockResolvedValue(startedExecution);
+  if (result instanceof Promise) {
+    runAgentExecutionMock.mockReturnValue(result);
+  } else {
+    runAgentExecutionMock.mockResolvedValue(result);
+  }
+}
+
 describe("Agent Detail page", () => {
   beforeEach(() => {
     getAgentMock.mockReset();
@@ -115,7 +136,8 @@ describe("Agent Detail page", () => {
     markAgentReadyMock.mockReset();
     activateAgentMock.mockReset();
     pauseAgentMock.mockReset();
-    executeAgentMock.mockReset();
+    createAgentExecutionMock.mockReset();
+    runAgentExecutionMock.mockReset();
     listAgentExecutionsMock.mockReset();
     getAgentExecutionMock.mockReset();
     listToolInvocationsMock.mockReset();
@@ -448,16 +470,22 @@ describe("Agent Detail page", () => {
   it("lets a READY agent execute and displays the API result", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockResolvedValue(executionResult);
+    mockStartedRun();
     render(<AgentDetailPage />);
     const input = await screen.findByRole("textbox", {
       name: /Execution input/,
     });
     await user.type(input, "Qualify this lead");
     await user.click(screen.getByRole("button", { name: "Run agent" }));
-    expect(executeAgentMock).toHaveBeenCalledWith("agent-real-1", {
+    expect(createAgentExecutionMock).toHaveBeenCalledWith("agent-real-1", {
       input: "Qualify this lead",
     });
+    expect(runAgentExecutionMock).toHaveBeenCalledWith(
+      "agent-real-1",
+      "exec-real-1",
+    );
+    expect(createAgentExecutionMock).toHaveBeenCalledTimes(1);
+    expect(runAgentExecutionMock).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("This lead is qualified.")).toBeVisible();
     expect(screen.getByText("Completed")).toBeVisible();
     expect(screen.getByText("openai")).toBeVisible();
@@ -469,16 +497,20 @@ describe("Agent Detail page", () => {
   it("lets an ACTIVE agent execute", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue({ ...agent, status: "ACTIVE" });
-    executeAgentMock.mockResolvedValue(executionResult);
+    mockStartedRun();
     render(<AgentDetailPage />);
     const input = await screen.findByRole("textbox", {
       name: /Execution input/,
     });
     await user.type(input, "Follow up");
     await user.click(screen.getByRole("button", { name: "Run agent" }));
-    expect(executeAgentMock).toHaveBeenCalledWith("agent-real-1", {
+    expect(createAgentExecutionMock).toHaveBeenCalledWith("agent-real-1", {
       input: "Follow up",
     });
+    expect(runAgentExecutionMock).toHaveBeenCalledWith(
+      "agent-real-1",
+      "exec-real-1",
+    );
     expect(await screen.findByText("This lead is qualified.")).toBeVisible();
     expect(screen.getAllByText("Active").length).toBeGreaterThan(0);
   });
@@ -487,14 +519,15 @@ describe("Agent Detail page", () => {
     const user = userEvent.setup();
     authMock.role = "MEMBER";
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockResolvedValue(executionResult);
+    mockStartedRun();
     render(<AgentDetailPage />);
     const input = await screen.findByRole("textbox", {
       name: /Execution input/,
     });
     await user.type(input, "Qualify this lead");
     await user.click(screen.getByRole("button", { name: "Run agent" }));
-    expect(executeAgentMock).toHaveBeenCalledTimes(1);
+    expect(createAgentExecutionMock).toHaveBeenCalledTimes(1);
+    expect(runAgentExecutionMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -514,7 +547,8 @@ describe("Agent Detail page", () => {
     expect(
       screen.queryByRole("button", { name: "Run agent" }),
     ).not.toBeInTheDocument();
-    expect(executeAgentMock).not.toHaveBeenCalled();
+    expect(createAgentExecutionMock).not.toHaveBeenCalled();
+    expect(runAgentExecutionMock).not.toHaveBeenCalled();
   });
 
   it("disables Run and prevents duplicate execution while running", async () => {
@@ -522,7 +556,7 @@ describe("Agent Detail page", () => {
     let resolveExecution: (value: AgentExecutionResult) => void = () =>
       undefined;
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockReturnValue(
+    mockStartedRun(
       new Promise((resolve) => {
         resolveExecution = resolve;
       }),
@@ -542,7 +576,8 @@ describe("Agent Detail page", () => {
       screen.getByRole("region", { name: "Run agent" }),
     ).toHaveAttribute("aria-busy", "true");
     await user.click(screen.getByRole("button", { name: "Running…" }));
-    expect(executeAgentMock).toHaveBeenCalledTimes(1);
+    expect(createAgentExecutionMock).toHaveBeenCalledTimes(1);
+    expect(runAgentExecutionMock).toHaveBeenCalledTimes(1);
     resolveExecution(executionResult);
     expect(await screen.findByText("This lead is qualified.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Run agent" })).toBeEnabled();
@@ -553,7 +588,7 @@ describe("Agent Detail page", () => {
     let resolveExecution: (value: AgentExecutionResult) => void = () =>
       undefined;
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockReturnValue(
+    mockStartedRun(
       new Promise((resolve) => {
         resolveExecution = resolve;
       }),
@@ -567,7 +602,8 @@ describe("Agent Detail page", () => {
     run.focus();
     await user.keyboard("{Enter}");
     await user.keyboard("{Enter}");
-    expect(executeAgentMock).toHaveBeenCalledTimes(1);
+    expect(createAgentExecutionMock).toHaveBeenCalledTimes(1);
+    expect(runAgentExecutionMock).toHaveBeenCalledTimes(1);
     resolveExecution(executionResult);
     expect(await screen.findByText("This lead is qualified.")).toBeVisible();
   });
@@ -575,7 +611,8 @@ describe("Agent Detail page", () => {
   it("re-enables Run agent after a failed request", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockRejectedValue(new Error("network"));
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock.mockRejectedValue(new Error("network"));
     render(<AgentDetailPage />);
     const input = await screen.findByRole("textbox", {
       name: /Execution input/,
@@ -592,7 +629,7 @@ describe("Agent Detail page", () => {
   it("shows duration and usage on a successful result without a failure category", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockResolvedValue({
+    mockStartedRun({
       ...executionResult,
       duration_ms: 1800,
     });
@@ -612,7 +649,7 @@ describe("Agent Detail page", () => {
   it("shows a failed execution result with category and duration", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockResolvedValue({
+    mockStartedRun({
       execution_id: "exec-failed-1",
       status: "FAILED",
       output: null,
@@ -646,7 +683,8 @@ describe("Agent Detail page", () => {
   it("retries the same input through Try again", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock
       .mockRejectedValueOnce(new Error("network"))
       .mockResolvedValueOnce(executionResult);
     render(<AgentDetailPage />);
@@ -656,10 +694,15 @@ describe("Agent Detail page", () => {
     );
     await user.click(screen.getByRole("button", { name: "Run agent" }));
     await user.click(await screen.findByRole("button", { name: "Try again" }));
-    expect(executeAgentMock).toHaveBeenCalledTimes(2);
-    expect(executeAgentMock).toHaveBeenLastCalledWith("agent-real-1", {
+    expect(createAgentExecutionMock).toHaveBeenCalledTimes(2);
+    expect(runAgentExecutionMock).toHaveBeenCalledTimes(2);
+    expect(createAgentExecutionMock).toHaveBeenLastCalledWith("agent-real-1", {
       input: "Qualify this lead",
     });
+    expect(runAgentExecutionMock).toHaveBeenLastCalledWith(
+      "agent-real-1",
+      "exec-real-1",
+    );
     expect(await screen.findByText("This lead is qualified.")).toBeVisible();
   });
 
@@ -668,7 +711,7 @@ describe("Agent Detail page", () => {
     getAgentMock.mockResolvedValue(agent);
     listAgentExecutionsMock
       .mockResolvedValueOnce(emptyHistory)
-      .mockResolvedValueOnce({
+      .mockResolvedValue({
         items: [
           historyItem("exec-failed-1", {
             status: "FAILED",
@@ -679,7 +722,11 @@ describe("Agent Detail page", () => {
         offset: 0,
         total: 1,
       });
-    executeAgentMock.mockRejectedValue(
+    createAgentExecutionMock.mockResolvedValue({
+      ...startedExecution,
+      execution_id: "exec-failed-1",
+    });
+    runAgentExecutionMock.mockRejectedValue(
       new ApiError("Request failed: 502", 502),
     );
     render(<AgentDetailPage />);
@@ -705,7 +752,8 @@ describe("Agent Detail page", () => {
   it("does not erase a previous result when a later request fails", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock
       .mockResolvedValueOnce(executionResult)
       .mockRejectedValueOnce(new ApiError("Request failed: 400", 400));
     render(<AgentDetailPage />);
@@ -733,7 +781,8 @@ describe("Agent Detail page", () => {
   ] as const)("handles execution HTTP %s", async (status, message) => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockRejectedValue(
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock.mockRejectedValue(
       new ApiError(`Request failed: ${status}`, status),
     );
     render(<AgentDetailPage />);
@@ -749,7 +798,8 @@ describe("Agent Detail page", () => {
   it("handles execution network failure", async () => {
     const user = userEvent.setup();
     getAgentMock.mockResolvedValue(agent);
-    executeAgentMock.mockRejectedValue(new Error("network"));
+    createAgentExecutionMock.mockResolvedValue(startedExecution);
+    runAgentExecutionMock.mockRejectedValue(new Error("network"));
     render(<AgentDetailPage />);
     const input = await screen.findByRole("textbox", {
       name: /Execution input/,
@@ -1101,13 +1151,13 @@ describe("Agent Detail page", () => {
     getAgentMock.mockResolvedValue(agent);
     listAgentExecutionsMock
       .mockResolvedValueOnce(emptyHistory)
-      .mockResolvedValueOnce({
+      .mockResolvedValue({
         items: [historyItem("exec-real-1")],
         limit: 20,
         offset: 0,
         total: 1,
       });
-    executeAgentMock.mockResolvedValue(executionResult);
+    mockStartedRun();
     render(<AgentDetailPage />);
     expect(
       await screen.findByText(
@@ -1131,8 +1181,8 @@ describe("Agent Detail page", () => {
     getAgentMock.mockResolvedValue(agent);
     listAgentExecutionsMock
       .mockResolvedValueOnce(emptyHistory)
-      .mockRejectedValueOnce(new Error("network"));
-    executeAgentMock.mockResolvedValue(executionResult);
+      .mockRejectedValue(new Error("network"));
+    mockStartedRun();
     render(<AgentDetailPage />);
     await user.type(
       await screen.findByRole("textbox", { name: /Execution input/ }),

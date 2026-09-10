@@ -28,14 +28,17 @@ class AgentExecutionRepository:
         organization_id: str,
         agent_id: str,
         execution_id: str,
+        *,
+        for_update: bool = False,
     ) -> AgentExecution | None:
-        return self.session.scalar(
-            select(AgentExecution).where(
-                AgentExecution.organization_id == organization_id,
-                AgentExecution.agent_id == agent_id,
-                AgentExecution.id == execution_id,
-            )
+        query = select(AgentExecution).where(
+            AgentExecution.organization_id == organization_id,
+            AgentExecution.agent_id == agent_id,
+            AgentExecution.id == execution_id,
         )
+        if for_update:
+            query = query.with_for_update()
+        return self.session.scalar(query)
 
     def list_by_agent(
         self,

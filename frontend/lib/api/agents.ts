@@ -2,6 +2,7 @@ import { ApiError, apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
   Agent,
   AgentCreateRequest,
+  AgentExecutionCreated,
   AgentExecutionDetail,
   AgentExecutionListResponse,
   AgentExecutionRequest,
@@ -155,6 +156,28 @@ export async function executeAgent(
     return await apiPost<AgentExecutionResult>(
       `/api/v1/agents/${encodeURIComponent(agentId)}/execute`,
       input,
+    );
+  } catch (cause) {
+    const recovered = recoverFailedExecution(cause);
+    if (recovered) return recovered;
+    throw cause;
+  }
+}
+
+export function createAgentExecution(
+  agentId: string,
+  input: AgentExecutionRequest,
+) {
+  return apiPost<AgentExecutionCreated>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/executions`,
+    input,
+  );
+}
+
+export async function runAgentExecution(agentId: string, executionId: string) {
+  try {
+    return await apiPost<AgentExecutionResult>(
+      `/api/v1/agents/${encodeURIComponent(agentId)}/executions/${encodeURIComponent(executionId)}/run`,
     );
   } catch (cause) {
     const recovered = recoverFailedExecution(cause);

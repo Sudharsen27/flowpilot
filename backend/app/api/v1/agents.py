@@ -22,6 +22,7 @@ from app.repositories.tool_invocation_repository import (
 )
 from app.schemas.agents import (
     AgentCreate,
+    AgentExecutionCreated,
     AgentExecutionDetail,
     AgentExecutionListResponse,
     AgentExecutionRequest,
@@ -160,6 +161,43 @@ def execute_agent(
         agent_id=agent_id,
         user_input=payload.input,
         initiated_by_user_id=membership.user_id,
+    )
+
+
+@router.post("/{agent_id}/executions", response_model=AgentExecutionCreated)
+def start_agent_execution(
+    agent_id: str,
+    payload: AgentExecutionRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AgentExecutionCreated:
+    return AgentExecutionService(db).start_execution(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        user_input=payload.input,
+        initiated_by_user_id=membership.user_id,
+    )
+
+
+@router.post(
+    "/{agent_id}/executions/{execution_id}/run",
+    response_model=AgentExecutionResult,
+)
+def run_agent_execution(
+    agent_id: str,
+    execution_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    provider: AIProvider = Depends(get_ai_provider),
+    registry: ToolRegistry = Depends(get_tool_registry),
+) -> AgentExecutionResult:
+    del membership
+    return AgentExecutionService(db, provider, registry=registry).run_execution(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        execution_id=execution_id,
     )
 
 

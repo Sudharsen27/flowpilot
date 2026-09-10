@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateAgent,
   createAgent,
+  createAgentExecution,
   executeAgent,
   getAgent,
   getAgentExecution,
@@ -11,6 +12,7 @@ import {
   listToolInvocations,
   markAgentReady,
   pauseAgent,
+  runAgentExecution,
   updateAgent,
 } from "@/lib/api/agents";
 import type {
@@ -179,6 +181,61 @@ describe("Agent API client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain("organization_id");
   });
 
+  it("creates an execution without running the provider", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec/1",
+          status: "RUNNING",
+          started_at: "2026-09-09T10:00:00Z",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    const started = await createAgentExecution("agent/1", {
+      input: "Qualify this lead",
+    });
+    expect(started.status).toBe("RUNNING");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents/agent%2F1/executions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ input: "Qualify this lead" }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain("organization_id");
+  });
+
+  it("runs an encoded execution id without a request body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec/1",
+          status: "COMPLETED",
+          output: "Qualified",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await runAgentExecution("agent/1", "exec/1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents/agent%2F1/executions/exec%2F1/run",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer agent-token",
+        }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
   it("recovers a persisted failed execution from a 502 body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -214,6 +271,30 @@ describe("Agent API client", () => {
     });
     expect(JSON.stringify(result)).not.toContain("sk-live");
     expect(JSON.stringify(result)).not.toContain("tool_results");
+  });
+
+  it("recovers a failed run response from a 502 body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec-fail-1",
+          status: "FAILED",
+          output: null,
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          usage: null,
+          error: "AI provider request failed",
+          detail: "AI provider request failed",
+        }),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    const result = await runAgentExecution("agent-1", "exec-fail-1");
+    expect(result.status).toBe("FAILED");
+    expect(result.execution_id).toBe("exec-fail-1");
   });
 
   it("throws when a 502 body is not a failed execution result", async () => {
