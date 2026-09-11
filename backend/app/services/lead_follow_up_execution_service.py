@@ -1,11 +1,20 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.openai_provider import sanitize_provider_error
 from app.core.config import settings
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    ProviderError,
+    ProviderNotConfiguredError,
+)
+from app.email.headers import safe_header, safe_optional_name
+from app.email.provider import EmailMessage, EmailProvider
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
 from app.models.lead_follow_up_execution import (
@@ -24,10 +33,13 @@ from app.schemas.lead_follow_up_execution import (
 )
 from app.services.observability import duration_ms
 
+logger = logging.getLogger(__name__)
+
 DUE_CLAIM_DEFAULT_LIMIT = 20
 DUE_CLAIM_MAX_LIMIT = 50
 STALE_RUNNING_ERROR = "Follow-up execution timed out"
 FOLLOW_UP_EMAIL_SUBJECT = "Re: Your enquiry"
+UNCONFIGURED_SENDER = "unconfigured@localhost"
 
 
 def provider_idempotency_key(follow_up_id: str, attempt: int) -> str:
@@ -39,9 +51,11 @@ class LeadFollowUpExecutionService:
         self,
         session: Session,
         *,
+        provider: EmailProvider | None = None,
         stale_timeout_seconds: float | None = None,
     ) -> None:
         self.session = session
+        self.provider = provider
         self.leads = LeadRepository(session)
         self.follow_ups = LeadFollowUpRepository(session)
         self.executions = LeadFollowUpExecutionRepository(session)
@@ -148,26 +162,199 @@ class LeadFollowUpExecutionService:
             for_update_skip_locked=True,
         )
         for follow_up in candidates:
-            if not self.follow_up_still_sendable(follow_up):
-                continue
-            if self.executions.inflight_for_follow_up(
-                follow_up.organization_id, follow_up.id
-            ) is not None:
-                continue
-            snapshot = self._snapshot_for_follow_up(follow_up)
-            if snapshot is None:
-                continue
-            try:
-                row = self._new_running_row(follow_up, snapshot, now)
-                self.executions.add(row)
-                self.session.commit()
-            except IntegrityError:
-                self.session.rollback()
-                continue
-            self.session.refresh(row)
-            return row
+            claimed = self._claim_locked_follow_up(follow_up, now)
+            if claimed is not None:
+                return claimed
         self.session.commit()
         return None
+
+    def claim_email_follow_up(
+        self,
+        *,
+        organization_id: str,
+        follow_up_id: str,
+        as_of: datetime | None = None,
+    ) -> LeadFollowUpExecution | None:
+        now = as_of or datetime.now(UTC)
+        follow_up = self.follow_ups.lock_due_email_follow_up(
+            organization_id,
+            follow_up_id,
+            as_of=now,
+            for_update_skip_locked=True,
+        )
+        if follow_up is None:
+            self.session.commit()
+            return None
+        claimed = self._claim_locked_follow_up(follow_up, now)
+        if claimed is None:
+            self.session.commit()
+        return claimed
+
+    def execute_next_due_email_follow_up(
+        self, *, as_of: datetime | None = None
+    ) -> LeadFollowUpExecution | None:
+        """Claim one due EMAIL follow-up and deliver it. Not a worker loop."""
+        claimed = self.claim_due_email_follow_up(as_of=as_of)
+        if claimed is None:
+            return None
+        return self.deliver_claimed_execution(
+            organization_id=claimed.organization_id,
+            execution_id=claimed.id,
+        )
+
+    def execute_follow_up(
+        self,
+        *,
+        organization_id: str,
+        follow_up_id: str,
+    ) -> LeadFollowUpExecution | None:
+        """Execute one tenant-scoped follow-up. MANUAL and terminal rows are skipped."""
+        follow_up = self.follow_ups.get_by_organization_id(organization_id, follow_up_id)
+        if follow_up is None:
+            raise NotFoundError("Lead not found")
+        if follow_up.organization_id != organization_id:
+            raise NotFoundError("Lead not found")
+        if follow_up.type != LeadFollowUpType.EMAIL_FOLLOW_UP:
+            return None
+        latest = self.executions.latest_for_follow_up(organization_id, follow_up.id)
+        if latest is not None and latest.status == LeadFollowUpExecutionStatus.SENT:
+            if follow_up.status == LeadFollowUpStatus.PENDING:
+                self._complete_follow_up_after_sent(follow_up)
+            return self.get(organization_id, latest.id)
+        if latest is not None and latest.status == LeadFollowUpExecutionStatus.FAILED:
+            return latest
+        if follow_up.status in {
+            LeadFollowUpStatus.COMPLETED,
+            LeadFollowUpStatus.CANCELLED,
+        }:
+            return None
+        inflight = self.executions.inflight_for_follow_up(organization_id, follow_up.id)
+        if inflight is not None:
+            if inflight.status == LeadFollowUpExecutionStatus.PENDING:
+                inflight = self.mark_running(organization_id, inflight.id)
+            if inflight.status == LeadFollowUpExecutionStatus.RUNNING:
+                return self.deliver_claimed_execution(
+                    organization_id=organization_id,
+                    execution_id=inflight.id,
+                )
+            return inflight
+        claimed = self.claim_email_follow_up(
+            organization_id=organization_id,
+            follow_up_id=follow_up.id,
+        )
+        if claimed is None:
+            follow_up = self.follow_ups.get_by_organization_id(
+                organization_id, follow_up_id
+            )
+            if follow_up is None:
+                return None
+            return self._fail_unsendable_due_follow_up(follow_up)
+        return self.deliver_claimed_execution(
+            organization_id=claimed.organization_id,
+            execution_id=claimed.id,
+        )
+
+    def deliver_claimed_execution(
+        self, *, organization_id: str, execution_id: str
+    ) -> LeadFollowUpExecution:
+        """Txn B/C: recheck, send from the execution snapshot, persist SENT/FAILED.
+
+        Must only be called after the RUNNING execution is committed (txn A).
+        Does not hold a DB transaction across EmailProvider.send.
+        """
+        self.session.expire_all()
+        execution = self.get(organization_id, execution_id)
+        if execution.status != LeadFollowUpExecutionStatus.RUNNING:
+            return execution
+        blocked = self._pre_send_block_reason(execution)
+        if blocked is not None:
+            error, category = blocked
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error=error,
+                category=category,
+            )
+        if self.provider is None or not settings.email_from_address:
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error="Email provider is not configured",
+                category=ExecutionFailureCategory.CONFIGURATION_ERROR,
+            )
+        provider = self.provider
+        try:
+            message = EmailMessage(
+                to=safe_header(execution.recipient_email),
+                from_email=safe_header(execution.sender_email),
+                from_name=safe_optional_name(settings.email_from_name),
+                subject=execution.subject,
+                body_text=execution.body_text,
+                idempotency_key=provider_idempotency_key(
+                    execution.follow_up_id, execution.attempt
+                ),
+            )
+        except PydanticValidationError:
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error="Follow-up email snapshot is invalid",
+                category=ExecutionFailureCategory.VALIDATION_ERROR,
+            )
+        try:
+            result = provider.send(message)
+        except ProviderNotConfiguredError as exc:
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error=sanitize_provider_error(exc.detail),
+                category=ExecutionFailureCategory.CONFIGURATION_ERROR,
+            )
+        except ProviderError as exc:
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error=sanitize_provider_error(exc.detail),
+                category=ExecutionFailureCategory.PROVIDER_ERROR,
+            )
+        except TimeoutError:
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error="Email provider request timed out",
+                category=ExecutionFailureCategory.PROVIDER_ERROR,
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected follow-up email failure follow_up_id=%s",
+                execution.follow_up_id,
+            )
+            return self.mark_failed(
+                organization_id,
+                execution.id,
+                error="Email provider request failed",
+                category=ExecutionFailureCategory.EXECUTION_ERROR,
+            )
+
+        try:
+            sent = self.mark_sent(
+                organization_id,
+                execution.id,
+                provider=result.provider,
+                provider_message_id=result.message_id,
+            )
+        except Exception:
+            logger.exception(
+                "Follow-up email accepted by provider but SENT persist failed follow_up_id=%s",
+                execution.follow_up_id,
+            )
+            raise
+        follow_up = self.follow_ups.get_by_id(
+            sent.organization_id, sent.lead_id, sent.follow_up_id
+        )
+        if follow_up is not None:
+            self._complete_follow_up_after_sent(follow_up)
+        return self.get(organization_id, sent.id)
 
     def follow_up_still_sendable(self, follow_up: LeadFollowUp) -> bool:
         self.session.refresh(follow_up)
@@ -267,6 +454,146 @@ class LeadFollowUpExecutionService:
             },
         )
 
+    def _claim_locked_follow_up(
+        self, follow_up: LeadFollowUp, now: datetime
+    ) -> LeadFollowUpExecution | None:
+        if not self.follow_up_still_sendable(follow_up):
+            return None
+        if self.executions.inflight_for_follow_up(
+            follow_up.organization_id, follow_up.id
+        ) is not None:
+            return None
+        latest = self.executions.latest_for_follow_up(
+            follow_up.organization_id, follow_up.id
+        )
+        if latest is not None and latest.status in {
+            LeadFollowUpExecutionStatus.SENT,
+            LeadFollowUpExecutionStatus.FAILED,
+        }:
+            return None
+        snapshot = self._snapshot_for_follow_up(follow_up)
+        if snapshot is None:
+            return None
+        try:
+            row = self._new_running_row(follow_up, snapshot, now)
+            self.executions.add(row)
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            return None
+        self.session.refresh(row)
+        return row
+
+    def _fail_unsendable_due_follow_up(
+        self, follow_up: LeadFollowUp
+    ) -> LeadFollowUpExecution | None:
+        """Persist FAILED when a due EMAIL follow-up cannot be claimed for send."""
+        now = datetime.now(UTC)
+        due_at = follow_up.due_at
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=UTC)
+        if (
+            follow_up.status != LeadFollowUpStatus.PENDING
+            or follow_up.type != LeadFollowUpType.EMAIL_FOLLOW_UP
+            or due_at > now
+        ):
+            return None
+        if self.executions.inflight_for_follow_up(
+            follow_up.organization_id, follow_up.id
+        ) is not None:
+            return None
+        latest = self.executions.latest_for_follow_up(
+            follow_up.organization_id, follow_up.id
+        )
+        if latest is not None and latest.status in {
+            LeadFollowUpExecutionStatus.SENT,
+            LeadFollowUpExecutionStatus.FAILED,
+        }:
+            return latest
+        lead = self.leads.get_by_id(follow_up.organization_id, follow_up.lead_id)
+        error = "Follow-up could not be executed"
+        category = ExecutionFailureCategory.EXECUTION_ERROR
+        if lead is None or not lead.email:
+            error = "This lead has no email address"
+            category = ExecutionFailureCategory.VALIDATION_ERROR
+        elif not follow_up.body_text or not follow_up.body_text.strip():
+            error = "Follow-up body is missing"
+            category = ExecutionFailureCategory.VALIDATION_ERROR
+        elif not settings.email_from_address or self.provider is None:
+            error = "Email provider is not configured"
+            category = ExecutionFailureCategory.CONFIGURATION_ERROR
+        else:
+            return None
+        snapshot = LeadFollowUpExecutionSnapshot(
+            recipient_email=(lead.email if lead is not None and lead.email else "invalid@invalid"),
+            sender_email=settings.email_from_address or "unconfigured@localhost",
+            subject=FOLLOW_UP_EMAIL_SUBJECT,
+            body_text=follow_up.body_text or "Follow-up body is missing",
+        )
+        try:
+            row = self._new_running_row(follow_up, snapshot, now)
+            self.executions.add(row)
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            return None
+        return self.mark_failed(
+            follow_up.organization_id,
+            row.id,
+            error=error,
+            category=category,
+        )
+
+    def _pre_send_block_reason(
+        self, execution: LeadFollowUpExecution
+    ) -> tuple[str, ExecutionFailureCategory] | None:
+        follow_up = self.reload_follow_up_for_send(
+            execution.organization_id, execution.lead_id, execution.follow_up_id
+        )
+        if follow_up is None:
+            return (
+                "Follow-up is no longer eligible to send",
+                ExecutionFailureCategory.EXECUTION_ERROR,
+            )
+        lead = self.leads.get_by_id(execution.organization_id, execution.lead_id)
+        if lead is not None:
+            self.session.refresh(lead)
+        if lead is None:
+            return (
+                "Lead is no longer eligible to send",
+                ExecutionFailureCategory.VALIDATION_ERROR,
+            )
+        if not lead.email:
+            return (
+                "This lead has no email address",
+                ExecutionFailureCategory.VALIDATION_ERROR,
+            )
+        if lead.email.strip().lower() != execution.recipient_email.strip().lower():
+            return (
+                "Lead email no longer matches the execution snapshot",
+                ExecutionFailureCategory.VALIDATION_ERROR,
+            )
+        return None
+
+    def _complete_follow_up_after_sent(self, follow_up: LeadFollowUp) -> None:
+        from app.services.lead_follow_up_service import LeadFollowUpService
+
+        self.session.refresh(follow_up)
+        if follow_up.status != LeadFollowUpStatus.PENDING:
+            return
+        try:
+            LeadFollowUpService(self.session).complete(
+                organization_id=follow_up.organization_id,
+                lead_id=follow_up.lead_id,
+                follow_up_id=follow_up.id,
+                expected_revision=follow_up.revision,
+            )
+        except ConflictError:
+            logger.info(
+                "Follow-up %s was not completed after SENT; leaving execution SENT",
+                follow_up.id,
+            )
+
     def _effective_stale_timeout_seconds(self) -> float:
         if self._stale_timeout_seconds is not None:
             return self._stale_timeout_seconds
@@ -286,16 +613,18 @@ class LeadFollowUpExecutionService:
         self, follow_up: LeadFollowUp
     ) -> LeadFollowUpExecutionSnapshot | None:
         lead = self.leads.get_by_id(follow_up.organization_id, follow_up.lead_id)
-        if lead is None or not lead.email or not follow_up.body_text:
+        if lead is None:
             return None
-        sender = settings.email_from_address
-        if not sender:
+        body = (follow_up.body_text or "").strip()
+        if not body:
             return None
+        sender = settings.email_from_address or UNCONFIGURED_SENDER
+        recipient = lead.email or "unknown@invalid.local"
         return LeadFollowUpExecutionSnapshot(
-            recipient_email=lead.email,
+            recipient_email=recipient,
             sender_email=sender,
             subject=FOLLOW_UP_EMAIL_SUBJECT,
-            body_text=follow_up.body_text,
+            body_text=follow_up.body_text or body,
         )
 
     def _new_running_row(

@@ -11,13 +11,22 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.exceptions import ConflictError, NotFoundError
-from app.models.agent_execution import ExecutionFailureCategory
+from app.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    ProviderError,
+    ProviderNotConfiguredError,
+)
+from app.email.provider import EmailMessage, EmailSendResult
+from app.models.agent_execution import AgentExecution, ExecutionFailureCategory
 from app.models.lead import Lead
+from app.models.lead_email_send import LeadEmailSend
+from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus
 from app.models.lead_follow_up_execution import (
     LeadFollowUpExecution,
     LeadFollowUpExecutionStatus,
@@ -28,7 +37,9 @@ from app.services.lead_follow_up_execution_service import (
     provider_idempotency_key,
     to_execution_public,
 )
+from tests.conftest import TestingSessionLocal
 from tests.test_agent_runtime import _headers
+from tests.test_lead_email_send import FakeEmailProvider
 from tests.test_lead_follow_up import FUTURE, LATER, _create_follow_up
 from tests.test_leads import _auth, _create
 
@@ -44,7 +55,8 @@ SNAPSHOT = LeadFollowUpExecutionSnapshot(
 def _org_lead(
     client: TestClient, db: Session, token: str, **lead_overrides: object
 ) -> tuple[str, dict[str, object]]:
-    lead = _create(client, token, email="ada@example.com", **lead_overrides).json()
+    payload = {"email": "ada@example.com", **lead_overrides}
+    lead = _create(client, token, **payload).json()
     row = db.get(Lead, lead["id"])
     assert row is not None
     return row.organization_id, lead
@@ -381,3 +393,496 @@ def test_stale_running_detection(client: TestClient, db: Session) -> None:
     )
     service.mark_running(org_id, current.id)
     assert service.recover_stale_running_executions(organization_id=org_id) == 0
+
+
+def _due_email(
+    client: TestClient, token: str, lead_id: str, **overrides: object
+) -> dict[str, object]:
+    return _create_follow_up(client, token, lead_id, due_at=PAST, **overrides)
+
+
+def test_execute_follow_up_provider_success(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    monkeypatch.setattr(settings, "email_from_name", "FlowPilot")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider(message_id="msg_follow_1")
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.status == LeadFollowUpExecutionStatus.SENT
+    assert result.provider == "fake-email"
+    assert result.provider_message_id == "msg_follow_1"
+    assert result.completed_at is not None
+    assert result.failure_category is None
+    assert to_execution_public(result).duration_ms is not None
+    assert len(fake.messages) == 1
+    message = fake.messages[0]
+    assert str(message.to) == "ada@example.com"
+    assert str(message.from_email) == "noreply@example.com"
+    assert message.from_name == "FlowPilot"
+    assert message.subject == "Re: Your enquiry"
+    assert message.body_text == "Checking in on your enquiry."
+    assert message.idempotency_key == provider_idempotency_key(str(follow_up["id"]), 1)
+    db.expire_all()
+    stored = db.get(LeadFollowUp, follow_up["id"])
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.COMPLETED
+    assert stored.completed_at is not None
+    lead_row = db.get(Lead, lead["id"])
+    assert lead_row is not None
+    assert lead_row.status == "NEW"
+    assert db.query(LeadEmailSend).count() == 0
+    assert db.query(AgentExecution).count() == 0
+
+
+def test_execute_follow_up_provider_failures_leave_pending(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    cases: list[tuple[Exception, ExecutionFailureCategory]] = [
+        (
+            ProviderError("upstream timeout sk-secretvalue123"),
+            ExecutionFailureCategory.PROVIDER_ERROR,
+        ),
+        (TimeoutError(), ExecutionFailureCategory.PROVIDER_ERROR),
+        (
+            ProviderNotConfiguredError("RESEND_API_KEY is not configured"),
+            ExecutionFailureCategory.CONFIGURATION_ERROR,
+        ),
+        (
+            RuntimeError("trace sk-abc Bearer secret.token"),
+            ExecutionFailureCategory.EXECUTION_ERROR,
+        ),
+    ]
+    for fail, category in cases:
+        follow_up = _due_email(client, token, str(lead["id"]))
+        fake = FakeEmailProvider(fail=fail)
+        service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+        result = service.execute_follow_up(
+            organization_id=org_id, follow_up_id=str(follow_up["id"])
+        )
+        assert result is not None
+        assert result.status == LeadFollowUpExecutionStatus.FAILED
+        assert result.failure_category == category
+        assert result.error is not None
+        assert "sk-secretvalue123" not in result.error
+        assert "sk-abc" not in result.error
+        assert "secret.token" not in result.error
+        assert len(fake.messages) == 1
+        db.expire_all()
+        stored = db.get(LeadFollowUp, follow_up["id"])
+        assert stored is not None
+        assert stored.status == LeadFollowUpStatus.PENDING
+
+
+def test_execute_follow_up_configuration_error_without_provider_call(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", None)
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.status == LeadFollowUpExecutionStatus.FAILED
+    assert result.failure_category == ExecutionFailureCategory.CONFIGURATION_ERROR
+    assert fake.messages == []
+    stored = db.get(LeadFollowUp, follow_up["id"])
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.PENDING
+
+
+def test_cancel_after_claim_does_not_send(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    claimed = service.claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert claimed is not None
+    client.post(
+        f"/api/v1/leads/{lead['id']}/follow-ups/{follow_up['id']}/cancel",
+        json={"expected_revision": 1},
+        headers=_headers(token),
+    )
+    result = service.deliver_claimed_execution(
+        organization_id=org_id, execution_id=claimed.id
+    )
+    assert result.status == LeadFollowUpExecutionStatus.FAILED
+    assert result.failure_category == ExecutionFailureCategory.EXECUTION_ERROR
+    assert fake.messages == []
+    stored = db.get(LeadFollowUp, follow_up["id"])
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.CANCELLED
+
+
+def test_terminal_and_manual_follow_ups_do_not_send(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    completed = _due_email(client, token, str(lead["id"]))
+    client.post(
+        f"/api/v1/leads/{lead['id']}/follow-ups/{completed['id']}/complete",
+        json={"expected_revision": 1},
+        headers=_headers(token),
+    )
+    assert (
+        service.execute_follow_up(organization_id=org_id, follow_up_id=str(completed["id"]))
+        is None
+    )
+    cancelled = _due_email(client, token, str(lead["id"]))
+    client.post(
+        f"/api/v1/leads/{lead['id']}/follow-ups/{cancelled['id']}/cancel",
+        json={"expected_revision": 1},
+        headers=_headers(token),
+    )
+    assert (
+        service.execute_follow_up(organization_id=org_id, follow_up_id=str(cancelled["id"]))
+        is None
+    )
+    manual = _create_follow_up(
+        client,
+        token,
+        str(lead["id"]),
+        due_at=PAST,
+        type="MANUAL_FOLLOW_UP",
+        body_text=None,
+        notes="Call them",
+    )
+    assert service.execute_follow_up(organization_id=org_id, follow_up_id=str(manual["id"])) is None
+    assert fake.messages == []
+
+
+def test_sent_execution_is_not_resent(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    first = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert first is not None
+    second = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert second is not None
+    assert second.id == first.id
+    assert second.status == LeadFollowUpExecutionStatus.SENT
+    assert len(fake.messages) == 1
+
+
+def test_failed_execution_is_not_retried_automatically(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider(fail=ProviderError("upstream"))
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    first = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert first is not None
+    second = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert second is not None
+    assert second.id == first.id
+    assert second.status == LeadFollowUpExecutionStatus.FAILED
+    assert len(fake.messages) == 1
+
+
+def test_snapshot_is_authoritative_for_provider_body(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    claimed = service.claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert claimed is not None
+    original_body = claimed.body_text
+    updated = client.patch(
+        f"/api/v1/leads/{lead['id']}/follow-ups/{follow_up['id']}",
+        json={"expected_revision": 1, "body_text": "Edited after claim"},
+        headers=_headers(token),
+    )
+    assert updated.status_code == 200
+    result = service.deliver_claimed_execution(
+        organization_id=org_id, execution_id=claimed.id
+    )
+    assert result.status == LeadFollowUpExecutionStatus.SENT
+    assert fake.messages[0].body_text == original_body
+    assert fake.messages[0].body_text != "Edited after claim"
+    db.refresh(claimed)
+    assert claimed.body_text == original_body
+
+
+def test_recipient_change_fails_safely_without_send(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    claimed = service.claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert claimed is not None
+    snapshot_recipient = claimed.recipient_email
+    lead_row = db.get(Lead, lead["id"])
+    assert lead_row is not None
+    lead_row.email = "changed@example.com"
+    db.commit()
+    result = service.deliver_claimed_execution(
+        organization_id=org_id, execution_id=claimed.id
+    )
+    assert result.status == LeadFollowUpExecutionStatus.FAILED
+    assert result.failure_category == ExecutionFailureCategory.VALIDATION_ERROR
+    assert fake.messages == []
+    db.refresh(claimed)
+    assert claimed.recipient_email == snapshot_recipient
+    stored = db.get(LeadFollowUp, follow_up["id"])
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.PENDING
+
+
+def test_execute_follow_up_is_tenant_scoped(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    first = _auth(client, email="a@example.com", organization_name="Alpha")
+    second = _auth(client, email="b@example.com", organization_name="Beta")
+    org_id, lead = _org_lead(client, db, first["access_token"])
+    follow_up = _due_email(client, first["access_token"], str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    with pytest.raises(NotFoundError):
+        service.execute_follow_up(
+            organization_id=second["organization"]["id"],
+            follow_up_id=str(follow_up["id"]),
+        )
+    assert fake.messages == []
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.status == LeadFollowUpExecutionStatus.SENT
+
+
+def test_provider_success_db_failure_does_not_complete_follow_up(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+
+    def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("persist failed")
+
+    monkeypatch.setattr(service, "mark_sent", boom)
+    with pytest.raises(RuntimeError, match="persist failed"):
+        service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert len(fake.messages) == 1
+    stored = db.get(LeadFollowUp, follow_up["id"])
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.PENDING
+
+
+def test_no_public_follow_up_execution_http_api(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    assert client.post("/api/v1/run-due-follow-ups", headers=_headers(token)).status_code == 404
+    assert client.post("/run-due-follow-ups").status_code == 404
+
+
+def test_execute_follow_up_validation_missing_recipient(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token, email=None)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.status == LeadFollowUpExecutionStatus.FAILED
+    assert result.failure_category == ExecutionFailureCategory.VALIDATION_ERROR
+    assert fake.messages == []
+
+
+def test_running_execution_is_not_duplicated(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    claimed = service.claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert claimed is not None
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.id == claimed.id
+    assert result.status == LeadFollowUpExecutionStatus.SENT
+    assert len(fake.messages) == 1
+    assert (
+        db.query(LeadFollowUpExecution)
+        .filter(LeadFollowUpExecution.follow_up_id == str(follow_up["id"]))
+        .count()
+        == 1
+    )
+
+
+def test_two_callers_cannot_create_two_inflight_executions(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    first = LeadFollowUpExecutionService(db, provider=FakeEmailProvider()).claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert first is not None
+    second = LeadFollowUpExecutionService(db, provider=FakeEmailProvider()).claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert second is None
+    assert (
+        db.query(LeadFollowUpExecution)
+        .filter(LeadFollowUpExecution.follow_up_id == str(follow_up["id"]))
+        .count()
+        == 1
+    )
+
+
+def test_provider_success_db_failure_leaves_execution_running(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    claimed = service.claim_email_follow_up(
+        organization_id=org_id, follow_up_id=str(follow_up["id"])
+    )
+    assert claimed is not None
+
+    def boom(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("commit failed after provider success")
+
+    monkeypatch.setattr(service.executions, "mark_sent", boom)
+    with pytest.raises(RuntimeError, match="commit failed"):
+        service.deliver_claimed_execution(organization_id=org_id, execution_id=claimed.id)
+    assert len(fake.messages) == 1
+    db.expire_all()
+    execution = db.get(LeadFollowUpExecution, claimed.id)
+    assert execution is not None
+    assert execution.status == LeadFollowUpExecutionStatus.RUNNING
+    stored = db.get(LeadFollowUp, str(follow_up["id"]))
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.PENDING
+
+
+class _CommitProbeProvider:
+    """Observes database state at the moment EmailProvider.send is called."""
+
+    def __init__(self, session: Session, follow_up_id: str) -> None:
+        self.session = session
+        self.follow_up_id = follow_up_id
+        self.messages: list[EmailMessage] = []
+        self.pending_session_writes: bool | None = None
+        self.open_write_transaction: bool | None = None
+        self.status_in_separate_session: str | None = None
+
+    def send(self, message: EmailMessage) -> EmailSendResult:
+        self.messages.append(message)
+        self.pending_session_writes = bool(
+            self.session.new or self.session.dirty or self.session.deleted
+        )
+        raw = self.session.connection().connection.dbapi_connection
+        self.open_write_transaction = bool(getattr(raw, "in_transaction", False))
+        probe = TestingSessionLocal()
+        try:
+            row = probe.scalar(
+                select(LeadFollowUpExecution).where(
+                    LeadFollowUpExecution.follow_up_id == self.follow_up_id
+                )
+            )
+            self.status_in_separate_session = None if row is None else str(row.status)
+        finally:
+            probe.close()
+        return EmailSendResult(provider="fake-email", message_id="msg_commit_probe")
+
+
+def test_running_execution_is_committed_before_provider_call(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    probe = _CommitProbeProvider(db, str(follow_up["id"]))
+    service = LeadFollowUpExecutionService(db, provider=probe, stale_timeout_seconds=300)
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.status == LeadFollowUpExecutionStatus.SENT
+    assert len(probe.messages) == 1
+    assert probe.pending_session_writes is False
+    assert probe.open_write_transaction is False
+    assert probe.status_in_separate_session == LeadFollowUpExecutionStatus.RUNNING
+    db.expire_all()
+    stored = db.get(LeadFollowUp, str(follow_up["id"]))
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.COMPLETED
+
+
+def test_empty_body_text_fails_validation_without_provider_call(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "email_from_address", "noreply@example.com")
+    token = _auth(client)["access_token"]
+    org_id, lead = _org_lead(client, db, token)
+    follow_up = _due_email(client, token, str(lead["id"]))
+    row = db.get(LeadFollowUp, str(follow_up["id"]))
+    assert row is not None
+    row.body_text = "   "
+    db.commit()
+    fake = FakeEmailProvider()
+    service = LeadFollowUpExecutionService(db, provider=fake, stale_timeout_seconds=300)
+    result = service.execute_follow_up(organization_id=org_id, follow_up_id=str(follow_up["id"]))
+    assert result is not None
+    assert result.status == LeadFollowUpExecutionStatus.FAILED
+    assert result.failure_category == ExecutionFailureCategory.VALIDATION_ERROR
+    assert fake.messages == []
+    db.expire_all()
+    stored = db.get(LeadFollowUp, str(follow_up["id"]))
+    assert stored is not None
+    assert stored.status == LeadFollowUpStatus.PENDING

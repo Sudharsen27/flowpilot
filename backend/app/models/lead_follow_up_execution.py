@@ -69,7 +69,7 @@ class LeadFollowUpExecution(Base):
             name="ck_lead_follow_up_executions_failure_category",
         ),
         Index(
-            "ix_lead_follow_up_executions_organization_id_follow_up_id_attempt",
+            "ix_lead_follow_up_executions_org_follow_up_attempt",
             "organization_id",
             "follow_up_id",
             "attempt",

@@ -88,3 +88,33 @@ class LeadFollowUpRepository:
         if for_update_skip_locked and bind is not None and bind.dialect.name == "postgresql":
             stmt = stmt.with_for_update(skip_locked=True)
         return list(self.session.scalars(stmt))
+
+    def get_by_organization_id(
+        self, organization_id: str, follow_up_id: str
+    ) -> LeadFollowUp | None:
+        return self.session.scalar(
+            select(LeadFollowUp).where(
+                LeadFollowUp.organization_id == organization_id,
+                LeadFollowUp.id == follow_up_id,
+            )
+        )
+
+    def lock_due_email_follow_up(
+        self,
+        organization_id: str,
+        follow_up_id: str,
+        *,
+        as_of: datetime,
+        for_update_skip_locked: bool = False,
+    ) -> LeadFollowUp | None:
+        stmt = select(LeadFollowUp).where(
+            LeadFollowUp.organization_id == organization_id,
+            LeadFollowUp.id == follow_up_id,
+            LeadFollowUp.status == LeadFollowUpStatus.PENDING,
+            LeadFollowUp.type == LeadFollowUpType.EMAIL_FOLLOW_UP,
+            LeadFollowUp.due_at <= as_of,
+        )
+        bind = self.session.get_bind()
+        if for_update_skip_locked and bind is not None and bind.dialect.name == "postgresql":
+            stmt = stmt.with_for_update(skip_locked=True)
+        return self.session.scalar(stmt)

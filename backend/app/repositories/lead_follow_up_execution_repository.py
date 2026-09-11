@@ -69,6 +69,22 @@ class LeadFollowUpExecutionRepository:
             )
         )
 
+    def latest_for_follow_up(
+        self, organization_id: str, follow_up_id: str
+    ) -> LeadFollowUpExecution | None:
+        return self.session.scalar(
+            select(LeadFollowUpExecution)
+            .where(
+                LeadFollowUpExecution.organization_id == organization_id,
+                LeadFollowUpExecution.follow_up_id == follow_up_id,
+            )
+            .order_by(
+                LeadFollowUpExecution.attempt.desc(),
+                LeadFollowUpExecution.id.desc(),
+            )
+            .limit(1)
+        )
+
     def next_attempt(self, organization_id: str, follow_up_id: str) -> int:
         current = self.session.scalar(
             select(func.max(LeadFollowUpExecution.attempt)).where(

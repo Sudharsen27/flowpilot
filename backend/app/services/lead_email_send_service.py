@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +13,7 @@ from app.core.exceptions import (
     ProviderNotConfiguredError,
     UnprocessableError,
 )
+from app.email.headers import safe_header, safe_optional_name
 from app.email.provider import EmailMessage, EmailProvider
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead
@@ -32,7 +32,6 @@ from app.services.observability import duration_ms
 logger = logging.getLogger(__name__)
 
 EMAIL_SUBJECT = "Re: Your enquiry"
-_HEADER_UNSAFE = re.compile(r"[\r\n]+")
 
 
 class LeadEmailSendService:
@@ -115,9 +114,9 @@ class LeadEmailSendService:
         try:
             result = provider.send(
                 EmailMessage(
-                    to=_safe_header(lead.email),
-                    from_email=_safe_header(sender),
-                    from_name=_safe_optional_name(settings.email_from_name),
+                    to=safe_header(lead.email),
+                    from_email=safe_header(sender),
+                    from_name=safe_optional_name(settings.email_from_name),
                     subject=EMAIL_SUBJECT,
                     body_text=draft.current_response,
                     idempotency_key=f"{organization_id}:{draft.id}:{draft.revision}",
@@ -231,14 +230,3 @@ def to_email_send_public(row: LeadEmailSend) -> LeadEmailSendPublic:
         created_at=row.created_at,
         duration_ms=duration_ms(row.started_at, row.completed_at),
     )
-
-
-def _safe_header(value: str) -> str:
-    return _HEADER_UNSAFE.sub("", value).strip()
-
-
-def _safe_optional_name(value: str | None) -> str | None:
-    if value is None:
-        return None
-    cleaned = _HEADER_UNSAFE.sub(" ", value).replace("<", "").replace(">", "").strip()
-    return cleaned or None

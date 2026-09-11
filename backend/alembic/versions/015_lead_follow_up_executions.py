@@ -104,7 +104,7 @@ def upgrade() -> None:
         ["follow_up_id"],
     )
     op.create_index(
-        "ix_lead_follow_up_executions_organization_id_follow_up_id_attempt",
+        "ix_lead_follow_up_executions_org_follow_up_attempt",
         "lead_follow_up_executions",
         ["organization_id", "follow_up_id", "attempt"],
     )
@@ -141,7 +141,7 @@ def downgrade() -> None:
         table_name="lead_follow_up_executions",
     )
     op.drop_index(
-        "ix_lead_follow_up_executions_organization_id_follow_up_id_attempt",
+        "ix_lead_follow_up_executions_org_follow_up_attempt",
         table_name="lead_follow_up_executions",
     )
     op.drop_index(
