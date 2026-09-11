@@ -17,6 +17,10 @@ import {
   runAgentExecution,
   updateAgent,
 } from "@/lib/api/agents";
+import {
+  cancelSalesRun,
+  listSalesRuns,
+} from "@/lib/api/sales-runs";
 import type {
   Agent,
   AgentExecutionCreated,
@@ -55,6 +59,17 @@ vi.mock("@/lib/api/agents", () => ({
   listToolInvocations: vi.fn(),
 }));
 
+vi.mock("@/lib/api/sales-runs", () => ({
+  listSalesRuns: vi.fn(),
+  startSalesRun: vi.fn(),
+  cancelSalesRun: vi.fn(),
+  getSalesRun: vi.fn(),
+}));
+
+vi.mock("@/lib/api/leads", () => ({
+  getLead: vi.fn(),
+}));
+
 const agent: Agent = {
   id: "agent-real-1",
   name: "Inbound qualifier",
@@ -77,6 +92,8 @@ const cancelAgentExecutionMock = vi.mocked(cancelAgentExecution);
 const listAgentExecutionsMock = vi.mocked(listAgentExecutions);
 const getAgentExecutionMock = vi.mocked(getAgentExecution);
 const listToolInvocationsMock = vi.mocked(listToolInvocations);
+const listSalesRunsMock = vi.mocked(listSalesRuns);
+const cancelSalesRunMock = vi.mocked(cancelSalesRun);
 
 const emptyHistory = {
   items: [] as AgentExecutionListItem[],
@@ -145,10 +162,18 @@ describe("Agent Detail page", () => {
     listAgentExecutionsMock.mockReset();
     getAgentExecutionMock.mockReset();
     listToolInvocationsMock.mockReset();
+    listSalesRunsMock.mockReset();
+    cancelSalesRunMock.mockReset();
     listAgentExecutionsMock.mockResolvedValue(emptyHistory);
     listToolInvocationsMock.mockResolvedValue({
       items: [],
       limit: 50,
+      offset: 0,
+      total: 0,
+    });
+    listSalesRunsMock.mockResolvedValue({
+      items: [],
+      limit: 20,
       offset: 0,
       total: 0,
     });
@@ -1310,5 +1335,25 @@ describe("Agent Detail page", () => {
     expect(
       await screen.findByText(/Execution history could not be loaded/),
     ).toBeVisible();
+  });
+
+  it("shows sales runs for SALES agents", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByRole("heading", { name: "Sales runs" }),
+    ).toBeVisible();
+    expect(listSalesRunsMock).toHaveBeenCalledWith("agent-real-1");
+  });
+
+  it("hides sales runs for OPERATIONS agents", async () => {
+    getAgentMock.mockResolvedValue({ ...agent, agent_type: "OPERATIONS" });
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Inbound qualifier" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Sales runs" }),
+    ).not.toBeInTheDocument();
   });
 });

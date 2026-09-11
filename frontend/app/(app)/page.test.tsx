@@ -1,12 +1,92 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandCenterPage from "@/app/(app)/page";
+import { getAgents } from "@/lib/api/agents";
+import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
+import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
+import type { Agent, FollowUpOperationsResponse, LeadListResponse } from "@/types/api";
+
+vi.mock("@/lib/api/agents", () => ({
+  getAgents: vi.fn(),
+}));
+
+vi.mock("@/lib/api/leads", () => ({
+  getLeads: vi.fn(),
+  getFollowUpOperations: vi.fn(),
+}));
+
+vi.mock("@/lib/api/sales-runs", () => ({
+  listOrganizationSalesRuns: vi.fn(),
+}));
+
+const getAgentsMock = vi.mocked(getAgents);
+const getLeadsMock = vi.mocked(getLeads);
+const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
+const listOrganizationSalesRunsMock = vi.mocked(listOrganizationSalesRuns);
+
+const agent: Agent = {
+  id: "agent-1",
+  name: "Inbound qualifier",
+  description: "Sales",
+  agent_type: "SALES",
+  system_instructions: "Be concise.",
+  status: "READY",
+  created_at: "2026-09-01T10:00:00Z",
+  updated_at: "2026-09-09T10:00:00Z",
+};
+
+function leads(total: number, newCount = total): LeadListResponse {
+  return {
+    items: [],
+    limit: 1,
+    offset: 0,
+    total,
+    status_counts: {
+      NEW: newCount,
+      CONTACTED: 0,
+      QUALIFIED: 0,
+      UNQUALIFIED: 0,
+      CONVERTED: 0,
+    },
+  };
+}
+
+function followUps(overdue: number): FollowUpOperationsResponse {
+  return {
+    items: [],
+    summary: {
+      overdue,
+      due_today: 0,
+      upcoming: 0,
+      completed: 0,
+      cancelled: 0,
+    },
+    limit: 1,
+    offset: 0,
+    total: 0,
+  };
+}
 
 describe("Command Center", () => {
-  it("renders the dashboard and its major sections", () => {
-    render(<CommandCenterPage />);
+  beforeEach(() => {
+    getAgentsMock.mockReset();
+    getLeadsMock.mockReset();
+    getFollowUpOperationsMock.mockReset();
+    listOrganizationSalesRunsMock.mockReset();
+    getAgentsMock.mockResolvedValue([]);
+    getLeadsMock.mockResolvedValue(leads(0));
+    getFollowUpOperationsMock.mockResolvedValue(followUps(0));
+    listOrganizationSalesRunsMock.mockResolvedValue({
+      items: [],
+      limit: 1,
+      offset: 0,
+      total: 0,
+    });
+  });
 
+  it("renders the dashboard and its major sections", async () => {
+    render(<CommandCenterPage />);
     expect(
       screen.getByRole("heading", { level: 1, name: "Command Center" }),
     ).toBeVisible();
@@ -19,52 +99,57 @@ describe("Command Center", () => {
     ]) {
       expect(screen.getByRole("heading", { name: heading })).toBeVisible();
     }
+    expect(await screen.findAllByText("0")).not.toHaveLength(0);
   });
 
-  it("presents unavailable business and agent states honestly", () => {
+  it("displays zero leads as 0 and keeps conversations and appointments unavailable", async () => {
     render(<CommandCenterPage />);
-
-    const metricCards = screen.getAllByRole("article");
-    const metricLabels = [
-      "Leads",
-      "Conversations",
-      "Appointments",
-      "Pending approvals",
-    ];
-    expect(metricCards).toHaveLength(metricLabels.length);
-    metricLabels.forEach((metric, index) => {
-      expect(
-        within(metricCards[index]).getByRole("heading", {
-          level: 3,
-          name: metric,
-        }),
-      ).toBeVisible();
-    });
-    expect(screen.getAllByText("—")).toHaveLength(4);
-    expect(screen.getByText("Connect a lead source")).toBeVisible();
-    expect(screen.getByText("No conversation data")).toBeVisible();
-    expect(screen.getByText("No appointment data")).toBeVisible();
-    expect(screen.getByText("No approval data")).toBeVisible();
-    expect(screen.getByText("Not configured")).toHaveAttribute(
-      "data-status",
-      "draft",
+    expect(await screen.findAllByText("0")).not.toHaveLength(0);
+    expect(screen.queryByText("Connect a lead source")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Conversation history is not available yet."),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Appointment scheduling is not available yet."),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/organization-wide activity feed is not available yet/),
+    ).toBeVisible();
+    const articles = screen.getAllByRole("article");
+    const conversations = articles.find((card) =>
+      within(card).queryByRole("heading", { name: "Conversations" }),
     );
+    expect(conversations).toBeTruthy();
+    expect(within(conversations!).getByText("—")).toBeVisible();
+  });
+
+  it("shows real agent count instead of not configured copy", async () => {
+    getAgentsMock.mockResolvedValue([agent]);
+    getLeadsMock.mockResolvedValue(leads(4, 2));
+    getFollowUpOperationsMock.mockResolvedValue(followUps(3));
+    listOrganizationSalesRunsMock.mockResolvedValue({
+      items: [],
+      limit: 1,
+      offset: 0,
+      total: 5,
+    });
+    render(<CommandCenterPage />);
+    expect(await screen.findByText("1 agent")).toBeVisible();
+    expect(screen.getByText(/1 agent in this organization, 1 ready/)).toBeVisible();
+    expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
     expect(
-      screen.getByText(/No live agent runtime is connected yet/),
-    ).toBeVisible();
-    expect(screen.getByText(/Nothing requires your review yet/)).toBeVisible();
-    expect(
-      screen.getByText(/No business activity is available yet/),
-    ).toBeVisible();
+      screen.queryByText(/No live agent runtime is connected yet/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("5")).toBeVisible();
+    expect(screen.getByText("3 follow-ups overdue.")).toBeVisible();
+    expect(screen.getByText(/5 sales runs waiting for approval/)).toBeVisible();
   });
 
   it("links quick actions only to valid product routes", () => {
     render(<CommandCenterPage />);
-
     const hrefs = screen
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"));
-
     for (const href of [
       "/agents",
       "/leads",

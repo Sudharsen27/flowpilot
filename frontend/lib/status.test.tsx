@@ -38,6 +38,7 @@ describe("status mapping", () => {
     expect(CANONICAL_STATUS_SEMANTICS.NEEDS_ATTENTION).toBe("warning");
     expect(CANONICAL_STATUS_SEMANTICS.REJECTED).toBe("warning");
     expect(CANONICAL_STATUS_SEMANTICS.AWAITING_APPROVAL).toBe("warning");
+    expect(CANONICAL_STATUS_SEMANTICS.WAITING_APPROVAL).toBe("warning");
     expect(CANONICAL_STATUS_SEMANTICS.OVERDUE).toBe("high");
   });
 

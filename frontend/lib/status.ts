@@ -24,6 +24,7 @@ export const CANONICAL_STATUS_SEMANTICS = {
   NEEDS_ATTENTION: "warning",
   REJECTED: "warning",
   AWAITING_APPROVAL: "warning",
+  WAITING_APPROVAL: "warning",
   OVERDUE: "high",
 } as const satisfies Record<string, StatusValue>;
 

@@ -18,6 +18,7 @@ import { AgentIdentityForm } from "@/components/agents/agent-identity-form";
 import { AgentInstructions } from "@/components/agents/agent-instructions";
 import { AgentResources } from "@/components/agents/agent-resources";
 import { AgentSafety } from "@/components/agents/agent-safety";
+import { SalesRunsPanel } from "@/components/agents/sales-runs-panel";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -469,6 +470,9 @@ export default function AgentDetailPage() {
             key={historyRefreshKey}
             agentId={agent.id}
           />
+          {agent.agent_type === "SALES" ? (
+            <SalesRunsPanel agentId={agent.id} canStart />
+          ) : null}
           <AgentCapabilities />
           <AgentResources />
           <AgentSafety />

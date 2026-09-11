@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # treated as abandoned. There is no per-execution heartbeat.
     agent_execution_stale_timeout_seconds: float = Field(default=300, ge=1)
     lead_follow_up_execution_stale_timeout_seconds: float = Field(default=300, ge=1)
+    # RUNNING sales runs older than this (and two provider-call floors) may be
+    # recovered as FAILED. Qualification and drafting each call the provider.
+    sales_run_stale_timeout_seconds: float = Field(default=300, ge=1)
     # The follow-up worker is a separate process (`python -m app.worker`). It is
     # never started by the API process, so this flag only guards that entrypoint.
     follow_up_worker_enabled: bool = False
@@ -48,6 +51,10 @@ class Settings(BaseSettings):
             self.lead_follow_up_execution_stale_timeout_seconds,
             self.email_request_timeout_seconds,
         )
+
+    def sales_run_stale_timeout_effective_seconds(self) -> float:
+        floor = 2 * self.openai_request_timeout_seconds
+        return max(self.sales_run_stale_timeout_seconds, floor)
 
     @property
     def cors_origin_list(self) -> list[str]:

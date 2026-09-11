@@ -1,6 +1,7 @@
 import { ArrowRight, Bot } from "lucide-react";
 import Link from "next/link";
 
+import { AiBadge } from "@/components/ai/ai-badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -11,8 +12,25 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
+import type { Agent } from "@/types/api";
 
-export function AiWorkforceStatus() {
+type AiWorkforceStatusProps = {
+  loading?: boolean;
+  agents: Agent[];
+};
+
+export function AiWorkforceStatus({
+  loading = false,
+  agents,
+}: AiWorkforceStatusProps) {
+  const active = agents.filter((agent) => agent.status === "ACTIVE").length;
+  const ready = agents.filter((agent) => agent.status === "READY").length;
+  const configured = agents.length > 0;
+  const badge = configured
+    ? statusPresentation("ACTIVE", `${agents.length} agent${agents.length === 1 ? "" : "s"}`)
+    : statusPresentation("DRAFT", "No agents yet");
+
   return (
     <Card as="section" variant="information">
       <CardHeader>
@@ -27,18 +45,36 @@ export function AiWorkforceStatus() {
             <div>
               <CardTitle>AI workforce</CardTitle>
               <CardDescription className="mt-1">
-                Configure the agents that will support your business operations.
+                Agents configured for this organization. Sales runs use the Sales
+                Agent pipeline, not the generic debugger.
               </CardDescription>
             </div>
           </div>
-          <StatusBadge status="draft" label="Not configured" />
+          <div className="flex flex-wrap items-center gap-2">
+            <AiBadge label="Agent" />
+            <StatusBadge status={badge.status} label={loading ? "Loading" : badge.label} />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="pt-4">
-        <p className="text-muted-foreground max-w-2xl text-sm leading-6">
-          No live agent runtime is connected yet. Agent status and execution
-          activity will appear here after that capability is implemented.
-        </p>
+        {loading ? (
+          <p className="text-muted-foreground max-w-2xl text-sm leading-6">
+            Loading agents…
+          </p>
+        ) : configured ? (
+          <p className="text-muted-foreground max-w-2xl text-sm leading-6">
+            {agents.length} agent{agents.length === 1 ? "" : "s"} in this
+            organization
+            {active ? `, ${active} active` : ""}
+            {ready ? `, ${ready} ready` : ""}. Per-agent execution history is
+            available on each agent detail page.
+          </p>
+        ) : (
+          <p className="text-muted-foreground max-w-2xl text-sm leading-6">
+            No agents are configured yet. Create a Sales Agent to start qualifying
+            enquiries.
+          </p>
+        )}
       </CardContent>
       <CardFooter>
         <Link href="/agents" className={buttonVariants({ variant: "outline" })}>

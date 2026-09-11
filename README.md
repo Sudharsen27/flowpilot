@@ -2,7 +2,7 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository has completed **Phase 2 product UI foundations**. Phase 3A adds a tenant-safe AI runtime (Agent, AgentExecution, AIProvider) without tool calling or external business actions.
+This repository has completed **Phase 5B**: a Sales Agent can start a Sales Run that matches or creates a lead, runs existing AI qualification and response drafting, and stops at human approval. Email sending and follow-up automation are not started from a Sales Run.
 
 ## Requirements
 
@@ -39,6 +39,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Login: `POST /api/v1/auth/login`
 - Current user: `GET /api/v1/users/me`
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
+- Start sales run (authenticated, SALES agents): `POST /api/v1/agents/{agent_id}/sales-runs`
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:
 

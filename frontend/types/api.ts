@@ -523,3 +523,80 @@ export type LeadCreateRequest = {
 };
 
 export type LeadUpdateRequest = Partial<LeadCreateRequest>;
+
+export type SalesRunStatus =
+  | "RUNNING"
+  | "WAITING_APPROVAL"
+  | "FAILED"
+  | "CANCELLED";
+
+export type SalesRunStage =
+  | "MATCH_LEAD"
+  | "QUALIFY"
+  | "DRAFT"
+  | "AWAIT_APPROVAL";
+
+export type SalesRunLeadSummary = {
+  id: string;
+  name: string;
+  email: string | null;
+  status: LeadStatus;
+};
+
+export type SalesRunQualificationSummary = {
+  id: string;
+  status: string;
+};
+
+export type SalesRunDraftSummary = {
+  id: string;
+  status: string;
+  review_status: LeadResponseReviewStatus | null;
+};
+
+export type SalesRun = {
+  id: string;
+  agent_id: string;
+  lead_id: string;
+  status: SalesRunStatus;
+  stage: SalesRunStage;
+  qualification_id: string | null;
+  response_draft_id: string | null;
+  failure_category: ExecutionFailureCategory | null;
+  error: string | null;
+  initiated_by_user_id: string | null;
+  revision: number;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  enquiry?: string | null;
+  lead?: SalesRunLeadSummary | null;
+  qualification?: SalesRunQualificationSummary | null;
+  response_draft?: SalesRunDraftSummary | null;
+};
+
+export type SalesRunListResponse = {
+  items: SalesRun[];
+  limit: number;
+  offset: number;
+  total: number;
+  status_counts?: Record<string, number> | null;
+};
+
+export type SalesRunStartRequest = {
+  enquiry: string;
+  lead_id?: string | null;
+  name?: string | null;
+  email?: string | null;
+};
+
+export type SalesRunCancelRequest = {
+  expected_revision: number;
+};
+
+export type SalesRunListParams = {
+  status?: SalesRunStatus;
+  limit?: number;
+  offset?: number;
+};

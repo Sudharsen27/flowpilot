@@ -144,6 +144,49 @@ Pagination matches execution history (`limit` default 20, min 1, max 50; `offset
 
 Public fields: `id`, `execution_id`, `agent_id`, `call_id`, `tool_name`, `risk_level`, `decision`, `status`, `argument_keys` (names only), `error`, timestamps. Argument values, tool outputs, `tool_results`, raw provider payloads, secrets, and stack traces are not returned. There is no per-invocation GET, Activity feed, or frontend history UI in this slice.
 
+## Sales Agent runs (Phase 5B)
+
+`SalesRun` is a thin orchestration record for `AgentType.SALES`. It is **not** an `AgentExecution`. Qualification and response drafting already persist their own AI results; routing a Sales Run through the generic agent debugger would duplicate that work and mix unstructured chat with structured CRM artefacts.
+
+A Sales Run sequences existing services:
+
+```
+Start Sales Run
+  → match or create Lead (LeadService / email lookup)
+  → LeadQualificationService.qualify()
+  → LeadResponseDraftService.generate()
+  → WAITING_APPROVAL
+```
+
+Human review stays on the existing draft review/edit/approve/reject APIs. Approving a draft does **not** advance the Sales Run. Phase 5B does not send email, schedule follow-ups, or add a second Approval model.
+
+Statuses: `RUNNING`, `WAITING_APPROVAL`, `FAILED`, `CANCELLED`. There is no `COMPLETED` yet: a draft waiting for a human is not a finished sales outcome.
+
+Stages (`MATCH_LEAD`, `QUALIFY`, `DRAFT`, `AWAIT_APPROVAL`) are orchestration progress. Status is the operator-facing lifecycle.
+
+Tenant isolation matches the rest of FlowPilot: every lookup is scoped by `organization_id` from the membership JWT. Composite FKs bind the run to the same-org agent and lead. A PostgreSQL partial unique index allows at most one open run (`RUNNING` or `WAITING_APPROVAL`) per lead. `FAILED` and `CANCELLED` do not block a later run. SQLite tests do not prove that index; PostgreSQL tests do.
+
+Start requires a SALES agent in `READY` or `ACTIVE`. Any authenticated org member may start, list, get, and cancel (same as agent execute). Cross-tenant ids return 404.
+
+Lead matching: explicit `lead_id`, else case-insensitive email lookup. Multiple matches return 409 and require `lead_id`. Zero matches create a lead with the client-supplied name (required), optional email, source `API`, and no invented phone/company/notes. CRM `Lead.status` is not changed by qualification.
+
+Provider failures mark the Sales Run `FAILED` with a sanitized error and failure category. A successful qualification is preserved if drafting later fails. Stale `RUNNING` rows are recovered to `FAILED` / `EXECUTION_ERROR` on list/get/start. Recovery does not retry AI. Effective stale timeout is `max(SALES_RUN_STALE_TIMEOUT_SECONDS, 2 * OpenAI request timeout)`.
+
+APIs:
+
+```
+POST /api/v1/agents/{agent_id}/sales-runs
+GET  /api/v1/agents/{agent_id}/sales-runs
+GET  /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/cancel
+GET  /api/v1/leads/{lead_id}/sales-runs
+GET  /api/v1/sales-runs
+```
+
+The organization list is read-only (Command Center waiting-approval count). There is no `advance` endpoint and no un-nested mutation API. List responses omit the enquiry body and never include the draft body.
+
+Later send/follow-up slices can attach to the same Sales Run after human approval. They are out of scope here.
+
 ## Lead domain (Phase 4A)
 
 `Lead` is an organization-owned sales record. It is independent of `AgentExecution`. Future sales-agent tools must call `LeadService` / `LeadRepository`; they must not write lead rows from the runtime loop.

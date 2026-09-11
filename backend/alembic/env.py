@@ -18,6 +18,7 @@ from app.models import (
     LeadResponseDraft,
     Membership,
     Organization,
+    SalesRun,
     ToolInvocation,
     User,
 )
@@ -33,6 +34,7 @@ assert (
     and LeadResponseDraft
     and Membership
     and Organization
+    and SalesRun
     and ToolInvocation
     and User
 )

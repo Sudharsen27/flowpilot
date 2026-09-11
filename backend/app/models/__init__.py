@@ -8,6 +8,7 @@ from app.models.lead_qualification import LeadQualification
 from app.models.lead_response_draft import LeadResponseDraft
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
+from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
 from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
 
@@ -28,6 +29,9 @@ __all__ = [
     "Membership",
     "MembershipRole",
     "Organization",
+    "SalesRun",
+    "SalesRunStage",
+    "SalesRunStatus",
     "ToolInvocation",
     "User",
 ]
