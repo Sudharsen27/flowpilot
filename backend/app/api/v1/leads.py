@@ -27,6 +27,7 @@ from app.schemas.lead_follow_up import (
     LeadFollowUpPublic,
     LeadFollowUpUpdate,
 )
+from app.schemas.lead_follow_up_execution import LeadFollowUpExecutionListResponse
 from app.schemas.lead_qualification import LeadQualificationPublic, LeadQualifyRequest
 from app.schemas.lead_response_draft import (
     LeadRespondRequest,
@@ -38,6 +39,7 @@ from app.schemas.lead_response_draft import (
 )
 from app.schemas.leads import LeadCreate, LeadListResponse, LeadPublic, LeadUpdate
 from app.services.lead_email_send_service import LeadEmailSendService, to_email_send_public
+from app.services.lead_follow_up_execution_service import LeadFollowUpExecutionService
 from app.services.lead_follow_up_service import LeadFollowUpService, to_follow_up_public
 from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_response_draft_service import (
@@ -373,3 +375,29 @@ def cancel_lead_follow_up(
         expected_revision=payload.expected_revision,
     )
     return to_follow_up_public(row)
+
+
+@router.get(
+    "/{lead_id}/follow-ups/{follow_up_id}/executions",
+    response_model=LeadFollowUpExecutionListResponse,
+)
+def list_lead_follow_up_executions(
+    lead_id: str,
+    follow_up_id: str,
+    limit: int = Query(
+        default=FOLLOW_UP_LIST_DEFAULT_LIMIT,
+        ge=1,
+        le=FOLLOW_UP_LIST_MAX_LIMIT,
+    ),
+    offset: int = Query(default=0, ge=0),
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadFollowUpExecutionListResponse:
+    """Read-only attempt history. Reading never triggers a send."""
+    return LeadFollowUpExecutionService(db).list_for_follow_up(
+        organization.id,
+        lead_id,
+        follow_up_id,
+        limit=limit,
+        offset=offset,
+    )

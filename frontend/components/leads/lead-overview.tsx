@@ -46,7 +46,8 @@ export function LeadOverview({ summary, loading = false }: LeadOverviewProps) {
       />
       <MetricCard
         label="Follow-up required"
-        unavailableLabel="Follow-up tracking is not available yet"
+        description="Overdue and upcoming follow-ups are listed in the Follow-ups section."
+        unavailableLabel="See Follow-ups below for overdue and upcoming actions"
         headingLevel={3}
         icon={<ClockAlert />}
       />

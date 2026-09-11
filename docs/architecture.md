@@ -13,7 +13,7 @@ V1 is lead and customer automation. Other agent types reuse the same runtime lat
 Two applications in a monorepo:
 
 - `frontend/` — Next.js UI. Components render; they do not own business rules.
-- `backend/` — FastAPI API, services, and (later) workers.
+- `backend/` — FastAPI API, services, and the follow-up worker process.
 
 Request path:
 
@@ -315,6 +315,27 @@ Humans send an approved draft by email. Sending is an explicit external side eff
 
 Humans create, list, reschedule, complete, and cancel follow-ups. Overdue is derived. EMAIL follow-ups require stored `body_text`. Due follow-ups are not sent or executed automatically.
 
-## Phase 4G (follow-up execution domain)
+## Phase 4G (automated follow-up execution)
 
-`LeadFollowUpExecution` persists automated EMAIL follow-up attempts. No worker or email send yet.
+`LeadFollowUpExecution` persists automated EMAIL follow-up attempts. `LeadFollowUpExecutionService.execute_follow_up(organization_id, follow_up_id)` is the single send path: claim, snapshot, `EmailProvider.send`, SENT/FAILED, then COMPLETED. MANUAL follow-ups are never emailed.
+
+### Worker process
+
+A dedicated polling process (`python -m app.worker`) discovers due EMAIL follow-ups and calls that service. The FastAPI application never starts it: no startup hook, no `BackgroundTasks`, no in-process loop. Celery, RQ, APScheduler, Redis queues, and cron are not used.
+
+```
+LeadFollowUp (PENDING, EMAIL_FOLLOW_UP, due_at <= now)
+    → PostgreSQL SELECT ... FOR UPDATE SKIP LOCKED
+    → LeadFollowUpExecution RUNNING (commit)
+    → EmailProvider.send (outside the DB transaction)
+    → execution SENT or FAILED (commit)
+    → follow-up COMPLETED only after SENT (commit)
+```
+
+- **Discovery** is organization-independent and read-only. Tenant identity always comes from the claimed row, never from an HTTP request.
+- **Claiming** uses `FOR UPDATE SKIP LOCKED` plus the partial unique index on in-flight executions. Two workers cannot send the same follow-up concurrently. SQLite tests do not prove SKIP LOCKED; PostgreSQL tests do.
+- **Batching** is `FOLLOW_UP_WORKER_BATCH_SIZE` (default 10). One failed item is logged and the rest of the batch continues. There are no automatic retries: FAILED leaves the follow-up PENDING.
+- **Shutdown** handles SIGINT/SIGTERM: stop taking new work, finish the in-flight item, exit. Sleep is interruptible.
+- **Configuration** (disabled by default): `FOLLOW_UP_WORKER_ENABLED`, `FOLLOW_UP_WORKER_POLL_INTERVAL_SECONDS` (30), `FOLLOW_UP_WORKER_BATCH_SIZE` (10).
+- **Delivery is at-least-once.** If the provider accepts an email and the process dies before SENT commits, a later attempt may send again. The provider idempotency key `follow-up:{id}:attempt:{n}` is the duplicate-acceptance protection. This is not exactly-once delivery.
+- There is no public worker API (`/run-due-follow-ups` and similar do not exist). Humans inspect follow-ups through the authenticated operations list.

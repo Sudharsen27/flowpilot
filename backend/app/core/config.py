@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # treated as abandoned. There is no per-execution heartbeat.
     agent_execution_stale_timeout_seconds: float = Field(default=300, ge=1)
     lead_follow_up_execution_stale_timeout_seconds: float = Field(default=300, ge=1)
+    # The follow-up worker is a separate process (`python -m app.worker`). It is
+    # never started by the API process, so this flag only guards that entrypoint.
+    follow_up_worker_enabled: bool = False
+    follow_up_worker_poll_interval_seconds: float = Field(default=30, ge=1)
+    follow_up_worker_batch_size: int = Field(default=10, ge=1, le=50)
 
     def agent_execution_stale_timeout_effective_seconds(self) -> float:
         floor = (self.agent_max_tool_iterations + 1) * self.openai_request_timeout_seconds

@@ -412,6 +412,98 @@ export type LeadFollowUpLifecycleRequest = {
   expected_revision: number;
 };
 
+export type LeadFollowUpExecutionStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "SENT"
+  | "FAILED";
+
+/**
+ * Safe execution fields only. The API never returns provider payloads,
+ * authorization headers or secrets.
+ */
+export type FollowUpExecutionSummary = {
+  id: string;
+  status: LeadFollowUpExecutionStatus;
+  attempt: number;
+  recipient_email: string;
+  provider: string | null;
+  provider_message_id: string | null;
+  failure_category: ExecutionFailureCategory | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+};
+
+export type FollowUpLeadSummary = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
+/**
+ * One attempt at sending a follow-up. `body_text` is the human-authored body
+ * snapshotted at claim time, never AI-generated content.
+ */
+export type LeadFollowUpExecution = {
+  id: string;
+  lead_id: string;
+  follow_up_id: string;
+  status: LeadFollowUpExecutionStatus;
+  attempt: number;
+  recipient_email: string;
+  sender_email: string;
+  subject: string;
+  body_text: string;
+  provider: string | null;
+  provider_message_id: string | null;
+  failure_category: ExecutionFailureCategory | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  duration_ms: number | null;
+  provider_idempotency_key: string;
+};
+
+export type LeadFollowUpExecutionListResponse = {
+  items: LeadFollowUpExecution[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type FollowUpOperationsItem = {
+  follow_up: LeadFollowUp;
+  lead: FollowUpLeadSummary;
+  latest_execution: FollowUpExecutionSummary | null;
+};
+
+export type FollowUpOperationsSummary = {
+  overdue: number;
+  due_today: number;
+  upcoming: number;
+  completed: number;
+  cancelled: number;
+};
+
+export type FollowUpOperationsResponse = {
+  items: FollowUpOperationsItem[];
+  summary: FollowUpOperationsSummary;
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type FollowUpOperationsParams = {
+  status?: LeadFollowUpStatus;
+  overdue?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
 export type LeadListResponse = {
   items: Lead[];
   limit: number;

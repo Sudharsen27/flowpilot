@@ -1,7 +1,10 @@
 import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
+  FollowUpOperationsParams,
+  FollowUpOperationsResponse,
   Lead,
   LeadCreateRequest,
+  LeadFollowUpExecutionListResponse,
   LeadListResponse,
   LeadQualificationResult,
   LeadQualifyRequest,
@@ -209,5 +212,23 @@ export function cancelLeadFollowUp(
   return apiPost<LeadFollowUp>(
     `/api/v1/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/cancel`,
     input,
+  );
+}
+
+/** Read-only attempt history. Reading never triggers a send. */
+export function getLeadFollowUpExecutions(
+  leadId: string,
+  followUpId: string,
+  params: LeadFollowUpListParams = {},
+) {
+  return apiGet<LeadFollowUpExecutionListResponse>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/executions${followUpListQuery(params)}`,
+  );
+}
+
+/** Follow-ups across every lead in the caller's organization. */
+export function getFollowUpOperations(params: FollowUpOperationsParams = {}) {
+  return apiGet<FollowUpOperationsResponse>(
+    `/api/v1/follow-ups${followUpListQuery(params)}`,
   );
 }

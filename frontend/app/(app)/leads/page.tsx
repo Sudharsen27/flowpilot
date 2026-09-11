@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
 import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
+import { FollowUpOperations } from "@/components/leads/follow-up-operations";
 import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadOverview } from "@/components/leads/lead-overview";
@@ -319,8 +320,9 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Follow-ups"
-          description="Follow-ups are business reminders. Opening Follow-ups on a lead lets you create, reschedule, complete, or cancel them. Due items are not emailed automatically."
+          description="Manage upcoming customer actions. Due email follow-ups are sent by the follow-up worker; manual follow-ups stay human-only and are never emailed."
         />
+        <FollowUpOperations />
       </section>
     </div>
   );

@@ -74,6 +74,13 @@ class LeadFollowUp(Base):
             "status",
             "due_at",
         ),
+        Index(
+            "ix_lead_follow_ups_status_type_due_at_id",
+            "status",
+            "type",
+            "due_at",
+            "id",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))

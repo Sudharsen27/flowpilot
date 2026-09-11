@@ -40,6 +40,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Current user: `GET /api/v1/users/me`
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
 
+The follow-up worker is a separate process. It is disabled by default and is never started by the API:
+
+```bash
+FOLLOW_UP_WORKER_ENABLED=true python -m app.worker
+```
+
 `OPENAI_API_KEY` and `OPENAI_MODEL` are documented in `.env.example`. Unit tests mock `AIProvider` and do not call OpenAI.
 
 ### Frontend

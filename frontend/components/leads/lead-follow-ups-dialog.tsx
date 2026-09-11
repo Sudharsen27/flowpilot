@@ -30,6 +30,8 @@ type LeadFollowUpsDialogProps = {
   open: boolean;
   lead: Lead | null;
   onOpenChange: (open: boolean) => void;
+  /** Called after a follow-up is created, rescheduled, completed or cancelled. */
+  onChanged?: () => void;
 };
 
 const typeLabels: Record<LeadFollowUpType, string> = {
@@ -90,6 +92,7 @@ export function LeadFollowUpsDialog({
   open,
   lead,
   onOpenChange,
+  onChanged,
 }: LeadFollowUpsDialogProps) {
   const [items, setItems] = useState<LeadFollowUp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +130,8 @@ export function LeadFollowUpsDialog({
     if (!lead) return;
     const page = await getLeadFollowUps(lead.id);
     setItems(page.items);
+    // Let callers reload their own view from the backend rather than guessing.
+    onChanged?.();
   }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {

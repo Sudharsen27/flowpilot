@@ -143,6 +143,21 @@ class LeadFollowUpExecutionService:
             for_update_skip_locked=False,
         )
 
+    def discover_due_email_follow_ups(
+        self,
+        *,
+        as_of: datetime | None = None,
+        limit: int = DUE_CLAIM_DEFAULT_LIMIT,
+    ) -> list[tuple[str, str]]:
+        """Return (organization_id, follow_up_id) for due EMAIL follow-ups.
+
+        Read-only discovery for the worker. The tenant identity always comes from
+        the database row, never from a caller. Returning plain identifiers keeps
+        no ORM state alive across the later provider call.
+        """
+        rows = self.list_due_email_follow_ups(as_of=as_of, limit=limit)
+        return [(row.organization_id, row.id) for row in rows]
+
     def claim_due_email_follow_up(
         self,
         *,
@@ -207,8 +222,15 @@ class LeadFollowUpExecutionService:
         *,
         organization_id: str,
         follow_up_id: str,
+        resume_inflight: bool = True,
     ) -> LeadFollowUpExecution | None:
-        """Execute one tenant-scoped follow-up. MANUAL and terminal rows are skipped."""
+        """Execute one tenant-scoped follow-up. MANUAL and terminal rows are skipped.
+
+        With ``resume_inflight`` a pre-existing RUNNING execution is delivered
+        again, which resumes an attempt abandoned by a crashed process. Concurrent
+        callers such as the follow-up worker must pass ``resume_inflight=False``
+        so they never deliver an attempt another process is still sending.
+        """
         follow_up = self.follow_ups.get_by_organization_id(organization_id, follow_up_id)
         if follow_up is None:
             raise NotFoundError("Lead not found")
@@ -230,6 +252,8 @@ class LeadFollowUpExecutionService:
             return None
         inflight = self.executions.inflight_for_follow_up(organization_id, follow_up.id)
         if inflight is not None:
+            if not resume_inflight:
+                return None
             if inflight.status == LeadFollowUpExecutionStatus.PENDING:
                 inflight = self.mark_running(organization_id, inflight.id)
             if inflight.status == LeadFollowUpExecutionStatus.RUNNING:

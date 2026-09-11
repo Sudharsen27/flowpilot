@@ -19,11 +19,15 @@ import {
   updateLead,
   updateLeadResponseDraft,
   getLeadFollowUps,
+  getFollowUpOperations,
+  getLead,
+  getLeadFollowUpExecutions,
 } from "@/lib/api/leads";
 import type { Lead, LeadEmailSendResult, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
 
 vi.mock("@/lib/api/leads", () => ({
   getLeads: vi.fn(),
+  getLead: vi.fn(),
   createLead: vi.fn(),
   updateLead: vi.fn(),
   qualifyLead: vi.fn(),
@@ -34,6 +38,8 @@ vi.mock("@/lib/api/leads", () => ({
   rejectLeadResponseDraft: vi.fn(),
   sendLeadResponseDraft: vi.fn(),
   getLeadFollowUps: vi.fn(),
+  getLeadFollowUpExecutions: vi.fn(),
+  getFollowUpOperations: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -100,6 +106,7 @@ function completedDraft(
 }
 
 const getLeadsMock = vi.mocked(getLeads);
+const getLeadMock = vi.mocked(getLead);
 const createLeadMock = vi.mocked(createLead);
 const updateLeadMock = vi.mocked(updateLead);
 const qualifyLeadMock = vi.mocked(qualifyLead);
@@ -110,10 +117,27 @@ const approveLeadResponseDraftMock = vi.mocked(approveLeadResponseDraft);
 const rejectLeadResponseDraftMock = vi.mocked(rejectLeadResponseDraft);
 const sendLeadResponseDraftMock = vi.mocked(sendLeadResponseDraft);
 const getLeadFollowUpsMock = vi.mocked(getLeadFollowUps);
+const getLeadFollowUpExecutionsMock = vi.mocked(getLeadFollowUpExecutions);
+const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
+
+const emptyOperations = {
+  items: [],
+  summary: {
+    overdue: 0,
+    due_today: 0,
+    upcoming: 0,
+    completed: 0,
+    cancelled: 0,
+  },
+  limit: 20,
+  offset: 0,
+  total: 0,
+};
 
 describe("Leads page", () => {
   beforeEach(() => {
     getLeadsMock.mockReset();
+    getLeadMock.mockReset();
     createLeadMock.mockReset();
     updateLeadMock.mockReset();
     qualifyLeadMock.mockReset();
@@ -124,7 +148,16 @@ describe("Leads page", () => {
     rejectLeadResponseDraftMock.mockReset();
     sendLeadResponseDraftMock.mockReset();
     getLeadFollowUpsMock.mockReset();
+    getLeadFollowUpExecutionsMock.mockReset();
+    getFollowUpOperationsMock.mockReset();
     getLeadFollowUpsMock.mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      total: 0,
+    });
+    getFollowUpOperationsMock.mockResolvedValue(emptyOperations);
+    getLeadFollowUpExecutionsMock.mockResolvedValue({
       items: [],
       limit: 20,
       offset: 0,
@@ -150,7 +183,7 @@ describe("Leads page", () => {
         screen.getByRole("heading", { level: 2, name: section }),
       ).toBeVisible();
     }
-    expect(screen.getByText("Loading records")).toBeInTheDocument();
+    expect(screen.getAllByText("Loading records").length).toBeGreaterThan(0);
     expect(screen.queryByText("Example")).not.toBeInTheDocument();
   });
 

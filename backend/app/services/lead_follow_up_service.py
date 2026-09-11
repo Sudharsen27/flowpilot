@@ -1,14 +1,30 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead_email_send import LeadEmailSendStatus
 from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
+from app.models.lead_follow_up_execution import (
+    LeadFollowUpExecution,
+    LeadFollowUpExecutionStatus,
+)
 from app.repositories.lead_email_send_repository import LeadEmailSendRepository
+from app.repositories.lead_follow_up_execution_repository import (
+    LeadFollowUpExecutionRepository,
+)
 from app.repositories.lead_follow_up_repository import LeadFollowUpRepository
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.lead_follow_up import LeadFollowUpListResponse, LeadFollowUpPublic
+from app.schemas.lead_follow_up_operations import (
+    FollowUpExecutionSummary,
+    FollowUpLeadSummary,
+    FollowUpOperationsItem,
+    FollowUpOperationsResponse,
+    FollowUpOperationsSummary,
+)
+from app.services.observability import duration_ms
 
 
 class LeadFollowUpService:
@@ -17,6 +33,7 @@ class LeadFollowUpService:
         self.leads = LeadRepository(session)
         self.follow_ups = LeadFollowUpRepository(session)
         self.sends = LeadEmailSendRepository(session)
+        self.executions = LeadFollowUpExecutionRepository(session)
 
     def create(
         self,
@@ -83,6 +100,67 @@ class LeadFollowUpService:
             limit=limit,
             offset=offset,
             total=total,
+        )
+
+    def list_operations(
+        self,
+        organization_id: str,
+        *,
+        status: LeadFollowUpStatus | None = None,
+        overdue: bool | None = None,
+        limit: int,
+        offset: int = 0,
+    ) -> FollowUpOperationsResponse:
+        """Follow-ups across every lead in one organization, with last execution.
+
+        Always scoped to the caller's organization. The worker never uses this
+        path; it reads the tenant from the claimed row instead.
+        """
+        now = datetime.now(UTC)
+        rows, total = self.follow_ups.list_for_organization(
+            organization_id,
+            status=status,
+            overdue=overdue,
+            overdue_as_of=now,
+            limit=limit,
+            offset=offset,
+        )
+        latest = self.executions.latest_for_follow_ups(
+            organization_id, [follow_up.id for follow_up, _ in rows]
+        )
+        items = [
+            FollowUpOperationsItem(
+                follow_up=to_follow_up_public(follow_up, now=now),
+                lead=FollowUpLeadSummary(id=lead.id, name=lead.name, email=lead.email),
+                latest_execution=_to_execution_summary(latest.get(follow_up.id)),
+            )
+            for follow_up, lead in rows
+        ]
+        return FollowUpOperationsResponse(
+            items=items,
+            summary=self._operations_summary(organization_id, now=now),
+            limit=limit,
+            offset=offset,
+            total=total,
+        )
+
+    def _operations_summary(
+        self, organization_id: str, *, now: datetime
+    ) -> FollowUpOperationsSummary:
+        # "Today" ends at the next UTC midnight. Due dates are stored in UTC.
+        end_of_day = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        overdue, due_today, upcoming = self.follow_ups.pending_due_counts_for_organization(
+            organization_id, now=now, end_of_day=end_of_day
+        )
+        counts = self.follow_ups.status_counts_for_organization(organization_id)
+        return FollowUpOperationsSummary(
+            overdue=overdue,
+            due_today=due_today,
+            upcoming=upcoming,
+            completed=counts.get(LeadFollowUpStatus.COMPLETED, 0),
+            cancelled=counts.get(LeadFollowUpStatus.CANCELLED, 0),
         )
 
     def update(
@@ -188,6 +266,29 @@ class LeadFollowUpService:
         if row.status != LeadFollowUpStatus.PENDING:
             raise ConflictError("This follow-up cannot be updated")
         return row
+
+
+def _to_execution_summary(
+    row: LeadFollowUpExecution | None,
+) -> FollowUpExecutionSummary | None:
+    if row is None:
+        return None
+    category = None
+    if row.failure_category:
+        category = ExecutionFailureCategory(row.failure_category)
+    return FollowUpExecutionSummary(
+        id=row.id,
+        status=LeadFollowUpExecutionStatus(row.status),
+        attempt=row.attempt,
+        recipient_email=row.recipient_email,
+        provider=row.provider,
+        provider_message_id=row.provider_message_id,
+        failure_category=category,
+        error=row.error,
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        duration_ms=duration_ms(row.started_at, row.completed_at),
+    )
 
 
 def _require_email_body(follow_up_type: LeadFollowUpType | str, body_text: str | None) -> None:

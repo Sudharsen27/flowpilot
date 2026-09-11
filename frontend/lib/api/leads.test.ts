@@ -15,7 +15,9 @@ import {
   cancelLeadFollowUp,
   completeLeadFollowUp,
   createLeadFollowUp,
+  getFollowUpOperations,
   getLeadFollowUp,
+  getLeadFollowUpExecutions,
   getLeadFollowUps,
   updateLeadFollowUp,
 } from "@/lib/api/leads";
@@ -253,6 +255,8 @@ describe("Lead API client", () => {
     });
     await completeLeadFollowUp("lead/1", "fu/1", { expected_revision: 2 });
     await cancelLeadFollowUp("lead/1", "fu/1", { expected_revision: 3 });
+    await getLeadFollowUpExecutions("lead/1", "fu/1", { limit: 20, offset: 0 });
+    await getFollowUpOperations({ status: "PENDING", overdue: true, limit: 20, offset: 0 });
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       "http://localhost:8000/api/v1/leads/lead%2F1/follow-ups?status=PENDING&overdue=true&limit=20&offset=0",
     );
@@ -260,6 +264,12 @@ describe("Lead API client", () => {
       "http://localhost:8000/api/v1/leads/lead%2F1/follow-ups/fu%2F1",
     );
     expect(String(fetchMock.mock.calls[5]?.[0])).toContain("/follow-ups/fu%2F1/cancel");
+    expect(String(fetchMock.mock.calls[6]?.[0])).toBe(
+      "http://localhost:8000/api/v1/leads/lead%2F1/follow-ups/fu%2F1/executions?limit=20&offset=0",
+    );
+    expect(String(fetchMock.mock.calls[7]?.[0])).toBe(
+      "http://localhost:8000/api/v1/follow-ups?status=PENDING&overdue=true&limit=20&offset=0",
+    );
     for (const call of fetchMock.mock.calls) {
       const payload = call[1]?.body;
       if (typeof payload === "string") {

@@ -19,7 +19,12 @@ from app.tools.schema import ToolCall, ToolDefinition
 
 logger = logging.getLogger(__name__)
 
-_SECRET_PATTERN = re.compile(r"(sk-[A-Za-z0-9_-]+)|(Bearer\s+\S+)", re.IGNORECASE)
+# Covers OpenAI-style keys, Resend keys (re_...) and Authorization values.
+# The length floor on re_ avoids redacting ordinary words such as "re_try".
+_SECRET_PATTERN = re.compile(
+    r"(sk-[A-Za-z0-9_-]+)|(re_[A-Za-z0-9_-]{12,})|(Bearer\s+\S+)",
+    re.IGNORECASE,
+)
 
 
 def sanitize_provider_error(message: str) -> str:

@@ -85,6 +85,28 @@ class LeadFollowUpExecutionRepository:
             .limit(1)
         )
 
+    def latest_for_follow_ups(
+        self, organization_id: str, follow_up_ids: list[str]
+    ) -> dict[str, LeadFollowUpExecution]:
+        """Highest-attempt execution per follow-up, for list views without N+1 reads."""
+        if not follow_up_ids:
+            return {}
+        rows = self.session.scalars(
+            select(LeadFollowUpExecution)
+            .where(
+                LeadFollowUpExecution.organization_id == organization_id,
+                LeadFollowUpExecution.follow_up_id.in_(follow_up_ids),
+            )
+            .order_by(
+                LeadFollowUpExecution.attempt.asc(),
+                LeadFollowUpExecution.id.asc(),
+            )
+        )
+        latest: dict[str, LeadFollowUpExecution] = {}
+        for row in rows:
+            latest[row.follow_up_id] = row
+        return latest
+
     def next_attempt(self, organization_id: str, follow_up_id: str) -> int:
         current = self.session.scalar(
             select(func.max(LeadFollowUpExecution.attempt)).where(
