@@ -25,7 +25,7 @@ const typePresentation = {
   "ai-action": {
     label: "AI action",
     icon: Bot,
-    className: "border-info/25 bg-info/10 text-info-text",
+    className: "border-ai-border bg-ai/10 text-ai-text",
   },
   workflow: {
     label: "Workflow",

@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 
+import { AiBadge } from "@/components/ai/ai-badge";
 import { QualificationStatus } from "@/components/leads/qualification-status";
 import { FormField } from "@/components/forms/form-field";
 import { Textarea } from "@/components/forms/textarea";
@@ -109,9 +110,12 @@ export function QualifyLeadDialog({
             />
           </FormField>
           {pending ? (
-            <p role="status" className="text-muted-foreground text-sm">
-              Analyzing enquiry…
-            </p>
+            <div className="flex flex-wrap items-center gap-2" role="status">
+              <AiBadge label="Processing" />
+              <p className="text-muted-foreground text-sm">
+                Analyzing enquiry…
+              </p>
+            </div>
           ) : null}
           {error ? (
             <p className="text-danger-text text-sm" role="alert">

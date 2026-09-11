@@ -48,7 +48,7 @@ export function MetricCard({
     <Card as="article" className={className} aria-busy={loading || undefined}>
       <CardContent className="flex min-h-36 flex-col justify-between">
         <div className="flex items-start justify-between gap-3">
-          <Heading className="text-muted-foreground text-sm font-medium">
+          <Heading className="text-muted-foreground text-metric-label font-medium">
             {label}
           </Heading>
           {icon ? (
@@ -71,7 +71,7 @@ export function MetricCard({
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p
                 className={cn(
-                  "text-2xl font-semibold tracking-tight tabular-nums",
+                  "text-metric font-semibold tracking-tight tabular-nums",
                   !hasValue && "text-muted-foreground",
                 )}
               >

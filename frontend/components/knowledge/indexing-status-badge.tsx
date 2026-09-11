@@ -1,4 +1,5 @@
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 
 export type IndexingStatus =
   "ready" | "processing" | "needs-attention" | "not-indexed";
@@ -7,18 +8,26 @@ type IndexingStatusBadgeProps = {
   status: IndexingStatus;
 };
 
-const statusPresentation: Record<
+/**
+ * Indexing "ready" means indexed successfully, not agent READY (pending).
+ */
+const indexingPresentation: Record<
   IndexingStatus,
-  { status: StatusValue; label: string }
+  { code: string; label: string; fallback?: "success" | "pending" | "draft" }
 > = {
-  ready: { status: "success", label: "Ready" },
-  processing: { status: "pending", label: "Processing" },
-  "needs-attention": { status: "warning", label: "Needs attention" },
-  "not-indexed": { status: "draft", label: "Not indexed" },
+  ready: { code: "INDEXED_READY", label: "Ready", fallback: "success" },
+  processing: { code: "RUNNING", label: "Processing" },
+  "needs-attention": { code: "NEEDS_ATTENTION", label: "Needs attention" },
+  "not-indexed": { code: "DRAFT", label: "Not indexed" },
 };
 
 export function IndexingStatusBadge({ status }: IndexingStatusBadgeProps) {
-  const presentation = statusPresentation[status];
+  const item = indexingPresentation[status];
+  const presentation = statusPresentation(
+    item.code,
+    item.label,
+    item.fallback ?? "draft",
+  );
   return (
     <StatusBadge status={presentation.status} label={presentation.label} />
   );

@@ -3,15 +3,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogCancel,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { AgentStatus } from "@/types/api";
 
 type AgentLifecycleControlsProps = {
@@ -116,33 +108,17 @@ export function AgentLifecycleControls({
         </p>
       ) : null}
 
-      <Dialog
-        open={confirming !== null}
+      <ConfirmDialog
+        open={copy !== null}
         onOpenChange={(open) => {
           if (!open) setConfirming(null);
         }}
-      >
-        <DialogContent>
-          {copy ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>{copy.title}</DialogTitle>
-                <DialogDescription>{copy.description}</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogCancel>Cancel</DialogCancel>
-                <Button
-                  type="button"
-                  disabled={isPending}
-                  onClick={runConfirmed}
-                >
-                  {copy.confirm}
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        title={copy?.title ?? "Confirm"}
+        description={copy?.description ?? ""}
+        confirmLabel={copy?.confirm ?? "Confirm"}
+        confirmPending={isPending}
+        onConfirm={runConfirmed}
+      />
     </div>
   );
 }

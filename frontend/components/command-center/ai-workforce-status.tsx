@@ -19,7 +19,7 @@ export function AiWorkforceStatus() {
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
             <span
-              className="bg-info/10 text-info-text flex size-9 shrink-0 items-center justify-center rounded-md"
+              className="bg-ai/10 text-ai-text border-ai-border flex size-9 shrink-0 items-center justify-center rounded-md border"
               aria-hidden="true"
             >
               <Bot className="size-4" />

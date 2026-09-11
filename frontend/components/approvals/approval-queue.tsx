@@ -2,8 +2,9 @@ import { ClipboardCheck } from "lucide-react";
 
 import { RiskBadge, type RiskLevel } from "@/components/approvals/risk-badge";
 import { EmptyState } from "@/components/empty-state";
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { statusPresentation } from "@/lib/status";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 
@@ -23,13 +24,16 @@ type ApprovalQueueProps = {
   onSelect?: (approval: ApprovalQueueItem) => void;
 };
 
-const statusPresentation: Record<
-  ApprovalStatus,
-  { status: StatusValue; label: string }
-> = {
-  pending: { status: "pending", label: "Pending" },
-  approved: { status: "success", label: "Approved" },
-  rejected: { status: "failed", label: "Rejected" },
+const approvalStatusCodes: Record<ApprovalStatus, string> = {
+  pending: "PENDING",
+  approved: "APPROVED",
+  rejected: "REJECTED",
+};
+
+const approvalStatusLabels: Record<ApprovalStatus, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 export function ApprovalQueue({
@@ -56,7 +60,10 @@ export function ApprovalQueue({
       data-slot="approval-queue"
     >
       {approvals.map((approval) => {
-        const status = statusPresentation[approval.status];
+        const status = statusPresentation(
+          approvalStatusCodes[approval.status],
+          approvalStatusLabels[approval.status],
+        );
         const isSelected = selectedId === approval.id;
 
         return (

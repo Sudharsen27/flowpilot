@@ -23,6 +23,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatusBadge } from "@/components/agents/agent-status-badge";
+import { AiBadge } from "@/components/ai/ai-badge";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import {
@@ -362,7 +363,12 @@ export default function AgentDetailPage() {
         ]}
         title={agent.name}
         description={agent.description || "No description provided."}
-        secondaryActions={<AgentStatusBadge status={badgeStatus} />}
+        secondaryActions={
+          <div className="flex flex-wrap items-center gap-2">
+            <AiBadge label="Agent" />
+            <AgentStatusBadge status={badgeStatus} />
+          </div>
+        }
         primaryAction={
           <>
             <Button

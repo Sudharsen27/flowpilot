@@ -2,9 +2,12 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 
+import { AiBadge } from "@/components/ai/ai-badge";
+import { DetailRow } from "@/components/data-display/detail-row";
 import { FormField } from "@/components/forms/form-field";
 import { Textarea } from "@/components/forms/textarea";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogCancel,
@@ -14,6 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 import { ApiError } from "@/lib/api/client";
 import {
   approveLeadResponseDraft,
@@ -295,6 +300,9 @@ export function DraftLeadResponseDialog({
             AI generated this. Human review is required. Nothing has been sent.
           </DialogDescription>
         </DialogHeader>
+        <div className="mt-4">
+          <AiBadge label="Generated" />
+        </div>
         {lead ? (
           <p className="text-muted-foreground mt-4 text-sm">
             CRM status for {lead.name}: {lead.status}
@@ -311,9 +319,10 @@ export function DraftLeadResponseDialog({
             />
           </FormField>
           {pending ? (
-            <p role="status" className="text-muted-foreground text-sm">
-              Working…
-            </p>
+            <div className="flex flex-wrap items-center gap-2" role="status">
+              <AiBadge label="Processing" />
+              <p className="text-muted-foreground text-sm">Working…</p>
+            </div>
           ) : null}
           {error ? (
             <p className="text-danger-text text-sm" role="alert">
@@ -322,10 +331,16 @@ export function DraftLeadResponseDialog({
           ) : null}
           {result?.response ? (
             <div className="grid gap-2">
-              <p className="text-sm font-medium">AI draft</p>
-              {result.review_status ? (
-                <p className="text-sm">{reviewLabels[result.review_status]}</p>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {result.review_status ? (
+                  <StatusBadge
+                    {...statusPresentation(
+                      result.review_status,
+                      reviewLabels[result.review_status],
+                    )}
+                  />
+                ) : null}
+              </div>
               {alreadySent ? (
                 <p className="text-sm" role="status">
                   SENT
@@ -459,64 +474,39 @@ export function DraftLeadResponseDialog({
             </Button>
           </DialogFooter>
         </form>
-        <Dialog
+        <ConfirmDialog
           open={confirmingApprove}
           onOpenChange={(next) => {
             if (!next) setConfirmingApprove(false);
           }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Approve this response?</DialogTitle>
-              <DialogDescription>
-                This approves the current response for future sending. Nothing
-                will be sent now.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogCancel>Cancel</DialogCancel>
-              <Button type="button" disabled={pending} onClick={() => void approve()}>
-                {pending ? "Approving…" : "Approve"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        <Dialog
+          title="Approve this response?"
+          description="This approves the current response for future sending. Nothing will be sent now."
+          confirmLabel={pending ? "Approving…" : "Approve"}
+          confirmPending={pending}
+          onConfirm={() => void approve()}
+        />
+        <ConfirmDialog
           open={confirmingSend}
           onOpenChange={(next) => {
             if (!next) setConfirmingSend(false);
           }}
+          title="Send this email?"
+          description="This will send the approved response to the lead. This is an external action."
+          confirmLabel={sending ? "Sending…" : "Send email"}
+          confirmPending={sending}
+          onConfirm={() => void sendEmail()}
         >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Send this email?</DialogTitle>
-              <DialogDescription>
-                This will send the approved response to the lead. This is an
-                external action.
-              </DialogDescription>
-            </DialogHeader>
-            <dl className="mt-4 grid gap-2 text-sm">
-              <div>
-                <dt className="text-muted-foreground">To</dt>
-                <dd>{lead?.email}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Subject</dt>
-                <dd>{EMAIL_SUBJECT}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Message</dt>
-                <dd className="whitespace-pre-wrap">{result?.response}</dd>
-              </div>
-            </dl>
-            <DialogFooter>
-              <DialogCancel>Cancel</DialogCancel>
-              <Button type="button" disabled={sending} onClick={() => void sendEmail()}>
-                {sending ? "Sending…" : "Send email"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          <dl className="mt-4 grid gap-2">
+            <DetailRow label="To" value={lead?.email ?? "—"} muted={!lead?.email} />
+            <DetailRow label="Subject" value={EMAIL_SUBJECT} />
+            <DetailRow
+              label="Message"
+              value={
+                <span className="whitespace-pre-wrap">{result?.response}</span>
+              }
+            />
+          </dl>
+        </ConfirmDialog>
       </DialogContent>
     </Dialog>
   );

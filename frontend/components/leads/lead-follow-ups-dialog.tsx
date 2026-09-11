@@ -7,6 +7,7 @@ import { Input } from "@/components/forms/input";
 import { Select } from "@/components/forms/select";
 import { Textarea } from "@/components/forms/textarea";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogCancel,
@@ -441,34 +442,22 @@ export function LeadFollowUpsDialog({
         <DialogFooter>
           <DialogCancel>Close</DialogCancel>
         </DialogFooter>
-        <Dialog
+        <ConfirmDialog
           open={Boolean(confirmingCancelId)}
           onOpenChange={(next) => {
             if (!next) setConfirmingCancelId(null);
           }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Cancel this follow-up?</DialogTitle>
-              <DialogDescription>
-                The record will be kept as cancelled. It will not be deleted.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogCancel>Keep follow-up</DialogCancel>
-              <Button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  const target = items.find((item) => item.id === confirmingCancelId);
-                  if (target) void handleCancel(target);
-                }}
-              >
-                Cancel follow-up
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          title="Cancel this follow-up?"
+          description="The record will be kept as cancelled. It will not be deleted."
+          cancelLabel="Keep follow-up"
+          confirmLabel="Cancel follow-up"
+          variant="destructive"
+          confirmPending={pending}
+          onConfirm={() => {
+            const target = items.find((item) => item.id === confirmingCancelId);
+            if (target) void handleCancel(target);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

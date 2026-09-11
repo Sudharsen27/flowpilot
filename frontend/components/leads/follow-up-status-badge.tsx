@@ -1,4 +1,5 @@
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 import type {
   LeadFollowUp,
   LeadFollowUpExecutionStatus,
@@ -6,23 +7,17 @@ import type {
   LeadFollowUpType,
 } from "@/types/api";
 
-const followUpPresentation: Record<
-  LeadFollowUpStatus,
-  { status: StatusValue; label: string }
-> = {
-  PENDING: { status: "pending", label: "Pending" },
-  COMPLETED: { status: "success", label: "Completed" },
-  CANCELLED: { status: "paused", label: "Cancelled" },
+const followUpLabels: Record<LeadFollowUpStatus, string> = {
+  PENDING: "Pending",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
 };
 
-const executionPresentation: Record<
-  LeadFollowUpExecutionStatus,
-  { status: StatusValue; label: string }
-> = {
-  PENDING: { status: "pending", label: "Queued" },
-  RUNNING: { status: "pending", label: "Sending" },
-  SENT: { status: "success", label: "Sent" },
-  FAILED: { status: "failed", label: "Failed" },
+const executionLabels: Record<LeadFollowUpExecutionStatus, string> = {
+  PENDING: "Queued",
+  RUNNING: "Sending",
+  SENT: "Sent",
+  FAILED: "Failed",
 };
 
 const typeLabels: Record<LeadFollowUpType, string> = {
@@ -36,9 +31,15 @@ const typeLabels: Record<LeadFollowUpType, string> = {
  */
 export function FollowUpStatusBadge({ followUp }: { followUp: LeadFollowUp }) {
   if (followUp.status === "PENDING" && followUp.is_overdue) {
-    return <StatusBadge status="high" label="Overdue" />;
+    const presentation = statusPresentation("OVERDUE", "Overdue");
+    return (
+      <StatusBadge status={presentation.status} label={presentation.label} />
+    );
   }
-  const presentation = followUpPresentation[followUp.status];
+  const presentation = statusPresentation(
+    followUp.status,
+    followUpLabels[followUp.status],
+  );
   return <StatusBadge status={presentation.status} label={presentation.label} />;
 }
 
@@ -51,7 +52,7 @@ export function FollowUpExecutionStatusBadge({
 }: {
   status: LeadFollowUpExecutionStatus;
 }) {
-  const presentation = executionPresentation[status];
+  const presentation = statusPresentation(status, executionLabels[status]);
   return <StatusBadge status={presentation.status} label={presentation.label} />;
 }
 

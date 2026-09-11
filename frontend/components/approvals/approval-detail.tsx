@@ -10,7 +10,8 @@ import type { ApprovalStatus } from "@/components/approvals/approval-queue";
 import { RiskBadge, type RiskLevel } from "@/components/approvals/risk-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 
 export type ApprovalDetailData = {
   id: string;
@@ -29,13 +30,16 @@ type ApprovalDetailProps = {
   onBack?: () => void;
 };
 
-const statusPresentation: Record<
-  ApprovalStatus,
-  { status: StatusValue; label: string }
-> = {
-  pending: { status: "pending", label: "Pending" },
-  approved: { status: "success", label: "Approved" },
-  rejected: { status: "failed", label: "Rejected" },
+const approvalStatusCodes: Record<ApprovalStatus, string> = {
+  pending: "PENDING",
+  approved: "APPROVED",
+  rejected: "REJECTED",
+};
+
+const approvalStatusLabels: Record<ApprovalStatus, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 type DetailFieldProps = {
@@ -53,7 +57,12 @@ function DetailField({ label, value }: DetailFieldProps) {
 }
 
 export function ApprovalDetail({ approval, onBack }: ApprovalDetailProps) {
-  const status = approval ? statusPresentation[approval.status] : null;
+  const status = approval
+    ? statusPresentation(
+        approvalStatusCodes[approval.status],
+        approvalStatusLabels[approval.status],
+      )
+    : null;
 
   return (
     <Card

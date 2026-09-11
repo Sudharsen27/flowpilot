@@ -1,30 +1,25 @@
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiError } from "@/lib/api/client";
+import { statusPresentation } from "@/lib/status";
 import type {
   AgentExecutionStatus,
   ExecutionFailureCategory,
   ToolInvocationStatus,
 } from "@/types/api";
 
-const executionPresentation: Record<
-  AgentExecutionStatus,
-  { status: StatusValue; label: string }
-> = {
-  QUEUED: { status: "pending", label: "Queued" },
-  RUNNING: { status: "pending", label: "Running" },
-  COMPLETED: { status: "success", label: "Completed" },
-  FAILED: { status: "failed", label: "Failed" },
-  CANCELLED: { status: "paused", label: "Cancelled" },
+const executionLabels: Record<AgentExecutionStatus, string> = {
+  QUEUED: "Queued",
+  RUNNING: "Running",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
+  CANCELLED: "Cancelled",
 };
 
-const invocationPresentation: Record<
-  ToolInvocationStatus,
-  { status: StatusValue; label: string }
-> = {
-  SUCCESS: { status: "success", label: "Success" },
-  FAILED: { status: "failed", label: "Failed" },
-  REJECTED: { status: "warning", label: "Rejected" },
-  AWAITING_APPROVAL: { status: "pending", label: "Awaiting approval" },
+const invocationLabels: Record<ToolInvocationStatus, string> = {
+  SUCCESS: "Success",
+  FAILED: "Failed",
+  REJECTED: "Rejected",
+  AWAITING_APPROVAL: "Awaiting approval",
 };
 
 export function ExecutionStatusBadge({
@@ -32,7 +27,7 @@ export function ExecutionStatusBadge({
 }: {
   status: AgentExecutionStatus;
 }) {
-  const presentation = executionPresentation[status];
+  const presentation = statusPresentation(status, executionLabels[status]);
   return (
     <StatusBadge status={presentation.status} label={presentation.label} />
   );
@@ -43,7 +38,11 @@ export function ToolInvocationStatusBadge({
 }: {
   status: ToolInvocationStatus;
 }) {
-  const presentation = invocationPresentation[status];
+  const presentation = statusPresentation(
+    status,
+    invocationLabels[status],
+    status === "SUCCESS" ? "success" : "draft",
+  );
   return (
     <StatusBadge status={presentation.status} label={presentation.label} />
   );

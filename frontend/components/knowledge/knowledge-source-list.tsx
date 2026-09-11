@@ -6,7 +6,8 @@ import {
   IndexingStatusBadge,
   type IndexingStatus,
 } from "@/components/knowledge/indexing-status-badge";
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 
 export type KnowledgeSourceType =
   "document" | "faq" | "website" | "product" | "policy" | "company";
@@ -31,13 +32,16 @@ const typeLabels: Record<KnowledgeSourceType, string> = {
   company: "Company information",
 };
 
-const sourceStatusPresentation: Record<
-  KnowledgeSourceStatus,
-  { status: StatusValue; label: string }
-> = {
-  setup: { status: "draft", label: "Setup" },
-  connected: { status: "active", label: "Connected" },
-  "needs-attention": { status: "warning", label: "Needs attention" },
+const sourceStatusCodes: Record<KnowledgeSourceStatus, string> = {
+  setup: "DRAFT",
+  connected: "CONNECTED",
+  "needs-attention": "NEEDS_ATTENTION",
+};
+
+const sourceStatusLabels: Record<KnowledgeSourceStatus, string> = {
+  setup: "Setup",
+  connected: "Connected",
+  "needs-attention": "Needs attention",
 };
 
 const sourceColumns: DataTableColumn<KnowledgeSourceListItem>[] = [
@@ -55,7 +59,11 @@ const sourceColumns: DataTableColumn<KnowledgeSourceListItem>[] = [
     key: "status",
     header: "Status",
     cell: (source) => {
-      const presentation = sourceStatusPresentation[source.status];
+      const presentation = statusPresentation(
+        sourceStatusCodes[source.status],
+        sourceStatusLabels[source.status],
+        source.status === "connected" ? "active" : "draft",
+      );
       return (
         <StatusBadge status={presentation.status} label={presentation.label} />
       );

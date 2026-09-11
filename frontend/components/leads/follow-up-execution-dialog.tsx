@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { DetailRow } from "@/components/data-display/detail-row";
 import {
   FollowUpExecutionStatusBadge,
 } from "@/components/leads/follow-up-status-badge";
@@ -30,15 +31,6 @@ type FollowUpExecutionDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-3">
-      <dt className="text-muted-foreground text-xs font-medium">{label}</dt>
-      <dd className="min-w-0 text-sm break-words">{value}</dd>
-    </div>
-  );
-}
-
 function ExecutionCard({ execution }: { execution: LeadFollowUpExecution }) {
   const duration = formatDuration(execution.duration_ms);
   const category = formatFailureCategory(execution.failure_category);
@@ -51,17 +43,34 @@ function ExecutionCard({ execution }: { execution: LeadFollowUpExecution }) {
         <FollowUpExecutionStatusBadge status={execution.status} />
       </div>
       <dl className="mt-3 grid gap-2">
-        <Field label="Recipient" value={execution.recipient_email} />
-        <Field label="Provider" value={execution.provider ?? "Not recorded"} />
-        <Field
+        <DetailRow label="Recipient" value={execution.recipient_email} />
+        <DetailRow
+          label="Provider"
+          value={execution.provider ?? "Not recorded"}
+          muted={!execution.provider}
+        />
+        <DetailRow
           label="Provider message ID"
           value={execution.provider_message_id ?? "Not recorded"}
+          muted={!execution.provider_message_id}
         />
-        <Field label="Started" value={started ?? "Not started"} />
-        <Field label="Completed" value={completed ?? "Not completed"} />
-        <Field label="Duration" value={duration ?? "Not available"} />
-        {category ? <Field label="Failure category" value={category} /> : null}
-        {execution.error ? <Field label="Error" value={execution.error} /> : null}
+        <DetailRow
+          label="Started"
+          value={started ?? "Not started"}
+          muted={!started}
+        />
+        <DetailRow
+          label="Completed"
+          value={completed ?? "Not completed"}
+          muted={!completed}
+        />
+        <DetailRow
+          label="Duration"
+          value={duration ?? "Not available"}
+          muted={!duration}
+        />
+        {category ? <DetailRow label="Failure category" value={category} /> : null}
+        {execution.error ? <DetailRow label="Error" value={execution.error} /> : null}
       </dl>
     </li>
   );

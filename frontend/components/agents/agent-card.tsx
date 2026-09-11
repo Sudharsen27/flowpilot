@@ -27,7 +27,7 @@ export function AgentCard({ agent }: AgentCardProps) {
       <CardContent className="flex h-full flex-col">
         <div className="flex items-start justify-between gap-3">
           <div
-            className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg"
+            className="bg-ai/10 text-ai-text border-ai-border flex size-9 shrink-0 items-center justify-center rounded-lg border"
             aria-hidden="true"
           >
             <Bot className="size-4" />

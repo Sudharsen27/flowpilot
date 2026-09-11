@@ -1,4 +1,5 @@
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 
 export type IntegrationStatus =
   "connected" | "not-connected" | "needs-attention" | "coming-soon";
@@ -7,20 +8,25 @@ type IntegrationStatusBadgeProps = {
   status: IntegrationStatus;
 };
 
-const statusPresentation: Record<
+const integrationPresentation: Record<
   IntegrationStatus,
-  { status: StatusValue; label: string }
+  { code: string; label: string; fallback?: "active" | "draft" }
 > = {
-  connected: { status: "active", label: "Connected" },
-  "not-connected": { status: "draft", label: "Not connected" },
-  "needs-attention": { status: "warning", label: "Needs attention" },
-  "coming-soon": { status: "draft", label: "Coming soon" },
+  connected: { code: "CONNECTED", label: "Connected", fallback: "active" },
+  "not-connected": { code: "DRAFT", label: "Not connected" },
+  "needs-attention": { code: "NEEDS_ATTENTION", label: "Needs attention" },
+  "coming-soon": { code: "DRAFT", label: "Coming soon" },
 };
 
 export function IntegrationStatusBadge({
   status,
 }: IntegrationStatusBadgeProps) {
-  const presentation = statusPresentation[status];
+  const item = integrationPresentation[status];
+  const presentation = statusPresentation(
+    item.code,
+    item.label,
+    item.fallback ?? "draft",
+  );
   return (
     <StatusBadge status={presentation.status} label={presentation.label} />
   );

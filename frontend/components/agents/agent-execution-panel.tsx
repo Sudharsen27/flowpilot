@@ -3,6 +3,7 @@
 import { Play } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import { AiBadge } from "@/components/ai/ai-badge";
 import {
   ExecutionStatusBadge,
   formatDuration,
@@ -218,8 +219,11 @@ export function AgentExecutionPanel({
         )}
 
         {awaitingProvider ? (
-          <div role="status" aria-live="polite" aria-busy="true" className="grid gap-1">
-            <p className="text-sm font-medium">Running agent…</p>
+          <div role="status" aria-live="polite" aria-busy="true" className="grid gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <AiBadge label="Processing" />
+              <p className="text-sm font-medium">Running agent…</p>
+            </div>
             <p className="text-muted-foreground text-sm leading-6">
               Waiting for the execution request to finish. Do not close this
               page until it returns.

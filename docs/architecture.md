@@ -339,3 +339,7 @@ LeadFollowUp (PENDING, EMAIL_FOLLOW_UP, due_at <= now)
 - **Configuration** (disabled by default): `FOLLOW_UP_WORKER_ENABLED`, `FOLLOW_UP_WORKER_POLL_INTERVAL_SECONDS` (30), `FOLLOW_UP_WORKER_BATCH_SIZE` (10).
 - **Delivery is at-least-once.** If the provider accepts an email and the process dies before SENT commits, a later attempt may send again. The provider idempotency key `follow-up:{id}:attempt:{n}` is the duplicate-acceptance protection. This is not exactly-once delivery.
 - There is no public worker API (`/run-due-follow-ups` and similar do not exist). Humans inspect follow-ups through the authenticated operations list.
+
+## Design system (Phase 5A)
+
+FlowPilot UI uses Tailwind v4 tokens in `frontend/app/globals.css`, shadcn/ui, and Lucide. Domain statuses map through `frontend/lib/status.ts` onto one `StatusBadge` semantic language; wrappers keep domain labels. AI origin is marked with `AiBadge` (Generated / Suggested / Analysis / Processing / Agent), not glow or decorative effects. Confirm destructive or irreversible actions with `ConfirmDialog`. Dark-mode tokens exist for future theming; there is no theme toggle yet.

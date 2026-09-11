@@ -464,7 +464,8 @@ describe("Leads page", () => {
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
     await user.click(screen.getByRole("button", { name: "Analyze enquiry" }));
-    expect(await screen.findByText("AI: Needs more information")).toBeVisible();
+    expect(await screen.findByText("Needs more information")).toBeVisible();
+    expect(screen.getByLabelText("AI Analysis")).toBeVisible();
     expect(screen.getByText("Budget is not stated")).toBeVisible();
     expect(screen.getByText("Budget")).toBeVisible();
     expect(
@@ -566,7 +567,7 @@ describe("Leads page", () => {
     expect(
       await screen.findByText("Thanks for reaching out. Could we schedule a demo?"),
     ).toBeVisible();
-    expect(screen.getByText("AI draft")).toBeVisible();
+    expect(screen.getByLabelText("AI Generated")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Copy draft" }));
     expect(writeText).toHaveBeenCalledWith(
       "Thanks for reaching out. Could we schedule a demo?",
@@ -729,7 +730,7 @@ describe("Leads page", () => {
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
     await user.click(screen.getByRole("button", { name: "Generate draft" }));
-    await screen.findByText("AI draft");
+    await screen.findByLabelText("AI Generated");
     await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("textbox", { name: /^Edited response/ })).not.toBeInTheDocument();

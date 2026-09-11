@@ -1,4 +1,5 @@
-import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { statusPresentation } from "@/lib/status";
 
 export type ActivityEventStatus =
   "completed" | "pending" | "failed" | "information";
@@ -7,18 +8,11 @@ type ActivityStatusBadgeProps = {
   status: ActivityEventStatus;
 };
 
-const statusPresentation: Record<
-  ActivityEventStatus,
-  { status: StatusValue; label: string }
-> = {
-  completed: { status: "success", label: "Completed" },
-  pending: { status: "pending", label: "Pending" },
-  failed: { status: "failed", label: "Failed" },
-  information: { status: "draft", label: "Information" },
-};
-
 export function ActivityStatusBadge({ status }: ActivityStatusBadgeProps) {
-  const presentation = statusPresentation[status];
+  const presentation =
+    status === "information"
+      ? statusPresentation("DRAFT", "Information")
+      : statusPresentation(status, status.charAt(0).toUpperCase() + status.slice(1));
   return (
     <StatusBadge status={presentation.status} label={presentation.label} />
   );
