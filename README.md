@@ -2,7 +2,7 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository has completed **Phase 5C**: after a Sales Run waits for approval, an operator can send the approved response through the existing email send path. Approval still does not send email. Follow-up automation is not started from a Sales Run.
+This repository has completed **Phase 5D**: after a Sales Run sends an approved response, an operator can explicitly schedule one follow-up. Sending does not create a follow-up. Follow-up execution reuses the existing LeadFollowUp worker.
 
 ## Requirements
 
@@ -41,6 +41,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
 - Start sales run (authenticated, SALES agents): `POST /api/v1/agents/{agent_id}/sales-runs`
 - Send approved sales run (authenticated): `POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send`
+- Schedule sales run follow-up (authenticated): `POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/schedule-follow-up`
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:
 

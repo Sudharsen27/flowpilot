@@ -22,6 +22,7 @@ from app.models.agent import EXECUTABLE_AGENT_STATUSES, Agent, AgentStatus, Agen
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend, LeadEmailSendStatus
+from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpType
 from app.models.lead_qualification import LeadQualification
 from app.models.lead_response_draft import (
     LeadResponseDraft,
@@ -34,6 +35,7 @@ from app.models.sales_run import (
     SalesRunStage,
     SalesRunStatus,
 )
+from app.repositories.lead_email_send_repository import LeadEmailSendRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.repositories.sales_run_repository import (
@@ -44,6 +46,7 @@ from app.repositories.sales_run_repository import (
 from app.schemas.sales_run import (
     SalesRunDraftSummary,
     SalesRunEmailSendSummary,
+    SalesRunFollowUpSummary,
     SalesRunLeadSummary,
     SalesRunListResponse,
     SalesRunPublic,
@@ -51,6 +54,7 @@ from app.schemas.sales_run import (
 )
 from app.services.agent_service import AgentService
 from app.services.lead_email_send_service import LeadEmailSendService
+from app.services.lead_follow_up_service import LeadFollowUpService, to_follow_up_public
 from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_response_draft_service import LeadResponseDraftService
 from app.services.lead_service import LeadService
@@ -81,6 +85,7 @@ class SalesRunService:
         self.leads = LeadService(session)
         self.lead_rows = LeadRepository(session)
         self.drafts = LeadResponseDraftRepository(session)
+        self.sends = LeadEmailSendRepository(session)
         self.sales_runs = SalesRunRepository(session)
 
     def start_sales_run(
@@ -369,6 +374,86 @@ class SalesRunService:
             expected_revision=expected_revision,
         )
 
+    def schedule_follow_up(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        sales_run_id: str,
+        expected_revision: int,
+        due_at: datetime,
+        follow_up_type: LeadFollowUpType,
+        notes: str | None,
+        body_text: str | None,
+        initiated_by_user_id: str | None,
+    ) -> SalesRunPublic:
+        self._require_sales_agent(organization_id, agent_id)
+        row = self.sales_runs.get_for_agent(organization_id, agent_id, sales_run_id)
+        if row is None:
+            raise NotFoundError("Sales run not found")
+        if row.follow_up_id:
+            return self._to_public(row, include_enquiry=True)
+        if row.revision != expected_revision:
+            raise ConflictError("This sales run changed. Refresh and review the latest status.")
+        if row.status != SalesRunStatus.COMPLETED or row.stage != SalesRunStage.DONE:
+            raise ConflictError(
+                "This sales run cannot schedule a follow-up in its current status"
+            )
+        if not row.email_send_id:
+            raise ConflictError("This sales run has no sent email to follow up.")
+        send = self.sends.get_by_id(organization_id, row.email_send_id)
+        if send is None or send.lead_id != row.lead_id:
+            raise ConflictError("This sales run has no sent email to follow up.")
+        if send.status == LeadEmailSendStatus.PENDING:
+            raise ConflictError("A send is already in progress.")
+        if send.status != LeadEmailSendStatus.SENT:
+            raise ConflictError("This sales run has no sent email to follow up.")
+
+        created = LeadFollowUpService(self.session).create(
+            organization_id=organization_id,
+            lead_id=row.lead_id,
+            due_at=due_at,
+            follow_up_type=follow_up_type,
+            notes=notes,
+            body_text=body_text,
+            email_send_id=row.email_send_id,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+        orphan_id = created.id
+        orphan_lead_id = created.lead_id
+        orphan_revision = created.revision
+        now = datetime.now(UTC)
+        try:
+            linked = self.sales_runs.link_follow_up_if_unset(
+                organization_id,
+                sales_run_id,
+                follow_up_id=created.id,
+                expected_revision=expected_revision,
+                updated_at=now,
+            )
+        except IntegrityError:
+            self.session.rollback()
+            linked = 0
+        current = self._reload(row)
+        if linked == 0:
+            self._cancel_orphan_follow_up(
+                organization_id=organization_id,
+                lead_id=orphan_lead_id,
+                follow_up_id=orphan_id,
+                expected_revision=orphan_revision,
+            )
+            current = self._reload(row)
+            if current.follow_up_id:
+                return self._to_public(current, include_enquiry=True)
+            raise ConflictError("This sales run changed. Refresh and review the latest status.")
+        logger.info(
+            "sales_run_follow_up_scheduled sales_run_id=%s follow_up_id=%s lead_id=%s",
+            current.id,
+            current.follow_up_id,
+            current.lead_id,
+        )
+        return self._to_public(current, include_enquiry=True)
+
     def recover_stale_running(
         self,
         *,
@@ -640,6 +725,27 @@ class SalesRunService:
             raise NotFoundError("Sales run not found")
         return loaded
 
+    def _cancel_orphan_follow_up(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        follow_up_id: str,
+        expected_revision: int,
+    ) -> None:
+        try:
+            LeadFollowUpService(self.session).cancel(
+                organization_id=organization_id,
+                lead_id=lead_id,
+                follow_up_id=follow_up_id,
+                expected_revision=expected_revision,
+            )
+        except ConflictError:
+            logger.info(
+                "sales_run_follow_up_orphan_not_cancelled follow_up_id=%s",
+                follow_up_id,
+            )
+
     def _resolve_lead(
         self,
         *,
@@ -713,6 +819,7 @@ class SalesRunService:
         qualification_ids = [row.qualification_id for row in rows if row.qualification_id]
         draft_ids = [row.response_draft_id for row in rows if row.response_draft_id]
         send_ids = [row.email_send_id for row in rows if row.email_send_id]
+        follow_up_ids = [row.follow_up_id for row in rows if row.follow_up_id]
         qualifications: dict[str, LeadQualification] = {}
         if qualification_ids:
             for qualification_row in self.session.scalars(
@@ -740,6 +847,15 @@ class SalesRunService:
                 )
             ):
                 sends[send_row.id] = send_row
+        follow_ups: dict[str, LeadFollowUp] = {}
+        if follow_up_ids:
+            for follow_up_row in self.session.scalars(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == organization_id,
+                    LeadFollowUp.id.in_(follow_up_ids),
+                )
+            ):
+                follow_ups[follow_up_row.id] = follow_up_row
         return [
             _public_from_row(
                 row,
@@ -749,6 +865,7 @@ class SalesRunService:
                 ),
                 draft=drafts.get(row.response_draft_id) if row.response_draft_id else None,
                 email_send=sends.get(row.email_send_id) if row.email_send_id else None,
+                follow_up=follow_ups.get(row.follow_up_id) if row.follow_up_id else None,
                 include_enquiry=include_enquiry,
             )
             for row in rows
@@ -762,6 +879,7 @@ def _public_from_row(
     qualification: LeadQualification | None,
     draft: LeadResponseDraft | None,
     email_send: LeadEmailSend | None,
+    follow_up: LeadFollowUp | None,
     include_enquiry: bool,
 ) -> SalesRunPublic:
     category = None
@@ -776,6 +894,7 @@ def _public_from_row(
         qualification_id=row.qualification_id,
         response_draft_id=row.response_draft_id,
         email_send_id=row.email_send_id,
+        follow_up_id=row.follow_up_id,
         failure_category=category,
         error=row.error,
         initiated_by_user_id=row.initiated_by_user_id,
@@ -812,6 +931,20 @@ def _public_from_row(
             else None
         ),
         email_send=_email_send_summary(email_send),
+        follow_up=_follow_up_summary(follow_up),
+    )
+
+
+def _follow_up_summary(row: LeadFollowUp | None) -> SalesRunFollowUpSummary | None:
+    if row is None:
+        return None
+    public = to_follow_up_public(row)
+    return SalesRunFollowUpSummary(
+        id=public.id,
+        type=public.type,
+        status=public.status,
+        due_at=public.due_at,
+        is_overdue=public.is_overdue,
     )
 
 

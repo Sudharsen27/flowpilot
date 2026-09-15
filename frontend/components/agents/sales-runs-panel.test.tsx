@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SalesRunsPanel } from "@/components/agents/sales-runs-panel";
 import { ApiError } from "@/lib/api/client";
 import { getLead, getLeadResponseDraft } from "@/lib/api/leads";
-import { cancelSalesRun, listSalesRuns, sendSalesRun, startSalesRun } from "@/lib/api/sales-runs";
+import { cancelSalesRun, listSalesRuns, scheduleSalesRunFollowUp, sendSalesRun, startSalesRun } from "@/lib/api/sales-runs";
 import type { Lead, SalesRun } from "@/types/api";
 
 vi.mock("@/lib/api/sales-runs", () => ({
@@ -13,6 +13,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
   startSalesRun: vi.fn(),
   cancelSalesRun: vi.fn(),
   sendSalesRun: vi.fn(),
+  scheduleSalesRunFollowUp: vi.fn(),
   getSalesRun: vi.fn(),
 }));
 
@@ -30,6 +31,7 @@ const listSalesRunsMock = vi.mocked(listSalesRuns);
 const startSalesRunMock = vi.mocked(startSalesRun);
 const cancelSalesRunMock = vi.mocked(cancelSalesRun);
 const sendSalesRunMock = vi.mocked(sendSalesRun);
+const scheduleSalesRunFollowUpMock = vi.mocked(scheduleSalesRunFollowUp);
 const getLeadMock = vi.mocked(getLead);
 const getLeadResponseDraftMock = vi.mocked(getLeadResponseDraft);
 
@@ -56,6 +58,7 @@ function run(overrides: Partial<SalesRun> = {}): SalesRun {
     qualification_id: "q-1",
     response_draft_id: "draft-1",
     email_send_id: null,
+    follow_up_id: null,
     failure_category: null,
     error: null,
     initiated_by_user_id: "user-1",
@@ -84,6 +87,7 @@ describe("SalesRunsPanel", () => {
     startSalesRunMock.mockReset();
     cancelSalesRunMock.mockReset();
     sendSalesRunMock.mockReset();
+    scheduleSalesRunFollowUpMock.mockReset();
     getLeadMock.mockReset();
     getLeadResponseDraftMock.mockReset();
     getLeadResponseDraftMock.mockResolvedValue({
@@ -375,5 +379,159 @@ describe("SalesRunsPanel", () => {
     render(<SalesRunsPanel agentId="agent-1" canStart />);
     expect((await screen.findAllByRole("button", { name: "Review draft" })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Send approved response" })).not.toBeInTheDocument();
+  });
+
+  it("shows schedule only for completed runs without a linked follow-up", async () => {
+    listSalesRunsMock.mockResolvedValue(
+      page([
+        run({ status: "COMPLETED", stage: "DONE", email_send_id: "send-1" }),
+        run({ id: "run-waiting", status: "WAITING_APPROVAL", stage: "AWAIT_APPROVAL" }),
+        run({
+          id: "run-failed",
+          status: "FAILED",
+          stage: "SEND",
+          error: "Email provider request failed",
+        }),
+        run({
+          id: "run-linked",
+          status: "COMPLETED",
+          stage: "DONE",
+          follow_up_id: "fu-1",
+          follow_up: {
+            id: "fu-1",
+            type: "EMAIL_FOLLOW_UP",
+            status: "PENDING",
+            due_at: "2030-06-15T10:30:00Z",
+            is_overdue: false,
+          },
+        }),
+      ]),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    expect(await screen.findAllByText("Pending")).not.toHaveLength(0);
+    expect(screen.getAllByRole("button", { name: "Schedule follow-up" })).toHaveLength(2);
+  });
+
+  it("requires email body and confirmation before scheduling", async () => {
+    const user = userEvent.setup();
+    const completed = run({
+      status: "COMPLETED",
+      stage: "DONE",
+      email_send_id: "send-1",
+    });
+    listSalesRunsMock
+      .mockResolvedValueOnce(page([completed]))
+      .mockResolvedValueOnce(
+        page([
+          run({
+            status: "COMPLETED",
+            stage: "DONE",
+            email_send_id: "send-1",
+            follow_up_id: "fu-1",
+            follow_up: {
+              id: "fu-1",
+              type: "EMAIL_FOLLOW_UP",
+              status: "PENDING",
+              due_at: "2030-06-15T10:30:00Z",
+              is_overdue: false,
+            },
+          }),
+        ]),
+      );
+    scheduleSalesRunFollowUpMock.mockResolvedValue(
+      run({
+        status: "COMPLETED",
+        stage: "DONE",
+        follow_up_id: "fu-1",
+      }),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    await user.click((await screen.findAllByRole("button", { name: "Schedule follow-up" }))[0]!);
+    expect(await screen.findByRole("heading", { name: "Schedule follow-up" })).toBeVisible();
+    expect(scheduleSalesRunFollowUpMock).not.toHaveBeenCalled();
+    const form = screen.getByRole("heading", { name: "Schedule follow-up" }).closest(
+      "[data-slot=dialog-content]",
+    ) as HTMLElement;
+    expect(within(form).getByRole("button", { name: "Review and schedule" })).toBeDisabled();
+    const due = within(form).getByLabelText(/Due date and time/);
+    await user.type(due, "2030-06-15T10:30");
+    expect(within(form).getByRole("button", { name: "Review and schedule" })).toBeDisabled();
+    await user.type(within(form).getByLabelText(/Email body/), "Checking in on your enquiry.");
+    await user.click(within(form).getByRole("button", { name: "Review and schedule" }));
+    expect(scheduleSalesRunFollowUpMock).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "Schedule this follow-up?" })).toBeVisible();
+    const confirm = screen.getByRole("heading", { name: "Schedule this follow-up?" }).closest(
+      "[data-slot=dialog-content]",
+    ) as HTMLElement;
+    await user.click(within(confirm).getByRole("button", { name: "Schedule follow-up" }));
+    await waitFor(() =>
+      expect(scheduleSalesRunFollowUpMock).toHaveBeenCalledWith("agent-1", "run-1", {
+        expected_revision: 2,
+        due_at: expect.stringMatching(/2030-06-15T/),
+        type: "EMAIL_FOLLOW_UP",
+        notes: null,
+        body_text: "Checking in on your enquiry.",
+      }),
+    );
+    expect(await screen.findAllByText("Pending")).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Schedule follow-up" })).not.toBeInTheDocument();
+  });
+
+  it("allows a manual follow-up without a body and shows errors", async () => {
+    const user = userEvent.setup();
+    listSalesRunsMock.mockResolvedValue(
+      page([run({ status: "COMPLETED", stage: "DONE", email_send_id: "send-1" })]),
+    );
+    scheduleSalesRunFollowUpMock.mockRejectedValue(
+      new ApiError("conflict", 409, {
+        detail: "This sales run cannot schedule a follow-up in its current status",
+      }),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    await user.click((await screen.findAllByRole("button", { name: "Schedule follow-up" }))[0]!);
+    const form = (await screen.findByRole("heading", { name: "Schedule follow-up" })).closest(
+      "[data-slot=dialog-content]",
+    ) as HTMLElement;
+    await user.selectOptions(within(form).getByLabelText("Type"), "MANUAL_FOLLOW_UP");
+    await user.type(within(form).getByLabelText(/Due date and time/), "2030-06-15T10:30");
+    await user.click(within(form).getByRole("button", { name: "Review and schedule" }));
+    const confirm = (await screen.findByRole("heading", { name: "Schedule this follow-up?" })).closest(
+      "[data-slot=dialog-content]",
+    ) as HTMLElement;
+    await user.click(within(confirm).getByRole("button", { name: "Schedule follow-up" }));
+    expect(
+      await screen.findByText(
+        "This sales run cannot schedule a follow-up in its current status",
+      ),
+    ).toBeVisible();
+    expect(scheduleSalesRunFollowUpMock).toHaveBeenCalledWith("agent-1", "run-1", {
+      expected_revision: 2,
+      due_at: expect.stringMatching(/2030-06-15T/),
+      type: "MANUAL_FOLLOW_UP",
+      notes: null,
+    });
+    expect(screen.queryAllByText("Completed").length).toBeGreaterThan(0);
+  });
+
+  it("shows overdue for a linked follow-up and does not auto-open after send", async () => {
+    listSalesRunsMock.mockResolvedValue(
+      page([
+        run({
+          status: "COMPLETED",
+          stage: "DONE",
+          follow_up_id: "fu-1",
+          follow_up: {
+            id: "fu-1",
+            type: "EMAIL_FOLLOW_UP",
+            status: "PENDING",
+            due_at: "2020-01-01T00:00:00Z",
+            is_overdue: true,
+          },
+        }),
+      ]),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    expect((await screen.findAllByText("Overdue")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "Schedule follow-up" })).not.toBeInTheDocument();
   });
 });

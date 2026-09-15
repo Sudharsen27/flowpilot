@@ -8,15 +8,41 @@ import { AiBadge } from "@/components/ai/ai-badge";
 import { DataTable, type DataTableColumn } from "@/components/data-display/data-table";
 import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
+import { FormField } from "@/components/forms/form-field";
+import { Input } from "@/components/forms/input";
+import { Select } from "@/components/forms/select";
+import { Textarea } from "@/components/forms/textarea";
 import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
+import { FollowUpStatusBadge } from "@/components/leads/follow-up-status-badge";
 import { SectionHeader } from "@/components/layout/section-header";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogCancel,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatTimestamp } from "@/components/agents/execution-status";
 import { ApiError } from "@/lib/api/client";
 import { getLead, getLeadResponseDraft } from "@/lib/api/leads";
-import { cancelSalesRun, listSalesRuns, sendSalesRun } from "@/lib/api/sales-runs";
-import type { Lead, LeadResponseDraftResult, SalesRun } from "@/types/api";
+import {
+  cancelSalesRun,
+  listSalesRuns,
+  scheduleSalesRunFollowUp,
+  sendSalesRun,
+} from "@/lib/api/sales-runs";
+import type {
+  Lead,
+  LeadFollowUp,
+  LeadFollowUpType,
+  LeadResponseDraftResult,
+  SalesRun,
+  SalesRunFollowUpSummary,
+} from "@/types/api";
 
 const EMAIL_SUBJECT = "Re: Your enquiry";
 
@@ -62,6 +88,44 @@ function canSendApprovedResponse(row: SalesRun) {
   return row.status === "FAILED" && row.stage === "SEND";
 }
 
+function canScheduleFollowUp(row: SalesRun) {
+  return (
+    row.status === "COMPLETED" &&
+    row.stage === "DONE" &&
+    !row.follow_up_id &&
+    !row.follow_up
+  );
+}
+
+function followUpAsLeadFollowUp(
+  summary: SalesRunFollowUpSummary,
+  leadId: string,
+): LeadFollowUp {
+  return {
+    id: summary.id,
+    lead_id: leadId,
+    type: summary.type,
+    status: summary.status,
+    due_at: summary.due_at,
+    revision: 1,
+    is_overdue: summary.is_overdue,
+    completed_at: null,
+    cancelled_at: null,
+    created_at: summary.due_at,
+    updated_at: summary.due_at,
+  };
+}
+
+function fromLocalInput(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function followUpTypeLabel(type: LeadFollowUpType) {
+  return type === "EMAIL_FOLLOW_UP" ? "Email follow-up" : "Manual follow-up";
+}
+
 export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
   const [items, setItems] = useState<SalesRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +142,14 @@ export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
   const [sendDraft, setSendDraft] = useState<LeadResponseDraftResult | null>(null);
   const [sendPending, setSendPending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [scheduleTarget, setScheduleTarget] = useState<SalesRun | null>(null);
+  const [scheduleConfirming, setScheduleConfirming] = useState(false);
+  const [scheduleType, setScheduleType] = useState<LeadFollowUpType>("EMAIL_FOLLOW_UP");
+  const [scheduleDueAt, setScheduleDueAt] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [scheduleBody, setScheduleBody] = useState("");
+  const [schedulePending, setSchedulePending] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +228,62 @@ export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
     }
   }
 
+  function openSchedule(row: SalesRun) {
+    setScheduleError(null);
+    setScheduleConfirming(false);
+    setScheduleType("EMAIL_FOLLOW_UP");
+    setScheduleDueAt("");
+    setScheduleNotes("");
+    setScheduleBody("");
+    setScheduleTarget(row);
+  }
+
+  function resetSchedule() {
+    setScheduleTarget(null);
+    setScheduleConfirming(false);
+    setScheduleError(null);
+  }
+
+  function schedulePayload() {
+    const iso = fromLocalInput(scheduleDueAt);
+    return iso;
+  }
+
+  const scheduleReady =
+    Boolean(schedulePayload()) &&
+    (scheduleType === "MANUAL_FOLLOW_UP" || Boolean(scheduleBody.trim()));
+
+  async function confirmSchedule() {
+    if (!scheduleTarget || schedulePending) return;
+    const iso = schedulePayload();
+    if (!iso) {
+      setScheduleError("A valid due date and time is required.");
+      return;
+    }
+    if (scheduleType === "EMAIL_FOLLOW_UP" && !scheduleBody.trim()) {
+      setScheduleError("Email body is required for email follow-ups.");
+      return;
+    }
+    setSchedulePending(true);
+    setScheduleError(null);
+    try {
+      await scheduleSalesRunFollowUp(agentId, scheduleTarget.id, {
+        expected_revision: scheduleTarget.revision,
+        due_at: iso,
+        type: scheduleType,
+        notes: scheduleNotes.trim() || null,
+        ...(scheduleType === "EMAIL_FOLLOW_UP" ? { body_text: scheduleBody.trim() } : {}),
+      });
+      resetSchedule();
+      setLoading(true);
+      setRefreshKey((value) => value + 1);
+    } catch (cause) {
+      setScheduleError(actionError(cause, "The follow-up could not be scheduled."));
+    } finally {
+      setSchedulePending(false);
+    }
+  }
+
   const columns: DataTableColumn<SalesRun>[] = [
     {
       key: "lead",
@@ -181,6 +309,11 @@ export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
                 ? ` ${formatTimestamp(row.email_send.completed_at)}`
                 : ""}
             </span>
+          ) : null}
+          {row.follow_up ? (
+            <FollowUpStatusBadge
+              followUp={followUpAsLeadFollowUp(row.follow_up, row.lead_id)}
+            />
           ) : null}
         </span>
       ),
@@ -248,7 +381,7 @@ export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
                   Review draft
                 </Button>
               ) : null}
-                  {canSendApprovedResponse(row) ? (
+              {canSendApprovedResponse(row) ? (
                 <Button
                   type="button"
                   size="sm"
@@ -256,6 +389,17 @@ export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
                   onClick={() => void openSend(row)}
                 >
                   Send approved response
+                </Button>
+              ) : null}
+              {canScheduleFollowUp(row) ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={schedulePending && scheduleTarget?.id === row.id}
+                  onClick={() => openSchedule(row)}
+                >
+                  Schedule follow-up
                 </Button>
               ) : null}
               {row.status === "FAILED" && row.error ? (
@@ -349,6 +493,141 @@ export function SalesRunsPanel({ agentId, canStart }: SalesRunsPanelProps) {
         {sendError ? (
           <p className="text-danger-text mt-3 text-sm" role="alert">
             {sendError}
+          </p>
+        ) : null}
+      </ConfirmDialog>
+      <Dialog
+        open={scheduleTarget !== null && !scheduleConfirming}
+        onOpenChange={(next) => {
+          if (!next && !schedulePending) resetSchedule();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule follow-up</DialogTitle>
+            <DialogDescription>
+              Sending does not schedule a follow-up. Choose the type, due time, and
+              email body. The follow-up worker sends due email follow-ups; manual
+              follow-ups stay human-only.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="mt-4 grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!scheduleReady) return;
+              setScheduleError(null);
+              setScheduleConfirming(true);
+            }}
+          >
+            <FormField label="Type" htmlFor="sales-run-follow-up-type">
+              <Select
+                id="sales-run-follow-up-type"
+                value={scheduleType}
+                onChange={(event) =>
+                  setScheduleType(event.target.value as LeadFollowUpType)
+                }
+              >
+                <option value="EMAIL_FOLLOW_UP">Email follow-up</option>
+                <option value="MANUAL_FOLLOW_UP">Manual follow-up</option>
+              </Select>
+            </FormField>
+            <FormField
+              label="Due date and time"
+              htmlFor="sales-run-follow-up-due"
+              required
+            >
+              <Input
+                id="sales-run-follow-up-due"
+                type="datetime-local"
+                value={scheduleDueAt}
+                onChange={(event) => setScheduleDueAt(event.target.value)}
+                required
+              />
+            </FormField>
+            {scheduleType === "EMAIL_FOLLOW_UP" ? (
+              <FormField
+                label="Email body"
+                htmlFor="sales-run-follow-up-body"
+                required
+              >
+                <Textarea
+                  id="sales-run-follow-up-body"
+                  value={scheduleBody}
+                  onChange={(event) => setScheduleBody(event.target.value)}
+                  maxLength={8000}
+                  required
+                />
+              </FormField>
+            ) : (
+              <FormField label="Notes" htmlFor="sales-run-follow-up-notes">
+                <Textarea
+                  id="sales-run-follow-up-notes"
+                  value={scheduleNotes}
+                  onChange={(event) => setScheduleNotes(event.target.value)}
+                  maxLength={4000}
+                />
+              </FormField>
+            )}
+            {scheduleType === "EMAIL_FOLLOW_UP" ? (
+              <FormField label="Notes" htmlFor="sales-run-follow-up-email-notes">
+                <Textarea
+                  id="sales-run-follow-up-email-notes"
+                  value={scheduleNotes}
+                  onChange={(event) => setScheduleNotes(event.target.value)}
+                  maxLength={4000}
+                />
+              </FormField>
+            ) : null}
+            {scheduleError && !scheduleConfirming ? (
+              <p className="text-danger-text text-sm" role="alert">
+                {scheduleError}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <DialogCancel>Cancel</DialogCancel>
+              <Button type="submit" disabled={!scheduleReady || schedulePending}>
+                Review and schedule
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={scheduleTarget !== null && scheduleConfirming}
+        onOpenChange={(next) => {
+          if (!next && !schedulePending) {
+            setScheduleConfirming(false);
+          }
+        }}
+        title="Schedule this follow-up?"
+        description="This creates a follow-up on the lead. It does not send email now. Due email follow-ups are sent later by the follow-up worker."
+        confirmLabel={schedulePending ? "Scheduling…" : "Schedule follow-up"}
+        confirmPending={schedulePending}
+        onConfirm={() => void confirmSchedule()}
+      >
+        <dl className="mt-4 grid gap-2">
+          <DetailRow label="Type" value={followUpTypeLabel(scheduleType)} />
+          <DetailRow
+            label="Due"
+            value={
+              schedulePayload()
+                ? new Date(schedulePayload() as string).toLocaleString()
+                : "—"
+            }
+          />
+          {scheduleType === "EMAIL_FOLLOW_UP" ? (
+            <DetailRow
+              label="Message"
+              value={
+                <span className="whitespace-pre-wrap">{scheduleBody.trim() || "—"}</span>
+              }
+            />
+          ) : null}
+        </dl>
+        {scheduleError ? (
+          <p className="text-danger-text mt-3 text-sm" role="alert">
+            {scheduleError}
           </p>
         ) : null}
       </ConfirmDialog>

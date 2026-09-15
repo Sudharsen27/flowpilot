@@ -8,6 +8,7 @@ import {
   listOrganizationSalesRuns,
   listSalesRuns,
   sendSalesRun,
+  scheduleSalesRunFollowUp,
   startSalesRun,
 } from "@/lib/api/sales-runs";
 
@@ -20,6 +21,7 @@ const failedRun = {
   qualification_id: "q-1",
   response_draft_id: null,
   email_send_id: null,
+  follow_up_id: null,
   failure_category: "PROVIDER_ERROR",
   error: "AI provider request failed",
   initiated_by_user_id: "user-1",
@@ -96,6 +98,17 @@ describe("Sales run API client", () => {
     await getSalesRun("agent/1", "run/1");
     await cancelSalesRun("agent/1", "run/1", { expected_revision: 1 });
     await sendSalesRun("agent/1", "run/1", { expected_revision: 2 });
+    await scheduleSalesRunFollowUp("agent/1", "run/1", {
+      expected_revision: 3,
+      due_at: "2030-06-15T10:30:00.000Z",
+      type: "EMAIL_FOLLOW_UP",
+      body_text: "Checking in.",
+    });
+    const body = String(fetchMock.mock.calls.at(-1)?.[1]?.body);
+    expect(body).toContain("Checking in.");
+    expect(body).not.toContain("organization_id");
+    expect(body).not.toContain("email_send_id");
+    expect(body).not.toContain("draft_id");
     await listLeadSalesRuns("lead/1");
     await listOrganizationSalesRuns({ status: "WAITING_APPROVAL" });
     const urls = fetchMock.mock.calls.map((call) => call[0]);
@@ -107,6 +120,9 @@ describe("Sales run API client", () => {
     );
     expect(urls).toContain(
       "http://localhost:8000/api/v1/agents/agent%2F1/sales-runs/run%2F1/send",
+    );
+    expect(urls).toContain(
+      "http://localhost:8000/api/v1/agents/agent%2F1/sales-runs/run%2F1/schedule-follow-up",
     );
     expect(urls).toContain(
       "http://localhost:8000/api/v1/leads/lead%2F1/sales-runs",

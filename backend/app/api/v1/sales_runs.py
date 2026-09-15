@@ -21,6 +21,7 @@ from app.schemas.sales_run import (
     SalesRunCancelRequest,
     SalesRunListResponse,
     SalesRunPublic,
+    SalesRunScheduleFollowUpRequest,
     SalesRunSendRequest,
     SalesRunStartRequest,
 )
@@ -118,6 +119,28 @@ def send_agent_sales_run(
         agent_id=agent_id,
         sales_run_id=sales_run_id,
         expected_revision=payload.expected_revision,
+        initiated_by_user_id=membership.user_id,
+    )
+
+
+@agent_router.post("/{sales_run_id}/schedule-follow-up", response_model=SalesRunPublic)
+def schedule_agent_sales_run_follow_up(
+    agent_id: str,
+    sales_run_id: str,
+    payload: SalesRunScheduleFollowUpRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> SalesRunPublic:
+    return SalesRunService(db).schedule_follow_up(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        sales_run_id=sales_run_id,
+        expected_revision=payload.expected_revision,
+        due_at=payload.due_at,
+        follow_up_type=payload.type,
+        notes=payload.notes,
+        body_text=payload.body_text,
         initiated_by_user_id=membership.user_id,
     )
 

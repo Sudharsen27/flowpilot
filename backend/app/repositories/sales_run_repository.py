@@ -138,6 +138,36 @@ class SalesRunRepository:
         self.session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
+    def link_follow_up_if_unset(
+        self,
+        organization_id: str,
+        sales_run_id: str,
+        *,
+        follow_up_id: str,
+        expected_revision: int,
+        updated_at: datetime,
+    ) -> int:
+        """CAS: attach a follow-up only when none is linked and revision matches."""
+        self._expire_sales_runs()
+        self.session.flush()
+        result = self.session.execute(
+            update(SalesRun)
+            .where(
+                SalesRun.organization_id == organization_id,
+                SalesRun.id == sales_run_id,
+                SalesRun.follow_up_id.is_(None),
+                SalesRun.revision == expected_revision,
+                SalesRun.status == SalesRunStatus.COMPLETED,
+            )
+            .values(
+                follow_up_id=follow_up_id,
+                revision=SalesRun.revision + 1,
+                updated_at=updated_at,
+            )
+        )
+        self.session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
     def persist_links(
         self,
         organization_id: str,

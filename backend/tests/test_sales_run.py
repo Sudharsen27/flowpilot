@@ -120,6 +120,18 @@ def test_unauthenticated_sales_runs_are_rejected(client: TestClient) -> None:
         ).status_code
         == 401
     )
+    assert (
+        client.post(
+            "/api/v1/agents/agent-1/sales-runs/run-1/schedule-follow-up",
+            json={
+                "expected_revision": 1,
+                "due_at": "2030-06-15T10:30:00Z",
+                "type": "EMAIL_FOLLOW_UP",
+                "body_text": "Checking in.",
+            },
+        ).status_code
+        == 401
+    )
 
 
 def test_cross_tenant_agent_and_lead_are_404(client: TestClient, db: Session) -> None:

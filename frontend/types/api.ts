@@ -571,6 +571,14 @@ export type SalesRunEmailSendSummary = {
   created_at: string;
 };
 
+export type SalesRunFollowUpSummary = {
+  id: string;
+  type: LeadFollowUpType;
+  status: LeadFollowUpStatus;
+  due_at: string;
+  is_overdue: boolean;
+};
+
 export type SalesRun = {
   id: string;
   agent_id: string;
@@ -580,6 +588,7 @@ export type SalesRun = {
   qualification_id: string | null;
   response_draft_id: string | null;
   email_send_id: string | null;
+  follow_up_id: string | null;
   failure_category: ExecutionFailureCategory | null;
   error: string | null;
   initiated_by_user_id: string | null;
@@ -593,6 +602,7 @@ export type SalesRun = {
   qualification?: SalesRunQualificationSummary | null;
   response_draft?: SalesRunDraftSummary | null;
   email_send?: SalesRunEmailSendSummary | null;
+  follow_up?: SalesRunFollowUpSummary | null;
 };
 
 export type SalesRunListResponse = {
@@ -616,6 +626,14 @@ export type SalesRunCancelRequest = {
 
 export type SalesRunSendRequest = {
   expected_revision: number;
+};
+
+export type SalesRunScheduleFollowUpRequest = {
+  expected_revision: number;
+  due_at: string;
+  type: LeadFollowUpType;
+  notes?: string | null;
+  body_text?: string | null;
 };
 
 export type SalesRunListParams = {

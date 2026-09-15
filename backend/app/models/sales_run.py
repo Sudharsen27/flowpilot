@@ -83,6 +83,12 @@ class SalesRun(Base):
             name="fk_sales_runs_email_send_organization",
             ondelete="SET NULL",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "follow_up_id"],
+            ["lead_follow_ups.organization_id", "lead_follow_ups.id"],
+            name="fk_sales_runs_follow_up_organization",
+            ondelete="SET NULL",
+        ),
         CheckConstraint(
             "status IN ('RUNNING', 'WAITING_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED')",
             name="ck_sales_runs_status",
@@ -120,6 +126,13 @@ class SalesRun(Base):
             postgresql_where=text("status IN ('RUNNING', 'WAITING_APPROVAL')"),
             sqlite_where=text("status IN ('RUNNING', 'WAITING_APPROVAL')"),
         ),
+        Index(
+            "uq_sales_runs_follow_up_id",
+            "follow_up_id",
+            unique=True,
+            postgresql_where=text("follow_up_id IS NOT NULL"),
+            sqlite_where=text("follow_up_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -137,6 +150,7 @@ class SalesRun(Base):
     qualification_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     response_draft_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     email_send_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    follow_up_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     initiated_by_user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="SET NULL"),

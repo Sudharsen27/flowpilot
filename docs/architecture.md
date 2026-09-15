@@ -206,7 +206,36 @@ GET  /api/v1/sales-runs
 
 The organization list `status_counts` includes `COMPLETED` and `FAILED`. Failed mixes AI and send failures. There is no `advance` endpoint and no un-nested mutation API.
 
-Follow-up scheduling remains out of scope. `Lead.status` is not mutated.
+`Lead.status` is not mutated.
+
+## Sales Run follow-up scheduling (Phase 5D)
+
+Email completion and follow-up scheduling are separate. `COMPLETED` / `DONE` still means the approved response was sent. Scheduling does not change SalesRun status or stage.
+
+An explicit nested action creates one linked `LeadFollowUp` through `LeadFollowUpService.create`:
+
+```
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/schedule-follow-up
+```
+
+Body: `{ expected_revision, due_at, type, notes?, body_text? }` (`extra=forbid`). Organization, recipient, draft id, and `email_send_id` are never accepted from the client. The server requires `COMPLETED` / `DONE` and a `SENT` `email_send_id`, then passes that send id into the existing follow-up service. `EMAIL_FOLLOW_UP` requires human-authored `body_text`. `MANUAL_FOLLOW_UP` does not, and is never emailed. There is no AI-generated or template-copied follow-up body.
+
+At most one follow-up may be linked (`sales_runs.follow_up_id`, unique when set). A second schedule request returns the existing link. If two requests race, one CAS wins; the loser cancels its orphan follow-up. Follow-up create failure leaves the Sales Run `COMPLETED` with `follow_up_id` null. Retry schedule, not send.
+
+The existing follow-up worker executes due `EMAIL_FOLLOW_UP` rows with no SalesRun-specific branch. Cancel, reschedule, and complete stay on the lead follow-up APIs and do not change SalesRun status.
+
+APIs:
+
+```
+POST /api/v1/agents/{agent_id}/sales-runs
+GET  /api/v1/agents/{agent_id}/sales-runs
+GET  /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/cancel
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/schedule-follow-up
+GET  /api/v1/leads/{lead_id}/sales-runs
+GET  /api/v1/sales-runs
+```
 
 ## Lead domain (Phase 4A)
 

@@ -4,6 +4,7 @@ import type {
   SalesRunCancelRequest,
   SalesRunListParams,
   SalesRunListResponse,
+  SalesRunScheduleFollowUpRequest,
   SalesRunSendRequest,
   SalesRunStartRequest,
 } from "@/types/api";
@@ -93,6 +94,17 @@ export async function sendSalesRun(
     if (recovered) return recovered;
     throw cause;
   }
+}
+
+export function scheduleSalesRunFollowUp(
+  agentId: string,
+  salesRunId: string,
+  input: SalesRunScheduleFollowUpRequest,
+) {
+  return apiPost<SalesRun>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/sales-runs/${encodeURIComponent(salesRunId)}/schedule-follow-up`,
+    input,
+  );
 }
 
 export function listLeadSalesRuns(
