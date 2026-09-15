@@ -21,8 +21,11 @@ import {
   getLeadFollowUps,
   getFollowUpOperations,
   getLead,
+  getLeadFollowUp,
   getLeadFollowUpExecutions,
+  getLeadQualification,
 } from "@/lib/api/leads";
+import { getSalesRun, listLeadSalesRuns } from "@/lib/api/sales-runs";
 import type { Lead, LeadEmailSendResult, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
 
 vi.mock("@/lib/api/leads", () => ({
@@ -31,6 +34,7 @@ vi.mock("@/lib/api/leads", () => ({
   createLead: vi.fn(),
   updateLead: vi.fn(),
   qualifyLead: vi.fn(),
+  getLeadQualification: vi.fn(),
   generateLeadResponseDraft: vi.fn(),
   getLeadResponseDraft: vi.fn(),
   updateLeadResponseDraft: vi.fn(),
@@ -38,8 +42,14 @@ vi.mock("@/lib/api/leads", () => ({
   rejectLeadResponseDraft: vi.fn(),
   sendLeadResponseDraft: vi.fn(),
   getLeadFollowUps: vi.fn(),
+  getLeadFollowUp: vi.fn(),
   getLeadFollowUpExecutions: vi.fn(),
   getFollowUpOperations: vi.fn(),
+}));
+
+vi.mock("@/lib/api/sales-runs", () => ({
+  listLeadSalesRuns: vi.fn(),
+  getSalesRun: vi.fn(),
 }));
 
 const lead: Lead = {
@@ -119,6 +129,10 @@ const sendLeadResponseDraftMock = vi.mocked(sendLeadResponseDraft);
 const getLeadFollowUpsMock = vi.mocked(getLeadFollowUps);
 const getLeadFollowUpExecutionsMock = vi.mocked(getLeadFollowUpExecutions);
 const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
+const getLeadQualificationMock = vi.mocked(getLeadQualification);
+const getLeadFollowUpMock = vi.mocked(getLeadFollowUp);
+const listLeadSalesRunsMock = vi.mocked(listLeadSalesRuns);
+const getSalesRunMock = vi.mocked(getSalesRun);
 
 const emptyOperations = {
   items: [],
@@ -150,6 +164,10 @@ describe("Leads page", () => {
     getLeadFollowUpsMock.mockReset();
     getLeadFollowUpExecutionsMock.mockReset();
     getFollowUpOperationsMock.mockReset();
+    getLeadQualificationMock.mockReset();
+    getLeadFollowUpMock.mockReset();
+    listLeadSalesRunsMock.mockReset();
+    getSalesRunMock.mockReset();
     getLeadFollowUpsMock.mockResolvedValue({
       items: [],
       limit: 20,
@@ -157,6 +175,12 @@ describe("Leads page", () => {
       total: 0,
     });
     getFollowUpOperationsMock.mockResolvedValue(emptyOperations);
+    listLeadSalesRunsMock.mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      total: 0,
+    });
     getLeadFollowUpExecutionsMock.mockResolvedValue({
       items: [],
       limit: 20,
@@ -203,9 +227,12 @@ describe("Leads page", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("heading", {
-        name: "Nothing has been sent",
+        name: "Sending is a separate action",
       }),
     ).toBeVisible();
+    expect(screen.queryByText("Sending email or chat is not implemented")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Nothing has been sent" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/conversation/i)).not.toBeInTheDocument();
     const cards = screen.getAllByRole("article");
     expect(within(cards[0]).getByText("0")).toBeVisible();
     expect(within(cards[3]).getByText("—")).toBeVisible();
@@ -222,7 +249,155 @@ describe("Leads page", () => {
     expect(screen.getAllByText("New").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Website").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Not assessed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No sales run").length).toBeGreaterThan(0);
     expect(screen.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+
+  it("shows Sales Agent directory states without changing CRM status", async () => {
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_sales_run: {
+            id: "run-running",
+            agent_id: "agent-1",
+            status: "RUNNING",
+            stage: "QUALIFY",
+            email_send: null,
+            follow_up: null,
+          },
+        },
+      ]),
+    );
+    const { unmount: unmountRunning } = render(<LeadsPage />);
+    expect((await screen.findAllByText("Processing")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("New").length).toBeGreaterThan(0);
+    unmountRunning();
+
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_sales_run: {
+            id: "run-wait",
+            agent_id: "agent-1",
+            status: "WAITING_APPROVAL",
+            stage: "AWAIT_APPROVAL",
+            email_send: null,
+            follow_up: null,
+          },
+        },
+      ]),
+    );
+    const { unmount: unmountWaiting } = render(<LeadsPage />);
+    expect((await screen.findAllByText("Waiting for approval")).length).toBeGreaterThan(0);
+    unmountWaiting();
+
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_sales_run: {
+            id: "run-done",
+            agent_id: "agent-1",
+            status: "COMPLETED",
+            stage: "DONE",
+            email_send: {
+              status: "SENT",
+              completed_at: "2026-09-10T12:00:00Z",
+            },
+            follow_up: {
+              status: "PENDING",
+              due_at: "2026-09-20T12:00:00Z",
+              is_overdue: false,
+            },
+          },
+        },
+      ]),
+    );
+    const { unmount: unmountDone } = render(<LeadsPage />);
+    expect((await screen.findAllByText("Completed")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Email sent").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Follow-up pending").length).toBeGreaterThan(0);
+    unmountDone();
+
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_sales_run: {
+            id: "run-failed",
+            agent_id: "agent-1",
+            status: "FAILED",
+            stage: "SEND",
+            email_send: { status: "FAILED", completed_at: null },
+            follow_up: null,
+          },
+        },
+      ]),
+    );
+    const { unmount: unmountFailed } = render(<LeadsPage />);
+    expect((await screen.findAllByText("Failed")).length).toBeGreaterThan(0);
+    unmountFailed();
+
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_sales_run: {
+            id: "run-cancelled",
+            agent_id: "agent-1",
+            status: "CANCELLED",
+            stage: "AWAIT_APPROVAL",
+            email_send: null,
+            follow_up: null,
+          },
+        },
+      ]),
+    );
+    const { unmount: unmountCancelled } = render(<LeadsPage />);
+    expect((await screen.findAllByText("Cancelled")).length).toBeGreaterThan(0);
+    unmountCancelled();
+
+    getLeadsMock.mockResolvedValue(
+      listResponse([
+        {
+          ...lead,
+          latest_sales_run: {
+            id: "run-overdue",
+            agent_id: "agent-1",
+            status: "COMPLETED",
+            stage: "DONE",
+            email_send: { status: "SENT", completed_at: "2026-09-01T12:00:00Z" },
+            follow_up: {
+              status: "PENDING",
+              due_at: "2026-09-01T12:00:00Z",
+              is_overdue: true,
+            },
+          },
+        },
+      ]),
+    );
+    render(<LeadsPage />);
+    expect((await screen.findAllByText("Follow-up overdue")).length).toBeGreaterThan(0);
+  });
+
+  it("opens Sales Agent history from the directory", async () => {
+    const user = userEvent.setup();
+    getLeadsMock.mockResolvedValue(listResponse([lead]));
+    render(<LeadsPage />);
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Sales Agent history" })[0]!);
+    expect(
+      await screen.findByRole("heading", { name: "Sales Agent history" }),
+    ).toBeVisible();
+    expect(listLeadSalesRunsMock).toHaveBeenCalledWith("lead-1", {
+      limit: 20,
+      offset: 0,
+    });
+    expect(
+      await screen.findByRole("heading", { name: "No Sales Agent runs" }),
+    ).toBeVisible();
   });
 
   it("shows an API error and retries", async () => {
@@ -423,6 +598,7 @@ describe("Leads page", () => {
     expect(screen.getAllByText("Ada Prospect")).toHaveLength(2);
     expect(screen.getAllByText("New")).toHaveLength(2);
     expect(screen.getAllByText("Not assessed")).toHaveLength(2);
+    expect(screen.getAllByText("No sales run")).toHaveLength(2);
   });
 
   it("analyzes a lead with AI and keeps CRM status distinct", async () => {

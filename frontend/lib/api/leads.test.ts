@@ -8,6 +8,7 @@ import {
   getLeads,
   getLeadResponseDraft,
   qualifyLead,
+  getLeadQualification,
   rejectLeadResponseDraft,
   sendLeadResponseDraft,
   updateLead,
@@ -145,6 +146,22 @@ describe("Lead API client", () => {
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body).not.toHaveProperty("organization_id");
+  });
+
+  it("gets an encoded qualification without organization_id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "q/1", status: "COMPLETED" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await getLeadQualification("lead/1", "q/1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/leads/lead%2F1/qualifications/q%2F1",
+      expect.objectContaining({ method: "GET" }),
+    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(JSON.stringify(init)).not.toContain("organization_id");
   });
 
   it("posts a response draft to an encoded lead id without organization_id", async () => {
