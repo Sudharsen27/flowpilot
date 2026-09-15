@@ -12,9 +12,6 @@ type BusinessOverviewProps = {
   leadTotal?: number | null;
   newLeads?: number | null;
   waitingApproval?: number | null;
-  completedSalesRuns?: number | null;
-  failedSalesRuns?: number | null;
-  overdueFollowUps?: number | null;
 };
 
 export function BusinessOverview({
@@ -22,9 +19,6 @@ export function BusinessOverview({
   leadTotal = null,
   newLeads = null,
   waitingApproval = null,
-  completedSalesRuns = null,
-  failedSalesRuns = null,
-  overdueFollowUps = null,
 }: BusinessOverviewProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -53,23 +47,9 @@ export function BusinessOverview({
         icon={<CalendarCheck />}
       />
       <MetricCard
-        label="Waiting for approval"
+        label="Waiting for review"
         value={waitingApproval ?? undefined}
-        description={
-          [
-            overdueFollowUps === null
-              ? "Sales runs waiting for human draft review."
-              : `${overdueFollowUps} follow-up${overdueFollowUps === 1 ? "" : "s"} overdue.`,
-            completedSalesRuns === null
-              ? null
-              : `${completedSalesRuns} completed (email sent).`,
-            failedSalesRuns === null
-              ? null
-              : `${failedSalesRuns} failed (AI or send).`,
-          ]
-            .filter(Boolean)
-            .join(" ")
-        }
+        description="Sales runs with a draft ready for review."
         loading={loading}
         headingLevel={3}
         icon={<ShieldCheck />}

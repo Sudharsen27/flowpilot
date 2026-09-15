@@ -659,6 +659,7 @@ export type SalesRunScheduleFollowUpRequest = {
 
 export type SalesRunListParams = {
   status?: SalesRunStatus;
+  stage?: SalesRunStage;
   limit?: number;
   offset?: number;
 };

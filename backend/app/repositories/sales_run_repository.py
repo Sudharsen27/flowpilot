@@ -4,7 +4,12 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.sales_run import OPEN_SALES_RUN_STATUSES, SalesRun, SalesRunStatus
+from app.models.sales_run import (
+    OPEN_SALES_RUN_STATUSES,
+    SalesRun,
+    SalesRunStage,
+    SalesRunStatus,
+)
 
 SALES_RUN_LIST_MAX_LIMIT = 50
 SALES_RUN_LIST_DEFAULT_LIMIT = 20
@@ -59,13 +64,13 @@ class SalesRunRepository:
         limit: int,
         offset: int,
         status: SalesRunStatus | None = None,
+        stage: SalesRunStage | None = None,
     ) -> tuple[list[SalesRun], int]:
         filters = [
             SalesRun.organization_id == organization_id,
             SalesRun.agent_id == agent_id,
+            *self._status_stage_filters(status=status, stage=stage),
         ]
-        if status is not None:
-            filters.append(SalesRun.status == status)
         return self._paginated(filters, limit=limit, offset=offset)
 
     def latest_for_leads(
@@ -97,13 +102,13 @@ class SalesRunRepository:
         limit: int,
         offset: int,
         status: SalesRunStatus | None = None,
+        stage: SalesRunStage | None = None,
     ) -> tuple[list[SalesRun], int]:
         filters = [
             SalesRun.organization_id == organization_id,
             SalesRun.lead_id == lead_id,
+            *self._status_stage_filters(status=status, stage=stage),
         ]
-        if status is not None:
-            filters.append(SalesRun.status == status)
         return self._paginated(filters, limit=limit, offset=offset)
 
     def list_for_organization(
@@ -113,14 +118,29 @@ class SalesRunRepository:
         limit: int,
         offset: int,
         status: SalesRunStatus | None = None,
+        stage: SalesRunStage | None = None,
         agent_id: str | None = None,
     ) -> tuple[list[SalesRun], int]:
-        filters = [SalesRun.organization_id == organization_id]
-        if status is not None:
-            filters.append(SalesRun.status == status)
+        filters = [
+            SalesRun.organization_id == organization_id,
+            *self._status_stage_filters(status=status, stage=stage),
+        ]
         if agent_id is not None:
             filters.append(SalesRun.agent_id == agent_id)
         return self._paginated(filters, limit=limit, offset=offset)
+
+    @staticmethod
+    def _status_stage_filters(
+        *,
+        status: SalesRunStatus | None,
+        stage: SalesRunStage | None,
+    ) -> list[Any]:
+        filters: list[Any] = []
+        if status is not None:
+            filters.append(SalesRun.status == status)
+        if stage is not None:
+            filters.append(SalesRun.stage == stage)
+        return filters
 
     def status_counts(self, organization_id: str) -> dict[str, int]:
         rows = self.session.execute(

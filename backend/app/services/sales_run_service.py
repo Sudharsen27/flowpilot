@@ -182,6 +182,7 @@ class SalesRunService:
         limit: int = SALES_RUN_LIST_DEFAULT_LIMIT,
         offset: int = 0,
         status: SalesRunStatus | None = None,
+        stage: SalesRunStage | None = None,
     ) -> SalesRunListResponse:
         self._require_sales_agent(organization_id, agent_id)
         self.recover_stale_running(organization_id=organization_id, agent_id=agent_id)
@@ -193,6 +194,7 @@ class SalesRunService:
             limit=capped,
             offset=safe_offset,
             status=status,
+            stage=stage,
         )
         return SalesRunListResponse(
             items=self._to_public_many(items, include_enquiry=False),
@@ -209,6 +211,7 @@ class SalesRunService:
         limit: int = SALES_RUN_LIST_DEFAULT_LIMIT,
         offset: int = 0,
         status: SalesRunStatus | None = None,
+        stage: SalesRunStage | None = None,
     ) -> SalesRunListResponse:
         self.leads.get_or_raise(organization_id, lead_id)
         self.recover_stale_running(organization_id=organization_id)
@@ -220,6 +223,7 @@ class SalesRunService:
             limit=capped,
             offset=safe_offset,
             status=status,
+            stage=stage,
         )
         return SalesRunListResponse(
             items=self._to_public_many(items, include_enquiry=False),
@@ -235,6 +239,7 @@ class SalesRunService:
         limit: int = SALES_RUN_LIST_DEFAULT_LIMIT,
         offset: int = 0,
         status: SalesRunStatus | None = None,
+        stage: SalesRunStage | None = None,
     ) -> SalesRunListResponse:
         self.recover_stale_running(organization_id=organization_id)
         capped = min(max(limit, 1), SALES_RUN_LIST_MAX_LIMIT)
@@ -244,6 +249,7 @@ class SalesRunService:
             limit=capped,
             offset=safe_offset,
             status=status,
+            stage=stage,
         )
         return SalesRunListResponse(
             items=self._to_public_many(items, include_enquiry=False),

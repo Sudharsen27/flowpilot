@@ -2,7 +2,7 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository has completed **Phase 5E**: Sales Agent work is visible from the Leads directory and a read-only Sales Agent history dialog. History composes existing SalesRun, qualification, draft, email-send, and follow-up records. There is no Activity system. SalesRun mutations stay on the Sales Agent. Follow-up management stays on the existing follow-up UI.
+This repository has completed **Phase 5F**: Command Center Needs attention is a live operations queue for drafts waiting for review, failed sends, and overdue follow-ups. It reuses existing SalesRun and follow-up APIs. There is no Activity system, Approvals product, or new AI call. SalesRun mutations stay on existing send/cancel/draft endpoints. Follow-up management stays on the existing follow-up UI.
 
 ## Requirements
 
@@ -43,6 +43,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Send approved sales run (authenticated): `POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send`
 - Schedule sales run follow-up (authenticated): `POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/schedule-follow-up`
 - Lead Sales Agent history (authenticated): `GET /api/v1/leads/{lead_id}/sales-runs`
+- Organization sales runs (authenticated, optional `status` and `stage`): `GET /api/v1/sales-runs`
 - Qualification detail (authenticated): `GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}`
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:

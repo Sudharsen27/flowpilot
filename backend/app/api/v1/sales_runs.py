@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.email.provider import EmailProvider
 from app.models.membership import Membership
 from app.models.organization import Organization
-from app.models.sales_run import SalesRunStatus
+from app.models.sales_run import SalesRunStage, SalesRunStatus
 from app.repositories.sales_run_repository import (
     SALES_RUN_LIST_DEFAULT_LIMIT,
     SALES_RUN_LIST_MAX_LIMIT,
@@ -64,6 +64,7 @@ def list_agent_sales_runs(
     organization: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
     status: SalesRunStatus | None = None,
+    stage: SalesRunStage | None = None,
     limit: int = Query(default=SALES_RUN_LIST_DEFAULT_LIMIT, ge=1, le=SALES_RUN_LIST_MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
 ) -> SalesRunListResponse:
@@ -73,6 +74,7 @@ def list_agent_sales_runs(
         limit=limit,
         offset=offset,
         status=status,
+        stage=stage,
     )
 
 
@@ -150,6 +152,7 @@ def list_organization_sales_runs(
     organization: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
     status: SalesRunStatus | None = None,
+    stage: SalesRunStage | None = None,
     limit: int = Query(default=SALES_RUN_LIST_DEFAULT_LIMIT, ge=1, le=SALES_RUN_LIST_MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
 ) -> SalesRunListResponse:
@@ -158,6 +161,7 @@ def list_organization_sales_runs(
         limit=limit,
         offset=offset,
         status=status,
+        stage=stage,
     )
 
 
@@ -167,6 +171,7 @@ def list_lead_sales_runs(
     organization: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
     status: SalesRunStatus | None = None,
+    stage: SalesRunStage | None = None,
     limit: int = Query(default=SALES_RUN_LIST_DEFAULT_LIMIT, ge=1, le=SALES_RUN_LIST_MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
 ) -> SalesRunListResponse:
@@ -176,4 +181,5 @@ def list_lead_sales_runs(
         limit=limit,
         offset=offset,
         status=status,
+        stage=stage,
     )

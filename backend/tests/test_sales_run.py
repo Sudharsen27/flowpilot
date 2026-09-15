@@ -1181,3 +1181,151 @@ def test_org_list_includes_completed_status_counts(
     counts = org_list.json()["status_counts"]
     assert counts["COMPLETED"] == 1
     assert counts["WAITING_APPROVAL"] == 0
+
+
+def _insert_sales_run(
+    db: Session,
+    *,
+    organization_id: str,
+    agent_id: str,
+    lead_id: str,
+    status: SalesRunStatus,
+    stage: SalesRunStage,
+    error: str | None = None,
+) -> SalesRun:
+    row = SalesRun(
+        organization_id=organization_id,
+        agent_id=agent_id,
+        lead_id=lead_id,
+        enquiry=ENQUIRY,
+        status=status,
+        stage=stage,
+        error=error,
+        revision=2,
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC) if status != SalesRunStatus.WAITING_APPROVAL else None,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def test_org_list_stage_filter_excludes_ai_failures_and_paginates(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    org_id = created["organization"]["id"]
+    agent = _ready_sales_agent(db, org_id)
+    qualify_lead = _create_lead(client, token, name="Qualify Fail").json()
+    send_leads = [
+        _create_lead(client, token, name=f"Send Fail {index}").json() for index in range(3)
+    ]
+    _insert_sales_run(
+        db,
+        organization_id=org_id,
+        agent_id=agent.id,
+        lead_id=qualify_lead["id"],
+        status=SalesRunStatus.FAILED,
+        stage=SalesRunStage.QUALIFY,
+        error="AI provider request failed",
+    )
+    send_ids: list[str] = []
+    for lead in send_leads:
+        row = _insert_sales_run(
+            db,
+            organization_id=org_id,
+            agent_id=agent.id,
+            lead_id=lead["id"],
+            status=SalesRunStatus.FAILED,
+            stage=SalesRunStage.SEND,
+            error="Provider timeout",
+        )
+        send_ids.append(row.id)
+
+    mixed = client.get(
+        "/api/v1/sales-runs",
+        params={"status": "FAILED"},
+        headers=_headers(token),
+    )
+    assert mixed.status_code == 200
+    assert mixed.json()["total"] == 4
+    assert mixed.json()["items"][0]["enquiry"] is None
+
+    first_page = client.get(
+        "/api/v1/sales-runs",
+        params={"status": "FAILED", "stage": "SEND", "limit": 2, "offset": 0},
+        headers=_headers(token),
+    )
+    assert first_page.status_code == 200
+    body = first_page.json()
+    assert body["total"] == 3
+    assert body["limit"] == 2
+    assert body["offset"] == 0
+    assert len(body["items"]) == 2
+    assert {item["id"] for item in body["items"]}.issubset(set(send_ids))
+    assert all(item["stage"] == "SEND" for item in body["items"])
+    assert all(item["enquiry"] is None for item in body["items"])
+
+    second_page = client.get(
+        "/api/v1/sales-runs",
+        params={"status": "FAILED", "stage": "SEND", "limit": 2, "offset": 2},
+        headers=_headers(token),
+    )
+    assert second_page.status_code == 200
+    assert second_page.json()["total"] == 3
+    assert len(second_page.json()["items"]) == 1
+    assert second_page.json()["items"][0]["id"] in send_ids
+
+    invalid = client.get(
+        "/api/v1/sales-runs",
+        params={"stage": "NOT_A_STAGE"},
+        headers=_headers(token),
+    )
+    assert invalid.status_code == 422
+
+    agent_list = client.get(
+        f"/api/v1/agents/{agent.id}/sales-runs",
+        params={"status": "FAILED", "stage": "SEND"},
+        headers=_headers(token),
+    )
+    assert agent_list.status_code == 200
+    assert agent_list.json()["total"] == 3
+
+
+def test_org_list_stage_filter_is_tenant_scoped(client: TestClient, db: Session) -> None:
+    first = _auth(client, email="owner-a@example.com", organization_name="Acme")
+    second = _auth(client, email="owner-b@example.com", organization_name="Globex")
+    first_agent = _ready_sales_agent(db, first["organization"]["id"])
+    second_agent = _ready_sales_agent(db, second["organization"]["id"])
+    first_lead = _create_lead(client, first["access_token"], name="Acme lead").json()
+    second_lead = _create_lead(client, second["access_token"], name="Globex lead").json()
+    hidden = _insert_sales_run(
+        db,
+        organization_id=first["organization"]["id"],
+        agent_id=first_agent.id,
+        lead_id=first_lead["id"],
+        status=SalesRunStatus.FAILED,
+        stage=SalesRunStage.SEND,
+        error="Provider timeout",
+    )
+    visible = _insert_sales_run(
+        db,
+        organization_id=second["organization"]["id"],
+        agent_id=second_agent.id,
+        lead_id=second_lead["id"],
+        status=SalesRunStatus.FAILED,
+        stage=SalesRunStage.SEND,
+        error="Mailbox rejected",
+    )
+    listed = client.get(
+        "/api/v1/sales-runs",
+        params={"status": "FAILED", "stage": "SEND"},
+        headers=_headers(second["access_token"]),
+    )
+    assert listed.status_code == 200
+    ids = {item["id"] for item in listed.json()["items"]}
+    assert visible.id in ids
+    assert hidden.id not in ids
+    assert listed.json()["total"] == 1

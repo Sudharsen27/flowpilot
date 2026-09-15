@@ -14,10 +14,20 @@ vi.mock("@/lib/api/agents", () => ({
 vi.mock("@/lib/api/leads", () => ({
   getLeads: vi.fn(),
   getFollowUpOperations: vi.fn(),
+  getLead: vi.fn(),
+  getLeadFollowUps: vi.fn(),
+  getLeadResponseDraft: vi.fn(),
+  generateLeadResponseDraft: vi.fn(),
+  updateLeadResponseDraft: vi.fn(),
+  approveLeadResponseDraft: vi.fn(),
+  rejectLeadResponseDraft: vi.fn(),
+  sendLeadResponseDraft: vi.fn(),
 }));
 
 vi.mock("@/lib/api/sales-runs", () => ({
   listOrganizationSalesRuns: vi.fn(),
+  cancelSalesRun: vi.fn(),
+  sendSalesRun: vi.fn(),
 }));
 
 const getAgentsMock = vi.mocked(getAgents);
@@ -62,7 +72,7 @@ function followUps(overdue: number): FollowUpOperationsResponse {
       completed: 0,
       cancelled: 0,
     },
-    limit: 1,
+    limit: 20,
     offset: 0,
     total: 0,
   };
@@ -79,7 +89,7 @@ describe("Command Center", () => {
     getFollowUpOperationsMock.mockResolvedValue(followUps(0));
     listOrganizationSalesRunsMock.mockResolvedValue({
       items: [],
-      limit: 1,
+      limit: 20,
       offset: 0,
       total: 0,
       status_counts: {
@@ -101,12 +111,17 @@ describe("Command Center", () => {
       "Business overview",
       "AI workforce",
       "Needs attention",
+      "Failed sends",
+      "Overdue follow-ups",
       "Recent activity",
       "Quick actions",
     ]) {
       expect(screen.getByRole("heading", { name: heading })).toBeVisible();
     }
-    expect(await screen.findAllByText("0")).not.toHaveLength(0);
+    expect(
+      screen.getAllByRole("heading", { name: "Waiting for review" }).length,
+    ).toBeGreaterThan(1);
+    expect(await screen.findByText("Nothing waiting for review")).toBeVisible();
   });
 
   it("displays zero leads as 0 and keeps conversations and appointments unavailable", async () => {
@@ -136,7 +151,7 @@ describe("Command Center", () => {
     getFollowUpOperationsMock.mockResolvedValue(followUps(3));
     listOrganizationSalesRunsMock.mockResolvedValue({
       items: [],
-      limit: 1,
+      limit: 20,
       offset: 0,
       total: 8,
       status_counts: {
@@ -155,10 +170,12 @@ describe("Command Center", () => {
       screen.queryByText(/No live agent runtime is connected yet/),
     ).not.toBeInTheDocument();
     expect(screen.getByText("5")).toBeVisible();
-    expect(screen.getAllByText(/2 completed \(email sent\)/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/1 failed \(AI or send\)/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/3 follow-ups overdue/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/5 sales runs waiting for approval/)).toBeVisible();
+    expect(screen.getByText("Sales runs with a draft ready for review.")).toBeVisible();
+    expect(screen.queryByText(/2 completed \(email sent\)/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/5 sales runs waiting for approval/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Completed work is not listed here/),
+    ).toBeVisible();
   });
 
   it("links quick actions only to valid product routes", () => {

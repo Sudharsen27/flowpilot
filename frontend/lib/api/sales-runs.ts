@@ -14,6 +14,9 @@ function listQuery(params: SalesRunListParams = {}) {
   if (params.status) {
     query.set("status", params.status);
   }
+  if (params.stage) {
+    query.set("stage", params.stage);
+  }
   if (params.limit !== undefined) {
     const limit = Math.min(50, Math.max(1, Math.trunc(params.limit)));
     query.set("limit", String(Number.isFinite(limit) ? limit : 20));

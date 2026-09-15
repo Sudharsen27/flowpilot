@@ -204,7 +204,7 @@ GET  /api/v1/leads/{lead_id}/sales-runs
 GET  /api/v1/sales-runs
 ```
 
-The organization list `status_counts` includes `COMPLETED` and `FAILED`. Failed mixes AI and send failures. There is no `advance` endpoint and no un-nested mutation API.
+The organization list `status_counts` includes `COMPLETED` and `FAILED`. Failed mixes AI and send failures. List endpoints accept optional `status` and `stage` filters. `status=FAILED&stage=SEND` is the retryable failed-send queue; it does not include AI qualification or draft failures. There is no `advance` endpoint and no un-nested mutation API.
 
 `Lead.status` is not mutated.
 
@@ -246,6 +246,20 @@ Sales Agent work is visible from the Leads workspace. This is a read-only compos
 `GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}` returns the existing qualification public representation. Organization comes from the JWT. Wrong org, wrong lead, or unknown id is 404. There is no qualification list API.
 
 The Leads directory shows this summary next to CRM status. Those concepts stay separate; `Lead.status` is not inferred from SalesRun. **Sales Agent history** opens a paginated view of `GET /api/v1/leads/{lead_id}/sales-runs` (default 20, max 50). Selecting a run loads `GET /api/v1/agents/{agent_id}/sales-runs/{id}` (includes enquiry) and, only when the run has the matching ids, qualification GET, draft GET, and follow-up GET. Missing links show an explicit empty state. History does not substitute standalone latest qualification/draft rows. SalesRun mutations remain on the agent Sales runs panel. Follow-up create/complete/cancel remain on the existing follow-up UI.
+
+## Sales Agent operations queue (Phase 5F)
+
+Command Center **Needs attention** is the organization operations queue. It is not an Activity feed, not the Approvals workspace, and not a generic work-item model.
+
+Three stacked queues, each from existing list APIs (default 20, max 50):
+
+1. Waiting for review — `GET /api/v1/sales-runs?status=WAITING_APPROVAL`
+2. Failed sends — `GET /api/v1/sales-runs?status=FAILED&stage=SEND`
+3. Overdue follow-ups — `GET /api/v1/follow-ups?overdue=true`
+
+Queue rows omit enquiry, draft body, follow-up body, and provider payloads. Review, send, cancel, and follow-up manage reuse the existing draft dialog, send/cancel confirmations, and follow-up dialog. Mutations are not optimistic; lists refetch after the server response. Organization comes from the JWT. Cross-tenant ids remain 404. There is no new AI call, no Activity table, and no database migration.
+
+Recent activity on Command Center stays unavailable. Inbox, Approvals, Analytics, and conversation history are unchanged placeholders.
 
 ## Lead domain (Phase 4A)
 

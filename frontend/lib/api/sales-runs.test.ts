@@ -84,6 +84,16 @@ describe("Sales run API client", () => {
       "http://localhost:8000/api/v1/agents/agent%2F1/sales-runs?status=WAITING_APPROVAL&limit=20&offset=0",
       expect.any(Object),
     );
+    await listOrganizationSalesRuns({
+      status: "FAILED",
+      stage: "SEND",
+      limit: 20,
+      offset: 0,
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "http://localhost:8000/api/v1/sales-runs?status=FAILED&stage=SEND&limit=20&offset=0",
+      expect.any(Object),
+    );
   });
 
   it("gets, cancels, and lists nested and organization sales runs with encoded ids", async () => {
