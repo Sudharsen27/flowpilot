@@ -18,6 +18,7 @@ from app.repositories.sales_run_repository import (
     SALES_RUN_LIST_MAX_LIMIT,
 )
 from app.schemas.sales_run import (
+    LeadSalesRunStartRequest,
     SalesRunCancelRequest,
     SalesRunListResponse,
     SalesRunPublic,
@@ -162,6 +163,24 @@ def list_organization_sales_runs(
         offset=offset,
         status=status,
         stage=stage,
+    )
+
+
+@lead_router.post("", response_model=SalesRunPublic)
+def start_lead_sales_run(
+    lead_id: str,
+    payload: LeadSalesRunStartRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    provider: AIProvider = Depends(get_ai_provider),
+) -> SalesRunPublic:
+    return SalesRunService(db, provider).start_for_lead(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        agent_id=payload.agent_id,
+        enquiry=payload.enquiry,
+        initiated_by_user_id=membership.user_id,
     )
 
 

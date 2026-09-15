@@ -1,5 +1,6 @@
 import { ApiError, apiGet, apiPost } from "@/lib/api/client";
 import type {
+  LeadSalesRunStartRequest,
   SalesRun,
   SalesRunCancelRequest,
   SalesRunListParams,
@@ -117,6 +118,22 @@ export function listLeadSalesRuns(
   return apiGet<SalesRunListResponse>(
     `/api/v1/leads/${encodeURIComponent(leadId)}/sales-runs${listQuery(params)}`,
   );
+}
+
+export async function startLeadSalesRun(
+  leadId: string,
+  input: LeadSalesRunStartRequest,
+) {
+  try {
+    return await apiPost<SalesRun>(
+      `/api/v1/leads/${encodeURIComponent(leadId)}/sales-runs`,
+      input,
+    );
+  } catch (cause) {
+    const recovered = recoverFailedSalesRun(cause);
+    if (recovered) return recovered;
+    throw cause;
+  }
 }
 
 export function listOrganizationSalesRuns(

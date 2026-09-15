@@ -97,6 +97,25 @@ def _start(
     )
 
 
+def _start_from_lead(
+    client: TestClient,
+    token: str,
+    lead_id: str,
+    agent_id: str,
+    extra_body: dict[str, Any] | None = None,
+    **overrides: Any,
+) -> Any:
+    body: dict[str, Any] = {"enquiry": ENQUIRY, "agent_id": agent_id}
+    body.update(overrides)
+    if extra_body:
+        body.update(extra_body)
+    return client.post(
+        f"/api/v1/leads/{lead_id}/sales-runs",
+        json=body,
+        headers=_headers(token),
+    )
+
+
 def test_unauthenticated_sales_runs_are_rejected(client: TestClient) -> None:
     assert (
         client.post("/api/v1/agents/agent-1/sales-runs", json={"enquiry": ENQUIRY}).status_code
@@ -117,6 +136,13 @@ def test_unauthenticated_sales_runs_are_rejected(client: TestClient) -> None:
         client.post(
             "/api/v1/agents/agent-1/sales-runs/run-1/send",
             json={"expected_revision": 1},
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/v1/leads/lead-1/sales-runs",
+            json={"enquiry": ENQUIRY, "agent_id": "agent-1"},
         ).status_code
         == 401
     )
@@ -1329,3 +1355,112 @@ def test_org_list_stage_filter_is_tenant_scoped(client: TestClient, db: Session)
     assert visible.id in ids
     assert hidden.id not in ids
     assert listed.json()["total"] == 1
+
+
+def test_lead_nested_start_reuses_lead_and_rejects_body_lead_id(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    agent = _ready_sales_agent(db, created["organization"]["id"])
+    lead = _create_lead(client, token, name="Ada Prospect", email="ada@example.com").json()
+    before = db.scalar(select(func.count()).select_from(Lead))
+    _override_provider(client, SalesPipelineProvider())
+    extra = _start_from_lead(
+        client,
+        token,
+        lead["id"],
+        agent.id,
+        extra_body={
+            "lead_id": lead["id"],
+            "organization_id": created["organization"]["id"],
+        },
+    )
+    assert extra.status_code == 422
+    blank = _start_from_lead(client, token, lead["id"], agent.id, enquiry="   ")
+    assert blank.status_code == 422
+    started = _start_from_lead(client, token, lead["id"], agent.id)
+    assert started.status_code == 200
+    body = started.json()
+    assert body["lead_id"] == lead["id"]
+    assert body["agent_id"] == agent.id
+    assert body["status"] == SalesRunStatus.WAITING_APPROVAL
+    assert body["enquiry"] == ENQUIRY
+    assert db.scalar(select(func.count()).select_from(Lead)) == before
+    stored = db.get(Lead, lead["id"])
+    assert stored is not None
+    assert stored.status == LeadStatus.NEW
+    assert stored.name == "Ada Prospect"
+    assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
+    conflict = _start_from_lead(client, token, lead["id"], agent.id)
+    assert conflict.status_code == 409
+    assert "open sales run" in conflict.json()["detail"]
+
+
+def test_lead_nested_start_is_tenant_scoped_and_validates_agent(
+    client: TestClient, db: Session
+) -> None:
+    first = _auth(client, email="owner-a@example.com", organization_name="Acme")
+    second = _auth(client, email="owner-b@example.com", organization_name="Globex")
+    first_agent = _ready_sales_agent(db, first["organization"]["id"])
+    second_agent = _ready_sales_agent(db, second["organization"]["id"])
+    first_lead = _create_lead(client, first["access_token"], name="Acme lead").json()
+    second_lead = _create_lead(client, second["access_token"], name="Globex lead").json()
+    draft = _ready_sales_agent(
+        db, first["organization"]["id"], status=AgentStatus.DRAFT, name="Draft sales"
+    )
+    support = _create_agent(
+        db, first["organization"]["id"], status=AgentStatus.READY, name="Support bot"
+    )
+    support.agent_type = AgentType.SUPPORT
+    db.commit()
+    first_headers = _headers(first["access_token"])
+    second_headers = _headers(second["access_token"])
+    _override_provider(client, SalesPipelineProvider())
+
+    missing = client.post(
+        "/api/v1/leads/missing-lead/sales-runs",
+        json={"enquiry": ENQUIRY, "agent_id": first_agent.id},
+        headers=first_headers,
+    )
+    assert missing.status_code == 404
+    cross_lead = _start_from_lead(
+        client, second["access_token"], first_lead["id"], second_agent.id
+    )
+    assert cross_lead.status_code == 404
+    cross_agent = _start_from_lead(
+        client, first["access_token"], first_lead["id"], second_agent.id
+    )
+    assert cross_agent.status_code == 404
+    support_start = _start_from_lead(
+        client, first["access_token"], first_lead["id"], support.id
+    )
+    assert support_start.status_code == 422
+    draft_start = _start_from_lead(
+        client, first["access_token"], first_lead["id"], draft.id
+    )
+    assert draft_start.status_code == 400
+    assert "DRAFT" in draft_start.json()["detail"]
+    ok = _start_from_lead(client, first["access_token"], first_lead["id"], first_agent.id)
+    assert ok.status_code == 200
+    assert ok.json()["lead_id"] == first_lead["id"]
+    listed = client.get(
+        f"/api/v1/leads/{second_lead['id']}/sales-runs",
+        headers=second_headers,
+    )
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 0
+
+
+def test_member_can_start_sales_run_from_lead(client: TestClient, db: Session) -> None:
+    created = _auth(client)
+    member = _add_org_member(
+        db, created["organization"]["id"], email="member@example.com", role=MembershipRole.MEMBER
+    )
+    agent = _ready_sales_agent(db, created["organization"]["id"])
+    lead = _create_lead(client, created["access_token"], name="Member lead").json()
+    _override_provider(client, SalesPipelineProvider())
+    started = _start_from_lead(client, member, lead["id"], agent.id)
+    assert started.status_code == 200
+    assert started.json()["lead_id"] == lead["id"]
+    assert started.json()["status"] == SalesRunStatus.WAITING_APPROVAL

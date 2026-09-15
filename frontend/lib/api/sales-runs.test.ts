@@ -10,6 +10,7 @@ import {
   sendSalesRun,
   scheduleSalesRunFollowUp,
   startSalesRun,
+  startLeadSalesRun,
 } from "@/lib/api/sales-runs";
 
 const failedRun = {
@@ -140,6 +141,29 @@ describe("Sales run API client", () => {
     expect(urls).toContain(
       "http://localhost:8000/api/v1/sales-runs?status=WAITING_APPROVAL",
     );
+  });
+
+  it("starts a sales run from a lead path without lead_id in the body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(failedRun), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await startLeadSalesRun("lead/1", {
+      enquiry: "Need a demo",
+      agent_id: "agent/1",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/leads/lead%2F1/sales-runs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ enquiry: "Need a demo", agent_id: "agent/1" }),
+      }),
+    );
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(body).not.toContain("lead_id");
+    expect(body).not.toContain("organization_id");
   });
 
   it("recovers a failed sales run from a 502 body", async () => {

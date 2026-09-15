@@ -160,6 +160,24 @@ class SalesRunService:
         )
         return self._run_pipeline(row, enquiry=enquiry, initiated_by_user_id=initiated_by_user_id)
 
+    def start_for_lead(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        agent_id: str,
+        enquiry: str,
+        initiated_by_user_id: str | None,
+    ) -> SalesRunPublic:
+        self.leads.get_or_raise(organization_id, lead_id)
+        return self.start_sales_run(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            enquiry=enquiry,
+            lead_id=lead_id,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+
     def get_for_agent(
         self, organization_id: str, agent_id: str, sales_run_id: str
     ) -> SalesRunPublic:

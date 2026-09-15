@@ -244,6 +244,9 @@ describe("Leads page", () => {
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getAllByText("Ada Prospect").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", { name: "Ada Prospect" })[0],
+    ).toHaveAttribute("href", "/leads/lead-1");
     expect(screen.getAllByText("ada@example.com").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
     expect(screen.getAllByText("New").length).toBeGreaterThan(0);

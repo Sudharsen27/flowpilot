@@ -201,6 +201,7 @@ GET  /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}
 POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/cancel
 POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send
 GET  /api/v1/leads/{lead_id}/sales-runs
+POST /api/v1/leads/{lead_id}/sales-runs
 GET  /api/v1/sales-runs
 ```
 
@@ -234,6 +235,7 @@ POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/cancel
 POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send
 POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/schedule-follow-up
 GET  /api/v1/leads/{lead_id}/sales-runs
+POST /api/v1/leads/{lead_id}/sales-runs
 GET  /api/v1/sales-runs
 ```
 
@@ -260,6 +262,14 @@ Three stacked queues, each from existing list APIs (default 20, max 50):
 Queue rows omit enquiry, draft body, follow-up body, and provider payloads. Review, send, cancel, and follow-up manage reuse the existing draft dialog, send/cancel confirmations, and follow-up dialog. Mutations are not optimistic; lists refetch after the server response. Organization comes from the JWT. Cross-tenant ids remain 404. There is no new AI call, no Activity table, and no database migration.
 
 Recent activity on Command Center stays unavailable. Inbox, Approvals, Analytics, and conversation history are unchanged placeholders.
+
+## Lead workspace (Phase 5G)
+
+Operators start Sales Agent work from the lead, not by pasting a lead UUID on the agent page.
+
+`POST /api/v1/leads/{lead_id}/sales-runs` body `{ enquiry, agent_id }` (`extra=forbid`). `lead_id` is the path only. Organization comes from the JWT. The route loads the lead in that org (404 if missing), then reuses `SalesRunService.start_sales_run` with that `lead_id`. It does not create a second lead and does not match by email. Open-run protection, SALES + READY/ACTIVE checks, qualification, drafting, and MEMBER start permission are unchanged. Non-SALES agents remain 422; ineligible status remains 400. Agent-nested start remains for creating a lead from an enquiry.
+
+The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. Inbound capture, Inbox, Activity, and automatic CRM status changes are out of this slice.
 
 ## Lead domain (Phase 4A)
 

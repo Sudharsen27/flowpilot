@@ -51,6 +51,29 @@ class SalesRunStartRequest(BaseModel):
         return value
 
 
+class LeadSalesRunStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enquiry: str = Field(min_length=1, max_length=8000)
+    agent_id: str = Field(min_length=1, max_length=36)
+
+    @field_validator("enquiry")
+    @classmethod
+    def strip_enquiry(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Enquiry is required")
+        return stripped
+
+    @field_validator("agent_id")
+    @classmethod
+    def strip_agent_id(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Agent is required")
+        return stripped
+
+
 class SalesRunCancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

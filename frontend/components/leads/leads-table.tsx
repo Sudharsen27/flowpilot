@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   DataTable,
   type DataTableColumn,
@@ -40,7 +42,14 @@ const leadColumns: DataTableColumn<Lead>[] = [
     header: "Lead",
     cell: (lead) => (
       <div>
-        <p className="font-medium">{lead.name}</p>
+        <p className="font-medium">
+          <Link
+            href={`/leads/${lead.id}`}
+            className="hover:text-foreground rounded-sm underline-offset-4 hover:underline"
+          >
+            {lead.name}
+          </Link>
+        </p>
         {lead.email ? (
           <p className="text-muted-foreground mt-0.5 text-xs">{lead.email}</p>
         ) : null}

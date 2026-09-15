@@ -641,6 +641,11 @@ export type SalesRunStartRequest = {
   email?: string | null;
 };
 
+export type LeadSalesRunStartRequest = {
+  enquiry: string;
+  agent_id: string;
+};
+
 export type SalesRunCancelRequest = {
   expected_revision: number;
 };
