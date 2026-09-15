@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 class SalesRunStatus(StrEnum):
     RUNNING = "RUNNING"
     WAITING_APPROVAL = "WAITING_APPROVAL"
+    COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
@@ -36,6 +37,8 @@ class SalesRunStage(StrEnum):
     QUALIFY = "QUALIFY"
     DRAFT = "DRAFT"
     AWAIT_APPROVAL = "AWAIT_APPROVAL"
+    SEND = "SEND"
+    DONE = "DONE"
 
 
 OPEN_SALES_RUN_STATUSES = frozenset(
@@ -74,12 +77,18 @@ class SalesRun(Base):
             name="fk_sales_runs_draft_organization",
             ondelete="SET NULL",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "email_send_id"],
+            ["lead_email_sends.organization_id", "lead_email_sends.id"],
+            name="fk_sales_runs_email_send_organization",
+            ondelete="SET NULL",
+        ),
         CheckConstraint(
-            "status IN ('RUNNING', 'WAITING_APPROVAL', 'FAILED', 'CANCELLED')",
+            "status IN ('RUNNING', 'WAITING_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED')",
             name="ck_sales_runs_status",
         ),
         CheckConstraint(
-            "stage IN ('MATCH_LEAD', 'QUALIFY', 'DRAFT', 'AWAIT_APPROVAL')",
+            "stage IN ('MATCH_LEAD', 'QUALIFY', 'DRAFT', 'AWAIT_APPROVAL', 'SEND', 'DONE')",
             name="ck_sales_runs_stage",
         ),
         CheckConstraint("revision >= 1", name="ck_sales_runs_revision"),
@@ -127,6 +136,7 @@ class SalesRun(Base):
     stage: Mapped[str] = mapped_column(String(32), nullable=False)
     qualification_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     response_draft_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    email_send_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     initiated_by_user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="SET NULL"),

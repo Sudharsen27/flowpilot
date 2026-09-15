@@ -5,13 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SalesRunsPanel } from "@/components/agents/sales-runs-panel";
 import { ApiError } from "@/lib/api/client";
 import { getLead, getLeadResponseDraft } from "@/lib/api/leads";
-import { cancelSalesRun, listSalesRuns, startSalesRun } from "@/lib/api/sales-runs";
+import { cancelSalesRun, listSalesRuns, sendSalesRun, startSalesRun } from "@/lib/api/sales-runs";
 import type { Lead, SalesRun } from "@/types/api";
 
 vi.mock("@/lib/api/sales-runs", () => ({
   listSalesRuns: vi.fn(),
   startSalesRun: vi.fn(),
   cancelSalesRun: vi.fn(),
+  sendSalesRun: vi.fn(),
   getSalesRun: vi.fn(),
 }));
 
@@ -28,6 +29,7 @@ vi.mock("@/lib/api/leads", () => ({
 const listSalesRunsMock = vi.mocked(listSalesRuns);
 const startSalesRunMock = vi.mocked(startSalesRun);
 const cancelSalesRunMock = vi.mocked(cancelSalesRun);
+const sendSalesRunMock = vi.mocked(sendSalesRun);
 const getLeadMock = vi.mocked(getLead);
 const getLeadResponseDraftMock = vi.mocked(getLeadResponseDraft);
 
@@ -53,6 +55,7 @@ function run(overrides: Partial<SalesRun> = {}): SalesRun {
     stage: "AWAIT_APPROVAL",
     qualification_id: "q-1",
     response_draft_id: "draft-1",
+    email_send_id: null,
     failure_category: null,
     error: null,
     initiated_by_user_id: "user-1",
@@ -80,6 +83,7 @@ describe("SalesRunsPanel", () => {
     listSalesRunsMock.mockReset();
     startSalesRunMock.mockReset();
     cancelSalesRunMock.mockReset();
+    sendSalesRunMock.mockReset();
     getLeadMock.mockReset();
     getLeadResponseDraftMock.mockReset();
     getLeadResponseDraftMock.mockResolvedValue({
@@ -250,5 +254,126 @@ describe("SalesRunsPanel", () => {
       }),
     );
     expect(await screen.findAllByText("Cancelled")).not.toHaveLength(0);
+  });
+
+  it("hides Send until the nested draft is APPROVED", async () => {
+    listSalesRunsMock.mockResolvedValue(
+      page([
+        run({
+          response_draft: { id: "draft-1", status: "COMPLETED", review_status: "GENERATED" },
+        }),
+      ]),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    expect((await screen.findAllByRole("button", { name: "Review draft" })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Send approved response" })).not.toBeInTheDocument();
+  });
+
+  it("sends only after confirmation and does not mark completed until refresh", async () => {
+    const user = userEvent.setup();
+    const approved = run({
+      response_draft: { id: "draft-1", status: "COMPLETED", review_status: "APPROVED" },
+    });
+    listSalesRunsMock
+      .mockResolvedValueOnce(page([approved]))
+      .mockResolvedValueOnce(
+        page([
+          run({
+            status: "COMPLETED",
+            stage: "DONE",
+            email_send_id: "send-1",
+            completed_at: "2026-09-15T10:00:00Z",
+            email_send: {
+              id: "send-1",
+              status: "SENT",
+              recipient_email: "ada@example.com",
+              provider: "fake-email",
+              provider_message_id: "msg_1",
+              draft_revision: 2,
+              failure_category: null,
+              error: null,
+              started_at: "2026-09-15T10:00:00Z",
+              completed_at: "2026-09-15T10:00:01Z",
+              created_at: "2026-09-15T10:00:00Z",
+            },
+          }),
+        ]),
+      );
+    let resolveSend: (value: SalesRun) => void = () => undefined;
+    sendSalesRunMock.mockImplementation(
+      () =>
+        new Promise<SalesRun>((next) => {
+          resolveSend = next;
+        }),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    await user.click((await screen.findAllByRole("button", { name: "Send approved response" }))[0]!);
+    expect(sendSalesRunMock).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "Send approved response?" })).toBeVisible();
+    expect(screen.getAllByText(/Approval does not send the email/).length).toBeGreaterThan(0);
+    expect(screen.getByText("ada@example.com")).toBeVisible();
+    expect(screen.getByText("Re: Your enquiry")).toBeVisible();
+    expect(screen.getByText("Thanks")).toBeVisible();
+    const dialog = screen.getByRole("heading", { name: "Send approved response?" }).closest(
+      "[data-slot=dialog-content]",
+    ) as HTMLElement;
+    await user.click(within(dialog).getByRole("button", { name: "Send approved response" }));
+    expect(await screen.findByRole("button", { name: "Sending…" })).toBeDisabled();
+    expect(screen.queryAllByText("Completed")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Sending…" }));
+    expect(sendSalesRunMock).toHaveBeenCalledTimes(1);
+    expect(sendSalesRunMock).toHaveBeenCalledWith("agent-1", "run-1", {
+      expected_revision: 2,
+    });
+    resolveSend(
+      run({
+        status: "COMPLETED",
+        stage: "DONE",
+        email_send_id: "send-1",
+      }),
+    );
+    expect((await screen.findAllByText("Completed")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Email sent/).length).toBeGreaterThan(0);
+  });
+
+  it("shows send failures and retry for a failed send run", async () => {
+    const user = userEvent.setup();
+    const failedSend = run({
+      status: "FAILED",
+      stage: "SEND",
+      error: "Email provider request failed",
+      response_draft: { id: "draft-1", status: "COMPLETED", review_status: "APPROVED" },
+    });
+    listSalesRunsMock
+      .mockResolvedValueOnce(page([failedSend]))
+      .mockResolvedValueOnce(page([failedSend]));
+    sendSalesRunMock.mockRejectedValue(
+      new ApiError("conflict", 409, { detail: "This draft is not approved for sending." }),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    expect((await screen.findAllByText("Failed")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Email provider request failed").length).toBeGreaterThan(0);
+    await user.click(screen.getAllByRole("button", { name: "Send approved response" })[0]!);
+    const dialog = (await screen.findByRole("heading", { name: "Send approved response?" })).closest(
+      "[data-slot=dialog-content]",
+    ) as HTMLElement;
+    await user.click(within(dialog).getByRole("button", { name: "Send approved response" }));
+    expect(
+      await screen.findByText("This draft is not approved for sending."),
+    ).toBeVisible();
+    expect(screen.queryAllByText("Completed")).toHaveLength(0);
+  });
+
+  it("hides Send after an approved draft is edited", async () => {
+    listSalesRunsMock.mockResolvedValue(
+      page([
+        run({
+          response_draft: { id: "draft-1", status: "COMPLETED", review_status: "EDITED" },
+        }),
+      ]),
+    );
+    render(<SalesRunsPanel agentId="agent-1" canStart />);
+    expect((await screen.findAllByRole("button", { name: "Review draft" })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Send approved response" })).not.toBeInTheDocument();
   });
 });

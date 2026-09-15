@@ -2,7 +2,7 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository has completed **Phase 5B**: a Sales Agent can start a Sales Run that matches or creates a lead, runs existing AI qualification and response drafting, and stops at human approval. Email sending and follow-up automation are not started from a Sales Run.
+This repository has completed **Phase 5C**: after a Sales Run waits for approval, an operator can send the approved response through the existing email send path. Approval still does not send email. Follow-up automation is not started from a Sales Run.
 
 ## Requirements
 
@@ -40,6 +40,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Current user: `GET /api/v1/users/me`
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
 - Start sales run (authenticated, SALES agents): `POST /api/v1/agents/{agent_id}/sales-runs`
+- Send approved sales run (authenticated): `POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send`
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:
 
@@ -57,7 +58,7 @@ npm install
 npm run dev
 ```
 
-App: [http://localhost:3000](http://localhost:3000)
+App: [http://localhost:3000](http://localhost:3000) (or the port Next.js prints if 3000 is already in use)
 
 Sign in: [http://localhost:3000/login](http://localhost:3000/login)
 

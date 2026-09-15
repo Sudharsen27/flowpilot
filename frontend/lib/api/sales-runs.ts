@@ -4,6 +4,7 @@ import type {
   SalesRunCancelRequest,
   SalesRunListParams,
   SalesRunListResponse,
+  SalesRunSendRequest,
   SalesRunStartRequest,
 } from "@/types/api";
 
@@ -75,6 +76,23 @@ export function cancelSalesRun(
     `/api/v1/agents/${encodeURIComponent(agentId)}/sales-runs/${encodeURIComponent(salesRunId)}/cancel`,
     input,
   );
+}
+
+export async function sendSalesRun(
+  agentId: string,
+  salesRunId: string,
+  input: SalesRunSendRequest,
+) {
+  try {
+    return await apiPost<SalesRun>(
+      `/api/v1/agents/${encodeURIComponent(agentId)}/sales-runs/${encodeURIComponent(salesRunId)}/send`,
+      input,
+    );
+  } catch (cause) {
+    const recovered = recoverFailedSalesRun(cause);
+    if (recovered) return recovered;
+    throw cause;
+  }
 }
 
 export function listLeadSalesRuns(

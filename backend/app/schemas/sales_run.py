@@ -53,6 +53,12 @@ class SalesRunCancelRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class SalesRunSendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
+
+
 class SalesRunLeadSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -77,6 +83,22 @@ class SalesRunDraftSummary(BaseModel):
     review_status: LeadResponseReviewStatus | None = None
 
 
+class SalesRunEmailSendSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    status: str
+    recipient_email: str
+    provider: str | None = None
+    provider_message_id: str | None = None
+    draft_revision: int
+    failure_category: ExecutionFailureCategory | None = None
+    error: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+    created_at: datetime
+
+
 class SalesRunPublic(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -87,6 +109,7 @@ class SalesRunPublic(BaseModel):
     stage: SalesRunStage
     qualification_id: str | None = None
     response_draft_id: str | None = None
+    email_send_id: str | None = None
     failure_category: ExecutionFailureCategory | None = None
     error: str | None = None
     initiated_by_user_id: str | None = None
@@ -99,6 +122,7 @@ class SalesRunPublic(BaseModel):
     lead: SalesRunLeadSummary | None = None
     qualification: SalesRunQualificationSummary | None = None
     response_draft: SalesRunDraftSummary | None = None
+    email_send: SalesRunEmailSendSummary | None = None
 
 
 class SalesRunListResponse(BaseModel):

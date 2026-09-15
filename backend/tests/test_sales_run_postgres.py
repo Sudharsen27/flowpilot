@@ -218,3 +218,32 @@ def test_open_runs_for_different_tenants_are_allowed(
         session.commit()
     finally:
         session.close()
+
+
+def test_completed_does_not_block_a_new_open_run(
+    pg_sessions: sessionmaker[Session],
+) -> None:
+    organization_id, agent_id, lead_id = _seed_agent_and_lead(pg_sessions)
+    session = pg_sessions()
+    try:
+        completed = _open_run(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            lead_id=lead_id,
+            status=SalesRunStatus.COMPLETED,
+        )
+        completed.stage = SalesRunStage.DONE
+        completed.completed_at = datetime.now(UTC)
+        session.add(completed)
+        session.commit()
+        session.add(
+            _open_run(
+                organization_id=organization_id,
+                agent_id=agent_id,
+                lead_id=lead_id,
+                status=SalesRunStatus.RUNNING,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()

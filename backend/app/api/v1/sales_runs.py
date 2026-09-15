@@ -2,8 +2,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.ai.provider import AIProvider
-from app.api.deps import get_ai_provider, get_current_membership, get_current_organization
+from app.api.deps import (
+    get_ai_provider,
+    get_current_membership,
+    get_current_organization,
+    get_email_provider,
+)
 from app.db.session import get_db
+from app.email.provider import EmailProvider
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.models.sales_run import SalesRunStatus
@@ -15,6 +21,7 @@ from app.schemas.sales_run import (
     SalesRunCancelRequest,
     SalesRunListResponse,
     SalesRunPublic,
+    SalesRunSendRequest,
     SalesRunStartRequest,
 )
 from app.services.sales_run_service import SalesRunService
@@ -93,6 +100,25 @@ def cancel_agent_sales_run(
         agent_id=agent_id,
         sales_run_id=sales_run_id,
         expected_revision=payload.expected_revision,
+    )
+
+
+@agent_router.post("/{sales_run_id}/send", response_model=SalesRunPublic)
+def send_agent_sales_run(
+    agent_id: str,
+    sales_run_id: str,
+    payload: SalesRunSendRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    email_provider: EmailProvider = Depends(get_email_provider),
+) -> SalesRunPublic:
+    return SalesRunService(db, email_provider=email_provider).send_approved_response(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        sales_run_id=sales_run_id,
+        expected_revision=payload.expected_revision,
+        initiated_by_user_id=membership.user_id,
     )
 
 

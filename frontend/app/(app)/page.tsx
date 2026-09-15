@@ -20,6 +20,8 @@ type DashboardData = {
   newLeads: number;
   overdueFollowUps: number;
   waitingApproval: number;
+  completedSalesRuns: number;
+  failedSalesRuns: number;
 };
 
 export default function CommandCenterPage() {
@@ -33,7 +35,7 @@ export default function CommandCenterPage() {
       getAgents(),
       getLeads({ limit: 1 }),
       getFollowUpOperations({ limit: 1 }),
-      listOrganizationSalesRuns({ status: "WAITING_APPROVAL", limit: 1 }),
+      listOrganizationSalesRuns({ limit: 1 }),
     ])
       .then(([agents, leads, followUps, salesRuns]) => {
         if (cancelled) return;
@@ -42,7 +44,9 @@ export default function CommandCenterPage() {
           leadTotal: leads.total,
           newLeads: leads.status_counts.NEW,
           overdueFollowUps: followUps.summary.overdue,
-          waitingApproval: salesRuns.total,
+          waitingApproval: salesRuns.status_counts?.WAITING_APPROVAL ?? 0,
+          completedSalesRuns: salesRuns.status_counts?.COMPLETED ?? 0,
+          failedSalesRuns: salesRuns.status_counts?.FAILED ?? 0,
         });
         setError(null);
       })
@@ -59,6 +63,8 @@ export default function CommandCenterPage() {
 
   const waiting = data?.waitingApproval ?? 0;
   const overdue = data?.overdueFollowUps ?? 0;
+  const completed = data?.completedSalesRuns ?? 0;
+  const failed = data?.failedSalesRuns ?? 0;
 
   return (
     <div className="gap-section flex flex-col">
@@ -70,13 +76,15 @@ export default function CommandCenterPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Business overview"
-          description="Lead counts are CRM records. Waiting for approval counts Sales runs that have a draft ready for human review."
+          description="Lead counts are CRM records. Waiting for approval counts Sales runs with a draft ready for human review. Completed counts Sales runs whose approved response was sent."
         />
         <BusinessOverview
           loading={loading}
           leadTotal={data ? data.leadTotal : loading ? undefined : 0}
           newLeads={data?.newLeads ?? null}
           waitingApproval={data ? data.waitingApproval : loading ? undefined : 0}
+          completedSalesRuns={data ? data.completedSalesRuns : loading ? undefined : 0}
+          failedSalesRuns={data ? data.failedSalesRuns : loading ? undefined : 0}
           overdueFollowUps={data?.overdueFollowUps ?? null}
         />
         {error ? (
@@ -94,8 +102,8 @@ export default function CommandCenterPage() {
           icon={<CircleCheckBig />}
           title="Needs attention"
           description={
-            waiting || overdue
-              ? `${waiting} sales run${waiting === 1 ? "" : "s"} waiting for approval. ${overdue} overdue follow-up${overdue === 1 ? "" : "s"}.`
+            waiting || overdue || failed || completed
+              ? `${waiting} sales run${waiting === 1 ? "" : "s"} waiting for approval. ${completed} completed (email sent). ${failed} failed (AI or send). ${overdue} overdue follow-up${overdue === 1 ? "" : "s"}.`
               : "No sales runs are waiting for approval, and there are no overdue follow-ups."
           }
         />

@@ -5,6 +5,7 @@ import type { SalesRunStatus } from "@/types/api";
 const labels: Record<SalesRunStatus, string> = {
   RUNNING: "Processing",
   WAITING_APPROVAL: "Waiting for approval",
+  COMPLETED: "Completed",
   FAILED: "Failed",
   CANCELLED: "Cancelled",
 };

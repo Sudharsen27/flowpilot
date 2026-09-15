@@ -17,11 +17,17 @@ from app.core.exceptions import (
     UnprocessableError,
     ValidationError,
 )
+from app.email.provider import EmailProvider
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, Agent, AgentStatus, AgentType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead_email_send import LeadEmailSend, LeadEmailSendStatus
 from app.models.lead_qualification import LeadQualification
-from app.models.lead_response_draft import LeadResponseDraft, LeadResponseReviewStatus
+from app.models.lead_response_draft import (
+    LeadResponseDraft,
+    LeadResponseDraftStatus,
+    LeadResponseReviewStatus,
+)
 from app.models.sales_run import (
     CANCELLABLE_SALES_RUN_STATUSES,
     SalesRun,
@@ -29,6 +35,7 @@ from app.models.sales_run import (
     SalesRunStatus,
 )
 from app.repositories.lead_repository import LeadRepository
+from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.repositories.sales_run_repository import (
     SALES_RUN_LIST_DEFAULT_LIMIT,
     SALES_RUN_LIST_MAX_LIMIT,
@@ -36,12 +43,14 @@ from app.repositories.sales_run_repository import (
 )
 from app.schemas.sales_run import (
     SalesRunDraftSummary,
+    SalesRunEmailSendSummary,
     SalesRunLeadSummary,
     SalesRunListResponse,
     SalesRunPublic,
     SalesRunQualificationSummary,
 )
 from app.services.agent_service import AgentService
+from app.services.lead_email_send_service import LeadEmailSendService
 from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_response_draft_service import LeadResponseDraftService
 from app.services.lead_service import LeadService
@@ -60,15 +69,18 @@ class SalesRunService:
         self,
         session: Session,
         provider: AIProvider | None = None,
+        email_provider: EmailProvider | None = None,
         *,
         stale_timeout_seconds: float | None = None,
     ) -> None:
         self.session = session
         self.provider = provider
+        self.email_provider = email_provider
         self._stale_timeout_seconds = stale_timeout_seconds
         self.agents = AgentService(session)
         self.leads = LeadService(session)
         self.lead_rows = LeadRepository(session)
+        self.drafts = LeadResponseDraftRepository(session)
         self.sales_runs = SalesRunRepository(session)
 
     def start_sales_run(
@@ -278,6 +290,85 @@ class SalesRunService:
         )
         return self._to_public(cancelled, include_enquiry=True)
 
+    def send_approved_response(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        sales_run_id: str,
+        expected_revision: int,
+        initiated_by_user_id: str | None,
+    ) -> SalesRunPublic:
+        self._require_sales_agent(organization_id, agent_id)
+        row = self.sales_runs.get_for_agent(organization_id, agent_id, sales_run_id)
+        if row is None:
+            raise NotFoundError("Sales run not found")
+        if row.revision != expected_revision:
+            raise ConflictError("This sales run changed. Refresh and review the latest status.")
+        if not _can_send(row):
+            raise ConflictError("This sales run cannot send in its current status")
+        if not row.response_draft_id:
+            raise ConflictError("This sales run has no response draft to send.")
+
+        draft = self.drafts.get_by_id(organization_id, row.lead_id, row.response_draft_id)
+        if draft is None:
+            raise ConflictError("This sales run has no response draft to send.")
+        if (
+            draft.status != LeadResponseDraftStatus.COMPLETED
+            or draft.review_status != LeadResponseReviewStatus.APPROVED
+            or not (draft.current_response or "").strip()
+        ):
+            raise ConflictError("This draft is not approved for sending.")
+
+        lead = self.leads.get_or_raise(organization_id, row.lead_id)
+        if not lead.email:
+            raise UnprocessableError("This lead has no email address.")
+
+        now = datetime.now(UTC)
+        claimed = self.sales_runs.update_if_status(
+            organization_id,
+            sales_run_id,
+            from_statuses=_sendable_statuses(row),
+            expected_revision=expected_revision,
+            increment_revision=False,
+            values={"stage": SalesRunStage.SEND, "updated_at": now},
+        )
+        if claimed == 0:
+            raise ConflictError("This sales run changed. Refresh and review the latest status.")
+
+        try:
+            send_row = LeadEmailSendService(self.session, self.email_provider).send(
+                organization_id=organization_id,
+                lead_id=row.lead_id,
+                draft_id=row.response_draft_id,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        except ConflictError as exc:
+            if _conflict_is_already_sent(exc):
+                send_id = _id_from_content(exc.content, "id")
+                if send_id is None:
+                    raise
+                return self._complete_after_sent(
+                    row,
+                    email_send_id=send_id,
+                    expected_revision=expected_revision,
+                )
+            raise
+        except UnprocessableError:
+            raise
+        except (ProviderError, ProviderNotConfiguredError) as exc:
+            return self._fail_send(
+                row,
+                exc,
+                expected_revision=expected_revision,
+            )
+
+        return self._complete_after_sent(
+            row,
+            email_send_id=send_row.id,
+            expected_revision=expected_revision,
+        )
+
     def recover_stale_running(
         self,
         *,
@@ -308,6 +399,85 @@ class SalesRunService:
                 agent_id,
             )
         return recovered
+
+    def _complete_after_sent(
+        self,
+        row: SalesRun,
+        *,
+        email_send_id: str,
+        expected_revision: int,
+    ) -> SalesRunPublic:
+        now = datetime.now(UTC)
+        updated = self.sales_runs.update_if_status(
+            row.organization_id,
+            row.id,
+            from_statuses=(SalesRunStatus.WAITING_APPROVAL, SalesRunStatus.FAILED),
+            expected_revision=expected_revision,
+            increment_revision=True,
+            values={
+                "status": SalesRunStatus.COMPLETED,
+                "stage": SalesRunStage.DONE,
+                "email_send_id": email_send_id,
+                "completed_at": now,
+                "updated_at": now,
+                "error": None,
+                "failure_category": None,
+            },
+        )
+        current = self._reload(row)
+        if updated == 0:
+            if current.status == SalesRunStatus.COMPLETED:
+                return self._to_public(current, include_enquiry=True)
+            raise ConflictError("This sales run changed. Refresh and review the latest status.")
+        logger.info(
+            "sales_run_completed sales_run_id=%s agent_id=%s lead_id=%s email_send_id=%s",
+            current.id,
+            current.agent_id,
+            current.lead_id,
+            current.email_send_id,
+        )
+        return self._to_public(current, include_enquiry=True)
+
+    def _fail_send(
+        self,
+        row: SalesRun,
+        exc: ProviderError | ProviderNotConfiguredError,
+        *,
+        expected_revision: int,
+    ) -> SalesRunPublic:
+        now = datetime.now(UTC)
+        email_send_id = _id_from_content(exc.content, "id")
+        error = sanitize_provider_error(exc.detail)
+        category = _failure_category(exc.content)
+        values: dict[str, Any] = {
+            "status": SalesRunStatus.FAILED,
+            "stage": SalesRunStage.SEND,
+            "error": error,
+            "failure_category": category,
+            "completed_at": now,
+            "updated_at": now,
+        }
+        if email_send_id:
+            values["email_send_id"] = email_send_id
+        self.sales_runs.update_if_status(
+            row.organization_id,
+            row.id,
+            from_statuses=(SalesRunStatus.WAITING_APPROVAL, SalesRunStatus.FAILED),
+            expected_revision=expected_revision,
+            increment_revision=True,
+            values=values,
+        )
+        failed = self._reload(row)
+        logger.info(
+            "sales_run_send_failed sales_run_id=%s agent_id=%s lead_id=%s category=%s",
+            failed.id,
+            failed.agent_id,
+            failed.lead_id,
+            failed.failure_category,
+        )
+        payload = self._to_public(failed, include_enquiry=True).model_dump(mode="json")
+        payload["detail"] = error
+        raise type(exc)(error, content=payload)
 
     def _run_pipeline(
         self,
@@ -542,6 +712,7 @@ class SalesRunService:
         }
         qualification_ids = [row.qualification_id for row in rows if row.qualification_id]
         draft_ids = [row.response_draft_id for row in rows if row.response_draft_id]
+        send_ids = [row.email_send_id for row in rows if row.email_send_id]
         qualifications: dict[str, LeadQualification] = {}
         if qualification_ids:
             for qualification_row in self.session.scalars(
@@ -560,6 +731,15 @@ class SalesRunService:
                 )
             ):
                 drafts[draft_row.id] = draft_row
+        sends: dict[str, LeadEmailSend] = {}
+        if send_ids:
+            for send_row in self.session.scalars(
+                select(LeadEmailSend).where(
+                    LeadEmailSend.organization_id == organization_id,
+                    LeadEmailSend.id.in_(send_ids),
+                )
+            ):
+                sends[send_row.id] = send_row
         return [
             _public_from_row(
                 row,
@@ -568,6 +748,7 @@ class SalesRunService:
                     qualifications.get(row.qualification_id) if row.qualification_id else None
                 ),
                 draft=drafts.get(row.response_draft_id) if row.response_draft_id else None,
+                email_send=sends.get(row.email_send_id) if row.email_send_id else None,
                 include_enquiry=include_enquiry,
             )
             for row in rows
@@ -580,6 +761,7 @@ def _public_from_row(
     lead: Lead | None,
     qualification: LeadQualification | None,
     draft: LeadResponseDraft | None,
+    email_send: LeadEmailSend | None,
     include_enquiry: bool,
 ) -> SalesRunPublic:
     category = None
@@ -593,6 +775,7 @@ def _public_from_row(
         stage=SalesRunStage(row.stage),
         qualification_id=row.qualification_id,
         response_draft_id=row.response_draft_id,
+        email_send_id=row.email_send_id,
         failure_category=category,
         error=row.error,
         initiated_by_user_id=row.initiated_by_user_id,
@@ -628,7 +811,56 @@ def _public_from_row(
             if draft is not None
             else None
         ),
+        email_send=_email_send_summary(email_send),
     )
+
+
+def _email_send_summary(row: LeadEmailSend | None) -> SalesRunEmailSendSummary | None:
+    if row is None:
+        return None
+    category = None
+    if row.failure_category:
+        category = ExecutionFailureCategory(row.failure_category)
+    return SalesRunEmailSendSummary(
+        id=row.id,
+        status=row.status,
+        recipient_email=row.recipient_email,
+        provider=row.provider,
+        provider_message_id=row.provider_message_id,
+        draft_revision=row.draft_revision,
+        failure_category=category,
+        error=row.error,
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        created_at=row.created_at,
+    )
+
+
+def _can_send(row: SalesRun) -> bool:
+    if row.status == SalesRunStatus.WAITING_APPROVAL:
+        return True
+    return _is_retryable_send_failure(row)
+
+
+def _sendable_statuses(row: SalesRun) -> tuple[SalesRunStatus, ...]:
+    if _is_retryable_send_failure(row):
+        return (SalesRunStatus.WAITING_APPROVAL, SalesRunStatus.FAILED)
+    return (SalesRunStatus.WAITING_APPROVAL,)
+
+
+def _is_retryable_send_failure(row: SalesRun) -> bool:
+    return (
+        row.status == SalesRunStatus.FAILED
+        and row.stage == SalesRunStage.SEND
+        and bool(row.response_draft_id)
+    )
+
+
+def _conflict_is_already_sent(exc: ConflictError) -> bool:
+    status = exc.content.get("status") if exc.content else None
+    if status == LeadEmailSendStatus.SENT:
+        return True
+    return "already sent" in exc.detail.lower()
 
 
 def _id_from_content(content: dict[str, Any] | None, key: str) -> str | None:

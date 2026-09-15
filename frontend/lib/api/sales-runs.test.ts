@@ -7,6 +7,7 @@ import {
   listLeadSalesRuns,
   listOrganizationSalesRuns,
   listSalesRuns,
+  sendSalesRun,
   startSalesRun,
 } from "@/lib/api/sales-runs";
 
@@ -18,6 +19,7 @@ const failedRun = {
   stage: "QUALIFY",
   qualification_id: "q-1",
   response_draft_id: null,
+  email_send_id: null,
   failure_category: "PROVIDER_ERROR",
   error: "AI provider request failed",
   initiated_by_user_id: "user-1",
@@ -93,6 +95,7 @@ describe("Sales run API client", () => {
     );
     await getSalesRun("agent/1", "run/1");
     await cancelSalesRun("agent/1", "run/1", { expected_revision: 1 });
+    await sendSalesRun("agent/1", "run/1", { expected_revision: 2 });
     await listLeadSalesRuns("lead/1");
     await listOrganizationSalesRuns({ status: "WAITING_APPROVAL" });
     const urls = fetchMock.mock.calls.map((call) => call[0]);
@@ -101,6 +104,9 @@ describe("Sales run API client", () => {
     );
     expect(urls).toContain(
       "http://localhost:8000/api/v1/agents/agent%2F1/sales-runs/run%2F1/cancel",
+    );
+    expect(urls).toContain(
+      "http://localhost:8000/api/v1/agents/agent%2F1/sales-runs/run%2F1/send",
     );
     expect(urls).toContain(
       "http://localhost:8000/api/v1/leads/lead%2F1/sales-runs",
@@ -120,6 +126,25 @@ describe("Sales run API client", () => {
     const result = await startSalesRun("agent-1", { enquiry: "Need a demo", name: "Ada" });
     expect(result.status).toBe("FAILED");
     expect(result.id).toBe("run-fail-1");
+  });
+
+  it("recovers a failed sales run from a 502 send body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ...failedRun,
+          status: "FAILED",
+          stage: "SEND",
+          detail: "Email provider request failed",
+        }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    const result = await sendSalesRun("agent-1", "run-fail-1", {
+      expected_revision: 2,
+    });
+    expect(result.status).toBe("FAILED");
+    expect(result.stage).toBe("SEND");
   });
 
   it("throws when a 502 body is not a failed sales run", async () => {

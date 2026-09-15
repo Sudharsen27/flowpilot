@@ -82,6 +82,13 @@ describe("Command Center", () => {
       limit: 1,
       offset: 0,
       total: 0,
+      status_counts: {
+        RUNNING: 0,
+        WAITING_APPROVAL: 0,
+        COMPLETED: 0,
+        FAILED: 0,
+        CANCELLED: 0,
+      },
     });
   });
 
@@ -131,7 +138,14 @@ describe("Command Center", () => {
       items: [],
       limit: 1,
       offset: 0,
-      total: 5,
+      total: 8,
+      status_counts: {
+        RUNNING: 0,
+        WAITING_APPROVAL: 5,
+        COMPLETED: 2,
+        FAILED: 1,
+        CANCELLED: 0,
+      },
     });
     render(<CommandCenterPage />);
     expect(await screen.findByText("1 agent")).toBeVisible();
@@ -141,7 +155,9 @@ describe("Command Center", () => {
       screen.queryByText(/No live agent runtime is connected yet/),
     ).not.toBeInTheDocument();
     expect(screen.getByText("5")).toBeVisible();
-    expect(screen.getByText("3 follow-ups overdue.")).toBeVisible();
+    expect(screen.getAllByText(/2 completed \(email sent\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1 failed \(AI or send\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/3 follow-ups overdue/).length).toBeGreaterThan(0);
     expect(screen.getByText(/5 sales runs waiting for approval/)).toBeVisible();
   });
 

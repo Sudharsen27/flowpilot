@@ -158,19 +158,39 @@ Start Sales Run
   → WAITING_APPROVAL
 ```
 
-Human review stays on the existing draft review/edit/approve/reject APIs. Approving a draft does **not** advance the Sales Run. Phase 5B does not send email, schedule follow-ups, or add a second Approval model.
+Human review stays on the existing draft review/edit/approve/reject APIs. Approving a draft does **not** send email and does **not** complete the Sales Run.
 
-Statuses: `RUNNING`, `WAITING_APPROVAL`, `FAILED`, `CANCELLED`. There is no `COMPLETED` yet: a draft waiting for a human is not a finished sales outcome.
+Statuses: `RUNNING`, `WAITING_APPROVAL`, `COMPLETED`, `FAILED`, `CANCELLED`. `COMPLETED` means the approved response was accepted by the email provider and `LeadEmailSend` is `SENT`. It does not mean the draft was only generated or approved.
 
-Stages (`MATCH_LEAD`, `QUALIFY`, `DRAFT`, `AWAIT_APPROVAL`) are orchestration progress. Status is the operator-facing lifecycle.
+Stages (`MATCH_LEAD`, `QUALIFY`, `DRAFT`, `AWAIT_APPROVAL`, `SEND`, `DONE`) are orchestration progress. Status is the operator-facing lifecycle. Email send does **not** set SalesRun to `RUNNING`; stale recovery still applies only to AI `RUNNING` work.
 
-Tenant isolation matches the rest of FlowPilot: every lookup is scoped by `organization_id` from the membership JWT. Composite FKs bind the run to the same-org agent and lead. A PostgreSQL partial unique index allows at most one open run (`RUNNING` or `WAITING_APPROVAL`) per lead. `FAILED` and `CANCELLED` do not block a later run. SQLite tests do not prove that index; PostgreSQL tests do.
+Tenant isolation matches the rest of FlowPilot: every lookup is scoped by `organization_id` from the membership JWT. Composite FKs bind the run to the same-org agent and lead. A PostgreSQL partial unique index allows at most one open run (`RUNNING` or `WAITING_APPROVAL`) per lead. `FAILED`, `CANCELLED`, and `COMPLETED` do not block a later run. SQLite tests do not prove that index; PostgreSQL tests do.
 
-Start requires a SALES agent in `READY` or `ACTIVE`. Any authenticated org member may start, list, get, and cancel (same as agent execute). Cross-tenant ids return 404.
+Start requires a SALES agent in `READY` or `ACTIVE`. Any authenticated org member may start, list, get, cancel, and send (same as agent execute / draft send). Cross-tenant ids return 404.
 
-Lead matching: explicit `lead_id`, else case-insensitive email lookup. Multiple matches return 409 and require `lead_id`. Zero matches create a lead with the client-supplied name (required), optional email, source `API`, and no invented phone/company/notes. CRM `Lead.status` is not changed by qualification.
+Lead matching: explicit `lead_id`, else case-insensitive email lookup. Multiple matches return 409 and require `lead_id`. Zero matches create a lead with the client-supplied name (required), optional email, source `API`, and no invented phone/company/notes. CRM `Lead.status` is not changed by qualification or send.
 
-Provider failures mark the Sales Run `FAILED` with a sanitized error and failure category. A successful qualification is preserved if drafting later fails. Stale `RUNNING` rows are recovered to `FAILED` / `EXECUTION_ERROR` on list/get/start. Recovery does not retry AI. Effective stale timeout is `max(SALES_RUN_STALE_TIMEOUT_SECONDS, 2 * OpenAI request timeout)`.
+Provider failures mark the Sales Run `FAILED` with a sanitized error and failure category. A successful qualification is preserved if drafting later fails. Stale `RUNNING` rows are recovered to `FAILED` / `EXECUTION_ERROR` on list/get/start. Recovery does not retry AI and does not treat email send as AI work. Effective stale timeout is `max(SALES_RUN_STALE_TIMEOUT_SECONDS, 2 * OpenAI request timeout)`.
+
+List responses omit the enquiry body and never include the draft body.
+
+## Sales Run email send (Phase 5C)
+
+Approval is not delivery. `POST /api/v1/leads/{lead_id}/response-drafts/{draft_id}/approve` is unchanged: it only marks the draft `APPROVED`.
+
+An explicit nested action sends the **currently approved** `current_response`:
+
+```
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send
+```
+
+Body: `{ "expected_revision": int }` (`extra=forbid`). Organization, recipient, sender, body, and draft id are never accepted from the client. The server reloads the linked `response_draft_id` (it does not bind a newer draft) and requires `COMPLETED` + `APPROVED` + non-empty `current_response`. `GENERATED`, `EDITED`, and `REJECTED` return 409. Editing an approved draft increments revision and clears approval; send stays 409 until that revision is approved again.
+
+Send reuses `LeadEmailSendService.send()` and `EmailProvider` (Resend). It does not duplicate PENDING/SENT uniqueness. That service already commits `PENDING`, calls the provider **outside** a transaction, then commits `SENT` or `FAILED`. SalesRun then CAS `WAITING_APPROVAL` or a retryable send `FAILED` (`stage=SEND`) to `COMPLETED` / `DONE` with `email_send_id`. Provider failures mark SalesRun `FAILED` at stage `SEND` with a sanitized error; retry `/send` on the same run without re-qualifying or regenerating. Missing `lead.email` is 422 and leaves the run `WAITING_APPROVAL`. An already-`SENT` row for the same draft revision reconciles the SalesRun to `COMPLETED` without a second email. An active `PENDING` send is 409 and does not fail the run.
+
+Limitation: a crash after the provider accepts a message and before `LeadEmailSend` is marked `SENT` can leave a stuck `PENDING` row. Retry is blocked until that row is resolved. There is no automatic PENDING recovery. Provider idempotency reduces but does not eliminate duplicate delivery. This is not exactly-once.
+
+Cancel remains `RUNNING` / `WAITING_APPROVAL` only. `COMPLETED` cannot be cancelled. The open-run unique index is still only `RUNNING` and `WAITING_APPROVAL`; `COMPLETED` does not block a later SalesRun for the same lead.
 
 APIs:
 
@@ -179,13 +199,14 @@ POST /api/v1/agents/{agent_id}/sales-runs
 GET  /api/v1/agents/{agent_id}/sales-runs
 GET  /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}
 POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/cancel
+POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send
 GET  /api/v1/leads/{lead_id}/sales-runs
 GET  /api/v1/sales-runs
 ```
 
-The organization list is read-only (Command Center waiting-approval count). There is no `advance` endpoint and no un-nested mutation API. List responses omit the enquiry body and never include the draft body.
+The organization list `status_counts` includes `COMPLETED` and `FAILED`. Failed mixes AI and send failures. There is no `advance` endpoint and no un-nested mutation API.
 
-Later send/follow-up slices can attach to the same Sales Run after human approval. They are out of scope here.
+Follow-up scheduling remains out of scope. `Lead.status` is not mutated.
 
 ## Lead domain (Phase 4A)
 
