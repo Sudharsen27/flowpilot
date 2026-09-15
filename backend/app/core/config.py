@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
     redis_url: str = "redis://localhost:6379/0"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001"
     secret_key: str = INSECURE_DEFAULT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_allow_origin_regex(self) -> str | None:
+        if self.is_production:
+            return None
+        # Next.js falls back to 3001 when 3000 is already in use.
+        return r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 
     @property
     def is_production(self) -> bool:
