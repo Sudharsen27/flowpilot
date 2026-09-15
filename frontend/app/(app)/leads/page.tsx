@@ -9,6 +9,7 @@ import { FollowUpOperations } from "@/components/leads/follow-up-operations";
 import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadOverview } from "@/components/leads/lead-overview";
+import { LeadSalesAgentHistory } from "@/components/leads/lead-sales-agent-history";
 import { LeadsTable } from "@/components/leads/leads-table";
 import { LeadsToolbar } from "@/components/leads/leads-toolbar";
 import { QualificationReadiness } from "@/components/leads/qualification-readiness";
@@ -51,6 +52,9 @@ export default function LeadsPage() {
   const [followUpLead, setFollowUpLead] = useState<Lead | null>(null);
   const [followUpsOpen, setFollowUpsOpen] = useState(false);
   const [followUpsKey, setFollowUpsKey] = useState(0);
+  const [historyLead, setHistoryLead] = useState<Lead | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyKey, setHistoryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,7 +113,7 @@ export default function LeadsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Leads"
-        description="Capture and manage enquiries for this organization. AI can analyze an enquiry and draft a reply without sending it or changing CRM status."
+        description="Capture and manage enquiries for this organization. AI can analyze an enquiry and draft a reply. After human approval, an operator can send email. Chat is not implemented. CRM status does not change automatically."
         primaryAction={
           <Button
             type="button"
@@ -157,6 +161,15 @@ export default function LeadsPage() {
         onOpenChange={(open) => {
           setFollowUpsOpen(open);
           if (!open) setFollowUpLead(null);
+        }}
+      />
+      <LeadSalesAgentHistory
+        key={`lead-sales-history-${historyKey}`}
+        open={historyOpen}
+        lead={historyLead}
+        onOpenChange={(open) => {
+          setHistoryOpen(open);
+          if (!open) setHistoryLead(null);
         }}
       />
       <DraftLeadResponseDialog
@@ -262,6 +275,11 @@ export default function LeadsPage() {
                 setFollowUpsKey((value) => value + 1);
                 setFollowUpsOpen(true);
               }}
+              onSalesAgentHistory={(lead) => {
+                setHistoryLead(lead);
+                setHistoryKey((value) => value + 1);
+                setHistoryOpen(true);
+              }}
             />
             {total > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -308,13 +326,13 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="AI response drafts"
-          description="Generated replies are drafts only. Sending email or chat is not implemented."
+          description="Generated replies are drafts until a human approves and an operator sends email. Approval does not send. Chat is not implemented."
         />
         <StatePanel
           kind="information"
           className="max-w-none"
-          title="Nothing has been sent"
-          description="Use Draft response to generate a reply, then edit, approve, or reject it. Approval does not send a message."
+          title="Sending is a separate action"
+          description="Use Draft response to generate a reply, then edit, approve, and send it explicitly. Sales Agent runs can also send the approved response. Follow-ups are scheduled separately and are never created automatically by send."
         />
       </section>
       <section className="grid gap-5">

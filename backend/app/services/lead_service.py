@@ -1,15 +1,22 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead_email_send import LeadEmailSend
+from app.models.lead_follow_up import LeadFollowUp
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
 from app.models.lead_response_draft import (
     LeadResponseDraft,
     LeadResponseDraftStatus,
     LeadResponseReviewStatus,
 )
+from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import (
     LEAD_LIST_DEFAULT_LIMIT,
@@ -17,6 +24,7 @@ from app.repositories.lead_repository import (
     LeadRepository,
 )
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
+from app.repositories.sales_run_repository import SalesRunRepository
 from app.schemas.lead_qualification import (
     LeadQualificationAnalysis,
     LeadQualificationPublic,
@@ -24,6 +32,12 @@ from app.schemas.lead_qualification import (
 )
 from app.schemas.lead_response_draft import LeadResponseDraftSummary
 from app.schemas.leads import LeadListResponse, LeadPublic, LeadUpdate
+from app.schemas.sales_run import (
+    LeadLatestSalesRunEmailSummary,
+    LeadLatestSalesRunFollowUpSummary,
+    LeadLatestSalesRunSummary,
+)
+from app.services.lead_follow_up_service import to_follow_up_public
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
 
@@ -41,6 +55,7 @@ class LeadService:
         self.leads = LeadRepository(session)
         self.qualifications = LeadQualificationRepository(session)
         self.response_drafts = LeadResponseDraftRepository(session)
+        self.sales_runs = SalesRunRepository(session)
 
     def create(
         self,
@@ -102,15 +117,24 @@ class LeadService:
             offset=safe_offset,
         )
         raw_counts = self.leads.status_counts(organization_id)
-        latest = self.qualifications.latest_for_leads(
-            organization_id, [item.id for item in items]
-        )
-        drafts = self.response_drafts.latest_completed_for_leads(
-            organization_id, [item.id for item in items]
+        lead_ids = [item.id for item in items]
+        latest = self.qualifications.latest_for_leads(organization_id, lead_ids)
+        drafts = self.response_drafts.latest_completed_for_leads(organization_id, lead_ids)
+        latest_runs = self.sales_runs.latest_for_leads(organization_id, lead_ids)
+        sends, follow_ups = self._related_for_runs(
+            organization_id, list(latest_runs.values())
         )
         return LeadListResponse(
             items=[
-                self._to_public(item, latest.get(item.id), drafts.get(item.id))
+                self._to_public(
+                    item,
+                    latest.get(item.id),
+                    drafts.get(item.id),
+                    sales_run=latest_runs.get(item.id),
+                    email_send=_send_for_run(latest_runs.get(item.id), sends),
+                    follow_up=_follow_up_for_run(latest_runs.get(item.id), follow_ups),
+                    hydrate=False,
+                )
                 for item in items
             ],
             limit=safe_limit,
@@ -141,27 +165,72 @@ class LeadService:
         self.session.refresh(lead)
         return lead
 
+    def _related_for_runs(
+        self, organization_id: str, runs: Sequence[SalesRun]
+    ) -> tuple[dict[str, LeadEmailSend], dict[str, LeadFollowUp]]:
+        send_ids = [row.email_send_id for row in runs if row.email_send_id]
+        follow_up_ids = [row.follow_up_id for row in runs if row.follow_up_id]
+        sends: dict[str, LeadEmailSend] = {}
+        if send_ids:
+            for send_row in self.session.scalars(
+                select(LeadEmailSend).where(
+                    LeadEmailSend.organization_id == organization_id,
+                    LeadEmailSend.id.in_(send_ids),
+                )
+            ):
+                sends[send_row.id] = send_row
+        follow_ups: dict[str, LeadFollowUp] = {}
+        if follow_up_ids:
+            for follow_up_row in self.session.scalars(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == organization_id,
+                    LeadFollowUp.id.in_(follow_up_ids),
+                )
+            ):
+                follow_ups[follow_up_row.id] = follow_up_row
+        return sends, follow_ups
+
     def _to_public(
         self,
         lead: Lead,
         qualification: LeadQualification | None = None,
         draft: LeadResponseDraft | None = None,
+        *,
+        sales_run: SalesRun | None = None,
+        email_send: LeadEmailSend | None = None,
+        follow_up: LeadFollowUp | None = None,
+        hydrate: bool = True,
     ) -> LeadPublic:
-        if qualification is None:
-            latest = self.qualifications.latest_for_leads(
-                lead.organization_id, [lead.id]
-            )
-            qualification = latest.get(lead.id)
-        if draft is None:
-            drafts = self.response_drafts.latest_completed_for_leads(
-                lead.organization_id, [lead.id]
-            )
-            draft = drafts.get(lead.id)
+        if hydrate:
+            if qualification is None:
+                latest = self.qualifications.latest_for_leads(
+                    lead.organization_id, [lead.id]
+                )
+                qualification = latest.get(lead.id)
+            if draft is None:
+                drafts = self.response_drafts.latest_completed_for_leads(
+                    lead.organization_id, [lead.id]
+                )
+                draft = drafts.get(lead.id)
+            if sales_run is None:
+                latest_runs = self.sales_runs.latest_for_leads(
+                    lead.organization_id, [lead.id]
+                )
+                sales_run = latest_runs.get(lead.id)
+            if sales_run is not None and (email_send is None or follow_up is None):
+                sends, follow_ups = self._related_for_runs(
+                    lead.organization_id, [sales_run]
+                )
+                if email_send is None:
+                    email_send = _send_for_run(sales_run, sends)
+                if follow_up is None:
+                    follow_up = _follow_up_for_run(sales_run, follow_ups)
         public = LeadPublic.model_validate(lead)
         return public.model_copy(
             update={
                 "latest_qualification": _qualification_summary(qualification),
                 "latest_response_draft": _draft_summary(draft),
+                "latest_sales_run": _sales_run_summary(sales_run, email_send, follow_up),
             }
         )
 
@@ -188,6 +257,53 @@ def _qualification_summary(
         confidence=analysis.confidence if analysis else None,
         created_at=row.created_at,
         error=row.error,
+    )
+
+
+def _send_for_run(
+    run: SalesRun | None, sends: dict[str, LeadEmailSend]
+) -> LeadEmailSend | None:
+    if run is None or not run.email_send_id:
+        return None
+    return sends.get(run.email_send_id)
+
+
+def _follow_up_for_run(
+    run: SalesRun | None, follow_ups: dict[str, LeadFollowUp]
+) -> LeadFollowUp | None:
+    if run is None or not run.follow_up_id:
+        return None
+    return follow_ups.get(run.follow_up_id)
+
+
+def _sales_run_summary(
+    row: SalesRun | None,
+    email_send: LeadEmailSend | None,
+    follow_up: LeadFollowUp | None,
+) -> LeadLatestSalesRunSummary | None:
+    if row is None:
+        return None
+    follow_up_summary = None
+    if follow_up is not None:
+        public = to_follow_up_public(follow_up)
+        follow_up_summary = LeadLatestSalesRunFollowUpSummary(
+            status=public.status,
+            due_at=public.due_at,
+            is_overdue=public.is_overdue,
+        )
+    email_summary = None
+    if email_send is not None:
+        email_summary = LeadLatestSalesRunEmailSummary(
+            status=email_send.status,
+            completed_at=email_send.completed_at,
+        )
+    return LeadLatestSalesRunSummary(
+        id=row.id,
+        agent_id=row.agent_id,
+        status=SalesRunStatus(row.status),
+        stage=SalesRunStage(row.stage),
+        email_send=email_summary,
+        follow_up=follow_up_summary,
     )
 
 

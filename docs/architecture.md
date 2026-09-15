@@ -237,6 +237,16 @@ GET  /api/v1/leads/{lead_id}/sales-runs
 GET  /api/v1/sales-runs
 ```
 
+## Lead-scoped Sales Agent history (Phase 5E)
+
+Sales Agent work is visible from the Leads workspace. This is a read-only composition of existing rows. There is no Activity event model.
+
+`GET /api/v1/leads` and `GET /api/v1/leads/{lead_id}` include `latest_sales_run`: the newest `SalesRun` for that lead (`created_at DESC`, then `id DESC`), including cancelled and failed runs. The summary is safe for a directory: run id, agent id, status, stage, email-send status/completed_at, follow-up status/due_at/is_overdue. It omits enquiry, email body, draft body, follow-up body, and provider payloads. `null` when the lead has no runs. Hydration is one batched `SalesRun` query for the page of leads, plus batched email-send and follow-up lookups for those latest rows.
+
+`GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}` returns the existing qualification public representation. Organization comes from the JWT. Wrong org, wrong lead, or unknown id is 404. There is no qualification list API.
+
+The Leads directory shows this summary next to CRM status. Those concepts stay separate; `Lead.status` is not inferred from SalesRun. **Sales Agent history** opens a paginated view of `GET /api/v1/leads/{lead_id}/sales-runs` (default 20, max 50). Selecting a run loads `GET /api/v1/agents/{agent_id}/sales-runs/{id}` (includes enquiry) and, only when the run has the matching ids, qualification GET, draft GET, and follow-up GET. Missing links show an explicit empty state. History does not substitute standalone latest qualification/draft rows. SalesRun mutations remain on the agent Sales runs panel. Follow-up create/complete/cancel remain on the existing follow-up UI.
+
 ## Lead domain (Phase 4A)
 
 `Lead` is an organization-owned sales record. It is independent of `AgentExecution`. Future sales-agent tools must call `LeadService` / `LeadRepository`; they must not write lead rows from the runtime loop.
@@ -258,6 +268,7 @@ Lead API
 ├── GET    /api/v1/leads/{lead_id}
 ├── PATCH  /api/v1/leads/{lead_id}
 ├── POST   /api/v1/leads/{lead_id}/qualify  AI enquiry analysis (does not mutate CRM status)
+├── GET    /api/v1/leads/{lead_id}/qualifications/{qualification_id}
 ├── POST   /api/v1/leads/{lead_id}/respond  AI customer-response draft (does not send)
 ├── GET    /api/v1/leads/{lead_id}/response-drafts/{draft_id}
 ├── PATCH  /api/v1/leads/{lead_id}/response-drafts/{draft_id}
@@ -288,7 +299,7 @@ The provider is invoked through `AIProvider.generate` with a JSON Schema `respon
 
 AI qualification (`QUALIFIED` / `UNQUALIFIED` / `NEEDS_MORE_INFORMATION`) is **not** CRM `Lead.status`. The CRM row is not updated. Analysis is stored in `lead_qualifications` (validated result JSON, provider/model, usage, duration, failure category). This is not an `AgentExecution`; agent history stays agent-scoped. No tools run for this endpoint.
 
-`confidence` is a model self-report in `[0, 1]`, not a calibrated probability. List/detail include `latest_qualification` as a summary of the newest analysis row.
+`confidence` is a model self-report in `[0, 1]`, not a calibrated probability. List/detail include `latest_qualification` as a summary of the newest analysis row. That row is not necessarily the qualification linked to `latest_sales_run`.
 
 ## AI lead response drafts (Phase 4C)
 

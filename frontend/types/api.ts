@@ -223,6 +223,7 @@ export type Lead = {
   updated_at: string;
   latest_qualification?: LeadQualificationSummary | null;
   latest_response_draft?: LeadResponseDraftSummary | null;
+  latest_sales_run?: LeadLatestSalesRunSummary | null;
 };
 
 export type LeadAiQualification =
@@ -577,6 +578,26 @@ export type SalesRunFollowUpSummary = {
   status: LeadFollowUpStatus;
   due_at: string;
   is_overdue: boolean;
+};
+
+export type LeadLatestSalesRunEmailSummary = {
+  status: string;
+  completed_at: string | null;
+};
+
+export type LeadLatestSalesRunFollowUpSummary = {
+  status: LeadFollowUpStatus;
+  due_at: string;
+  is_overdue: boolean;
+};
+
+export type LeadLatestSalesRunSummary = {
+  id: string;
+  agent_id: string;
+  status: SalesRunStatus;
+  stage: SalesRunStage;
+  email_send: LeadLatestSalesRunEmailSummary | null;
+  follow_up: LeadLatestSalesRunFollowUpSummary | null;
 };
 
 export type SalesRun = {

@@ -133,6 +133,24 @@ def qualify_lead(
     return to_qualification_public(row)
 
 
+@router.get(
+    "/{lead_id}/qualifications/{qualification_id}",
+    response_model=LeadQualificationPublic,
+)
+def get_lead_qualification(
+    lead_id: str,
+    qualification_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadQualificationPublic:
+    row = LeadQualificationService(db).get(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        qualification_id=qualification_id,
+    )
+    return to_qualification_public(row)
+
+
 @router.post("/{lead_id}/respond", response_model=LeadResponseDraftPublic)
 def generate_lead_response_draft(
     lead_id: str,

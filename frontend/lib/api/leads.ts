@@ -81,6 +81,12 @@ export function qualifyLead(leadId: string, input: LeadQualifyRequest) {
   );
 }
 
+export function getLeadQualification(leadId: string, qualificationId: string) {
+  return apiGet<LeadQualificationResult>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/qualifications/${encodeURIComponent(qualificationId)}`,
+  );
+}
+
 export function generateLeadResponseDraft(
   leadId: string,
   input: LeadRespondRequest,

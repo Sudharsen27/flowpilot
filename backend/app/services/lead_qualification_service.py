@@ -54,6 +54,14 @@ class LeadQualificationService:
         self.leads = LeadRepository(session)
         self.qualifications = LeadQualificationRepository(session)
 
+    def get(
+        self, *, organization_id: str, lead_id: str, qualification_id: str
+    ) -> LeadQualification:
+        row = self.qualifications.get_by_id(organization_id, lead_id, qualification_id)
+        if row is None:
+            raise NotFoundError("Qualification not found")
+        return row
+
     def qualify(
         self,
         *,

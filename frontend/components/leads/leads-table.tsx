@@ -4,6 +4,7 @@ import {
 } from "@/components/data-display/data-table";
 import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { QualificationStatus } from "@/components/leads/qualification-status";
+import { SalesAgentStatus } from "@/components/leads/sales-agent-status";
 import { Button } from "@/components/ui/button";
 import type { Lead, LeadSource } from "@/types/api";
 
@@ -62,6 +63,11 @@ const leadColumns: DataTableColumn<Lead>[] = [
     cell: (lead) => <QualificationStatus status={qualificationState(lead)} />,
   },
   {
+    key: "sales-agent",
+    header: "Sales Agent",
+    cell: (lead) => <SalesAgentStatus summary={lead.latest_sales_run} />,
+  },
+  {
     key: "source",
     header: "Source",
     cell: (lead) => sourceLabels[lead.source],
@@ -81,6 +87,7 @@ type LeadsTableProps = {
   onDraftResponse?: (lead: Lead) => void;
   onReviewDraft?: (lead: Lead) => void;
   onFollowUps?: (lead: Lead) => void;
+  onSalesAgentHistory?: (lead: Lead) => void;
 };
 
 export function LeadsTable({
@@ -91,6 +98,7 @@ export function LeadsTable({
   onDraftResponse,
   onReviewDraft,
   onFollowUps,
+  onSalesAgentHistory,
 }: LeadsTableProps) {
   return (
     <DataTable
@@ -102,7 +110,12 @@ export function LeadsTable({
       emptyTitle="No leads yet"
       emptyDescription="Create a lead to start capturing enquiries, or wait until a connected channel sends one."
       rowActions={
-        onEdit || onQualify || onDraftResponse || onReviewDraft || onFollowUps
+        onEdit ||
+        onQualify ||
+        onDraftResponse ||
+        onReviewDraft ||
+        onFollowUps ||
+        onSalesAgentHistory
           ? (lead) => (
               <div className="flex justify-end gap-2">
                 {onQualify ? (
@@ -143,6 +156,16 @@ export function LeadsTable({
                     onClick={() => onFollowUps(lead)}
                   >
                     Follow-ups
+                  </Button>
+                ) : null}
+                {onSalesAgentHistory ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onSalesAgentHistory(lead)}
+                  >
+                    Sales Agent history
                   </Button>
                 ) : null}
                 {onEdit ? (

@@ -155,6 +155,34 @@ class SalesRunFollowUpSummary(BaseModel):
     is_overdue: bool
 
 
+class LeadLatestSalesRunEmailSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    completed_at: datetime | None = None
+
+
+class LeadLatestSalesRunFollowUpSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: LeadFollowUpStatus
+    due_at: datetime
+    is_overdue: bool
+
+
+class LeadLatestSalesRunSummary(BaseModel):
+    """Safe directory summary. No enquiry, bodies, or provider payloads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    agent_id: str
+    status: SalesRunStatus
+    stage: SalesRunStage
+    email_send: LeadLatestSalesRunEmailSummary | None = None
+    follow_up: LeadLatestSalesRunFollowUpSummary | None = None
+
+
 class SalesRunPublic(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

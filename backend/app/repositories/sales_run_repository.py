@@ -68,6 +68,27 @@ class SalesRunRepository:
             filters.append(SalesRun.status == status)
         return self._paginated(filters, limit=limit, offset=offset)
 
+    def latest_for_leads(
+        self, organization_id: str, lead_ids: list[str]
+    ) -> dict[str, SalesRun]:
+        if not lead_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(SalesRun)
+                .where(
+                    SalesRun.organization_id == organization_id,
+                    SalesRun.lead_id.in_(lead_ids),
+                )
+                .order_by(SalesRun.created_at.desc(), SalesRun.id.desc())
+            )
+        )
+        latest: dict[str, SalesRun] = {}
+        for row in rows:
+            if row.lead_id not in latest:
+                latest[row.lead_id] = row
+        return latest
+
     def list_for_lead(
         self,
         organization_id: str,
