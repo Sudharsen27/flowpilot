@@ -70,6 +70,13 @@ describe("API client", () => {
     expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
 
+  it("treats an empty 204 body as success", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+    await expect(apiPost("/api/v1/public/organizations/acme/enquiries")).resolves.toBeUndefined();
+  });
+
   it("attaches parsed JSON bodies to API errors", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ detail: "Invalid token", extra: "keep" }), {

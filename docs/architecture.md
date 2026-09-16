@@ -46,7 +46,7 @@ Do not authorize from a client-supplied organization id. Tenant context comes fr
 
 ### Models
 
-- **Organization** — `id`, `name`, unique `slug`, timestamps.
+- **Organization** — `id`, `name`, unique `slug`, `website_capture_enabled` (default false), timestamps.
 - **User** — `id`, unique `email`, `name`, `password_hash`, timestamps. Users can belong to multiple organizations via memberships.
 - **Membership** — `id`, `organization_id`, `user_id`, `role`, `created_at`. Unique on `(organization_id, user_id)`.
 
@@ -269,13 +269,31 @@ Operators start Sales Agent work from the lead, not by pasting a lead UUID on th
 
 `POST /api/v1/leads/{lead_id}/sales-runs` body `{ enquiry, agent_id }` (`extra=forbid`). `lead_id` is the path only. Organization comes from the JWT. The route loads the lead in that org (404 if missing), then reuses `SalesRunService.start_sales_run` with that `lead_id`. It does not create a second lead and does not match by email. Open-run protection, SALES + READY/ACTIVE checks, qualification, drafting, and MEMBER start permission are unchanged. Non-SALES agents remain 422; ineligible status remains 400. Agent-nested start remains for creating a lead from an enquiry.
 
-The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. Inbound capture, Inbox, Activity, and automatic CRM status changes are out of this slice.
+The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity, stored enquiry text when present, and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. Inbox, Activity, and automatic CRM status changes are out of this slice.
+
+## Website enquiry capture (Phase 5H)
+
+Visitors submit a FlowPilot-hosted form. Capture is **off by default**. Enabling it does not start the Sales Agent, send email, create follow-ups, or call OpenAI.
+
+```
+Visitor → GET/POST /api/v1/public/organizations/{slug}/enquiries
+       → Lead (NEW, WEBSITE, enquiry stored)
+Operator → Leads → workspace → Start Sales Agent (enquiry prefilled)
+```
+
+Public POST requires no JWT. Tenant ownership comes only from `organizations.slug`. `organization_id`, `source`, `status`, and `lead_id` are rejected (`extra=forbid`). Success is `204` with no lead id. Unknown slugs and disabled capture return the same `404` body: `This enquiry form is not available.` A honeypot field (`website`) returns the same success without creating a lead.
+
+Abuse control is an **in-process sliding window** per slug + IP (`WEBSITE_CAPTURE_RATE_LIMIT_MAX` / `WEBSITE_CAPTURE_RATE_LIMIT_WINDOW_SECONDS`). It protects a single API process only. Redis is not used. CORS remains the existing frontend origin list; there is no embed widget and no customer-domain CORS.
+
+Settings: `GET` / `PATCH /api/v1/organizations/current/website-capture`. `OWNER` and `ADMIN` may enable or disable. `MEMBER` may read. Hosted UI is `/capture/{slug}` (no AppShell). Authenticated lead APIs stay JWT-only and do not list leads on the public router.
+
+`Lead.enquiry` is optional text (max 8000). Authenticated create/update may set it; capture always persists it. Duplicate visitor emails still create additional leads.
 
 ## Lead domain (Phase 4A)
 
 `Lead` is an organization-owned sales record. It is independent of `AgentExecution`. Future sales-agent tools must call `LeadService` / `LeadRepository`; they must not write lead rows from the runtime loop.
 
-Fields: `name` (required), optional `email` / `phone` / `company` / `notes`, `source`, `status`, timestamps. There is no score, AI qualification state, follow-up schedule, or activity feed in this slice. Email is **not** unique globally or inside an organization; duplicates are allowed so later qualification/merge can decide.
+Fields: `name` (required), optional `email` / `phone` / `company` / `notes` / `enquiry`, `source`, `status`, timestamps. There is no score, AI qualification state, follow-up schedule, or activity feed in this slice. Email is **not** unique globally or inside an organization; duplicates are allowed so later qualification/merge can decide.
 
 Status lifecycle (any of these may be set on create/update in V1; there is no enforced transition graph yet):
 

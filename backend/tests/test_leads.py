@@ -75,6 +75,16 @@ def test_empty_optional_fields_are_stored_as_null(client: TestClient) -> None:
     assert body["phone"] is None
     assert body["company"] is None
     assert body["notes"] is None
+    assert body["enquiry"] is None
+    assert body["enquiry"] is None
+
+
+def test_authenticated_create_can_store_enquiry(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    response = _create(client, token, enquiry="Need a demo")
+    assert response.status_code == 200
+    assert response.json()["enquiry"] == "Need a demo"
+    assert response.json()["source"] == "MANUAL"
 
 
 def test_duplicate_emails_are_allowed_in_the_same_organization(client: TestClient) -> None:

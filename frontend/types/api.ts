@@ -8,6 +8,7 @@ export type OrganizationPublic = {
   id: string;
   name: string;
   slug: string;
+  website_capture_enabled?: boolean;
 };
 
 export type MembershipRole = "OWNER" | "ADMIN" | "MEMBER";
@@ -219,6 +220,7 @@ export type Lead = {
   source: LeadSource;
   status: LeadStatus;
   notes: string | null;
+  enquiry?: string | null;
   created_at: string;
   updated_at: string;
   latest_qualification?: LeadQualificationSummary | null;
@@ -521,6 +523,7 @@ export type LeadCreateRequest = {
   source?: LeadSource;
   status?: LeadStatus;
   notes?: string | null;
+  enquiry?: string | null;
 };
 
 export type LeadUpdateRequest = Partial<LeadCreateRequest>;
@@ -667,4 +670,24 @@ export type SalesRunListParams = {
   stage?: SalesRunStage;
   limit?: number;
   offset?: number;
+};
+
+export type WebsiteCaptureSettings = {
+  website_capture_enabled: boolean;
+};
+
+export type WebsiteCaptureSettingsUpdate = {
+  website_capture_enabled: boolean;
+};
+
+export type PublicEnquiryForm = {
+  organization_name: string;
+};
+
+export type PublicEnquiryCreateRequest = {
+  name: string;
+  email: string;
+  company?: string | null;
+  enquiry: string;
+  website?: string | null;
 };

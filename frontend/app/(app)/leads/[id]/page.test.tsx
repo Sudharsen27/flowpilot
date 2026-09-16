@@ -274,6 +274,25 @@ describe("Lead workspace", () => {
     expect(await screen.findAllByText("Waiting for approval")).not.toHaveLength(0);
   });
 
+  it("shows the stored enquiry and prefills Start Sales Agent", async () => {
+    const user = userEvent.setup();
+    getLeadMock.mockResolvedValue({
+      ...lead,
+      enquiry: "We want a hosted demo",
+    });
+    startLeadSalesRunMock.mockResolvedValue(run());
+    render(<LeadWorkspacePage />);
+    expect(await screen.findAllByText("We want a hosted demo")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Ada Prospect" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Ada Prospect" })).not.toHaveTextContent(
+      "We want a hosted demo",
+    );
+    await user.click(screen.getAllByRole("button", { name: "Start Sales Agent" })[0]!);
+    expect(await screen.findByRole("heading", { name: "Start Sales Agent" })).toBeVisible();
+    expect(screen.getByLabelText(/Enquiry/)).toHaveValue("We want a hosted demo");
+    expect(screen.queryByText("lead-1")).not.toBeInTheDocument();
+  });
+
   it("keeps a 409 open-run error in the dialog", async () => {
     const user = userEvent.setup();
     startLeadSalesRunMock.mockRejectedValue(

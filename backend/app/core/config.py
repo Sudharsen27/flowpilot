@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     follow_up_worker_enabled: bool = False
     follow_up_worker_poll_interval_seconds: float = Field(default=30, ge=1)
     follow_up_worker_batch_size: int = Field(default=10, ge=1, le=50)
+    # In-process sliding window for public website capture. Single-instance only;
+    # it is not shared across API processes and does not use Redis.
+    website_capture_rate_limit_max: int = Field(default=5, ge=1)
+    website_capture_rate_limit_window_seconds: float = Field(default=60, ge=1)
 
     def agent_execution_stale_timeout_effective_seconds(self) -> float:
         floor = (self.agent_max_tool_iterations + 1) * self.openai_request_timeout_seconds

@@ -240,6 +240,19 @@ export default function LeadWorkspacePage() {
                 label="Updated"
                 value={formatTimestamp(lead.updated_at) ?? "—"}
               />
+              <DetailRow
+                label="Enquiry"
+                value={
+                  lead.enquiry?.trim() ? (
+                    <span className="line-clamp-4 whitespace-pre-wrap">
+                      {lead.enquiry}
+                    </span>
+                  ) : (
+                    "—"
+                  )
+                }
+                muted={!lead.enquiry?.trim()}
+              />
             </dl>
           </CardContent>
         </Card>
@@ -351,6 +364,7 @@ export default function LeadWorkspacePage() {
       </div>
 
       <StartLeadSalesRunDialog
+        key={`${startOpen}-${lead.id}-${lead.enquiry ?? ""}`}
         open={startOpen}
         lead={lead}
         onOpenChange={setStartOpen}

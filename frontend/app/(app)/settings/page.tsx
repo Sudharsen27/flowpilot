@@ -9,6 +9,7 @@ import {
 import { StatePanel } from "@/components/data-display/state-panel";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
+import { WebsiteEnquirySettings } from "@/components/settings/website-enquiry-settings";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -204,6 +205,17 @@ export default function SettingsPage() {
                 emptyDescription="No members were returned for the current organization."
               />
             )}
+          </section>
+
+          <section className="grid gap-5">
+            <SectionHeader
+              title="Website enquiries"
+              description="Hosted form for website visitors. The Sales Agent does not start automatically, and email is not sent automatically."
+            />
+            <WebsiteEnquirySettings
+              slug={session.organization.slug}
+              role={session.membership.role}
+            />
           </section>
 
           <section className="grid gap-5">

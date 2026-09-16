@@ -66,6 +66,7 @@ def create_lead(
         source=payload.source,
         status=payload.status,
         notes=payload.notes,
+        enquiry=payload.enquiry,
     )
     return LeadPublic.model_validate(lead)
 

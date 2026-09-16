@@ -73,6 +73,7 @@ class Lead(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False, default=LeadSource.MANUAL)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=LeadStatus.NEW)
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
+    enquiry: Mapped[str | None] = mapped_column(String(8000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

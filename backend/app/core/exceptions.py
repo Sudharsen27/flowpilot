@@ -44,6 +44,14 @@ class UnprocessableError(AppError):
         super().__init__(422, detail, content)
 
 
+class RateLimitError(AppError):
+    def __init__(
+        self,
+        detail: str = "Please wait before sending another enquiry.",
+    ) -> None:
+        super().__init__(429, detail)
+
+
 class ProviderNotConfiguredError(AppError):
     def __init__(
         self,

@@ -2,7 +2,9 @@
 
 Business operating platform for AI-powered lead and customer automation.
 
-This repository has completed **Phase 5G**: each lead has a workspace where an operator can start the existing Sales Agent pipeline (enquiry + Sales Agent picker). `POST /api/v1/leads/{lead_id}/sales-runs` reuses SalesRun start. Agent Detail start remains for creating a lead from an enquiry. There is no inbound capture, Inbox, Activity system, or automatic email/CRM status change.
+This repository has completed **Phase 5H**: website visitors can submit a hosted enquiry form that creates a tenant-owned lead. Capture is off by default. The Sales Agent does not start automatically, and email is not sent automatically. Operators still start Sales Agent work from the lead workspace.
+
+Phase 5G remains: each lead has a workspace where an operator can start the existing Sales Agent pipeline. There is no Inbox, Activity system, embed widget, or automatic CRM status change.
 
 ## Requirements
 
@@ -45,6 +47,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Lead Sales Agent history (authenticated): `GET /api/v1/leads/{lead_id}/sales-runs`
 - Organization sales runs (authenticated, optional `status` and `stage`): `GET /api/v1/sales-runs`
 - Start sales run from a lead (authenticated): `POST /api/v1/leads/{lead_id}/sales-runs`
+- Public website enquiry form (unauthenticated): `GET /api/v1/public/organizations/{slug}/enquiries`
+- Public website enquiry (unauthenticated, capture must be enabled): `POST /api/v1/public/organizations/{slug}/enquiries`
+- Website capture settings (authenticated): `GET` / `PATCH /api/v1/organizations/current/website-capture`
 - Qualification detail (authenticated): `GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}`
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:

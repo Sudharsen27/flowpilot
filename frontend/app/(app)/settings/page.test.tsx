@@ -4,35 +4,38 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "@/app/(app)/settings/page";
 
-const { apiGet, signOut, authState } = vi.hoisted(() => {
-  const signOut = vi.fn();
-  return {
-    apiGet: vi.fn(),
-    signOut,
-    authState: {
-      isLoading: false,
-      session: {
-        user: {
-          id: "user-1",
-          name: "Alex Morgan",
-          email: "alex@example.com",
-        },
-        organization: {
-          id: "org-1",
-          name: "Northstar Operations",
-          slug: "northstar-operations",
-        },
-        membership: {
-          id: "membership-1",
-          organization_id: "org-1",
-          user_id: "user-1",
-          role: "OWNER" as const,
-        },
-      },
+const { apiGet, signOut, authState, getWebsiteCaptureSettings, updateWebsiteCaptureSettings } =
+  vi.hoisted(() => {
+    const signOut = vi.fn();
+    return {
+      apiGet: vi.fn(),
       signOut,
-    },
-  };
-});
+      getWebsiteCaptureSettings: vi.fn(),
+      updateWebsiteCaptureSettings: vi.fn(),
+      authState: {
+        isLoading: false,
+        session: {
+          user: {
+            id: "user-1",
+            name: "Alex Morgan",
+            email: "alex@example.com",
+          },
+          organization: {
+            id: "org-1",
+            name: "Northstar Operations",
+            slug: "northstar-operations",
+          },
+          membership: {
+            id: "membership-1",
+            organization_id: "org-1",
+            user_id: "user-1",
+            role: "OWNER" as const,
+          },
+        },
+        signOut,
+      },
+    };
+  });
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => authState,
@@ -42,9 +45,17 @@ vi.mock("@/lib/api/client", () => ({
   apiGet,
 }));
 
+vi.mock("@/lib/api/website-capture", () => ({
+  getWebsiteCaptureSettings,
+  updateWebsiteCaptureSettings,
+}));
+
 describe("identity-backed settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getWebsiteCaptureSettings.mockResolvedValue({
+      website_capture_enabled: false,
+    });
   });
 
   it("renders authenticated identity and real organization members", async () => {
@@ -81,6 +92,10 @@ describe("identity-backed settings", () => {
     expect(screen.getAllByText("Jordan Lee")).not.toHaveLength(0);
     expect(screen.getAllByText("jordan@example.com")).not.toHaveLength(0);
     expect(screen.getAllByText("Member")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Website enquiries" })).toBeVisible();
+    expect(
+      screen.getByText(/will not start the Sales Agent or send email automatically/),
+    ).toBeVisible();
   });
 
   it("shows a member loading state while the request is pending", () => {

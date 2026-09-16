@@ -54,17 +54,32 @@ async function request<T>(
     throw new ApiError(`Request failed: ${response.status}`, response.status, body);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
-export function apiGet<T>(path: string): Promise<T> {
-  return request<T>(path);
+export function apiGet<T>(path: string, options: { token?: string | null } = {}): Promise<T> {
+  return request<T>(path, options);
 }
 
-export function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, { method: "POST", body });
+export function apiPost<T>(
+  path: string,
+  body?: unknown,
+  options: { token?: string | null } = {},
+): Promise<T> {
+  return request<T>(path, { method: "POST", body, ...options });
 }
 
-export function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(path, { method: "PATCH", body });
+export function apiPatch<T>(
+  path: string,
+  body: unknown,
+  options: { token?: string | null } = {},
+): Promise<T> {
+  return request<T>(path, { method: "PATCH", body, ...options });
 }

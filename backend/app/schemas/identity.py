@@ -15,6 +15,7 @@ class OrganizationPublic(BaseModel):
     id: str
     name: str
     slug: str
+    website_capture_enabled: bool
 
 
 class MembershipPublic(BaseModel):

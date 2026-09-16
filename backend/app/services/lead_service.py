@@ -68,6 +68,7 @@ class LeadService:
         source: LeadSource = LeadSource.MANUAL,
         status: LeadStatus = LeadStatus.NEW,
         notes: str | None = None,
+        enquiry: str | None = None,
     ) -> Lead:
         lead = Lead(
             organization_id=organization_id,
@@ -78,6 +79,7 @@ class LeadService:
             source=source,
             status=status,
             notes=notes,
+            enquiry=enquiry,
         )
         self.leads.add(lead)
         self.session.commit()
@@ -160,6 +162,8 @@ class LeadService:
             lead.status = payload.status
         if "notes" in fields:
             lead.notes = payload.notes
+        if "enquiry" in fields:
+            lead.enquiry = payload.enquiry
         lead.updated_at = datetime.now(UTC)
         self.session.commit()
         self.session.refresh(lead)

@@ -25,6 +25,7 @@ class LeadCreate(BaseModel):
     source: LeadSource = LeadSource.MANUAL
     status: LeadStatus = LeadStatus.NEW
     notes: str | None = Field(default=None, max_length=4000)
+    enquiry: str | None = Field(default=None, max_length=8000)
 
     @field_validator("name")
     @classmethod
@@ -41,7 +42,7 @@ class LeadCreate(BaseModel):
             return None
         return value
 
-    @field_validator("phone", "company", "notes", mode="before")
+    @field_validator("phone", "company", "notes", "enquiry", mode="before")
     @classmethod
     def empty_optional(cls, value: object) -> object:
         if isinstance(value, str):
@@ -59,6 +60,7 @@ class LeadUpdate(BaseModel):
     source: LeadSource | None = None
     status: LeadStatus | None = None
     notes: str | None = Field(default=None, max_length=4000)
+    enquiry: str | None = Field(default=None, max_length=8000)
 
     @field_validator("name")
     @classmethod
@@ -77,7 +79,7 @@ class LeadUpdate(BaseModel):
             return None
         return value
 
-    @field_validator("phone", "company", "notes", mode="before")
+    @field_validator("phone", "company", "notes", "enquiry", mode="before")
     @classmethod
     def empty_optional(cls, value: object) -> object:
         if isinstance(value, str):
@@ -96,6 +98,7 @@ class LeadPublic(BaseModel):
     source: LeadSource
     status: LeadStatus
     notes: str | None
+    enquiry: str | None
     created_at: datetime
     updated_at: datetime
     latest_qualification: LeadQualificationSummary | None = None

@@ -66,7 +66,7 @@ export function StartLeadSalesRunDialog({
   onOpenChange,
   onCompleted,
 }: StartLeadSalesRunDialogProps) {
-  const [enquiry, setEnquiry] = useState("");
+  const [enquiry, setEnquiry] = useState(lead?.enquiry?.trim() ?? "");
   const [agentId, setAgentId] = useState("");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
