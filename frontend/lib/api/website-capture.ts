@@ -1,4 +1,10 @@
 import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
+import type {
+  WebsiteCaptureSettings,
+  WebsiteCaptureSettingsUpdate,
+} from "@/types/api";
+
+export type { WebsiteCaptureSettings, WebsiteCaptureSettingsUpdate };
 
 export type PublicCaptureForm = {
   organization_name: string;
@@ -10,10 +16,6 @@ export type PublicEnquiryCreateRequest = {
   company?: string | null;
   enquiry: string;
   website?: string | null;
-};
-
-export type WebsiteCaptureSettings = {
-  website_capture_enabled: boolean;
 };
 
 export function getPublicEnquiryForm(slug: string) {
@@ -37,9 +39,15 @@ export function getWebsiteCaptureSettings() {
   );
 }
 
-export function updateWebsiteCaptureSettings(enabled: boolean) {
+export function updateWebsiteCaptureSettings(
+  input: WebsiteCaptureSettingsUpdate,
+) {
   return apiPatch<WebsiteCaptureSettings>(
     "/api/v1/organizations/current/website-capture",
-    { website_capture_enabled: enabled },
+    {
+      website_capture_enabled: input.website_capture_enabled,
+      sales_agent_auto_start_enabled: input.sales_agent_auto_start_enabled,
+      default_sales_agent_id: input.default_sales_agent_id,
+    },
   );
 }

@@ -6,20 +6,21 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.ai.openai_provider import OpenAIProvider
 from app.api.deps import get_ai_provider, get_email_provider
 from app.core.config import settings
 from app.core.rate_limit import website_capture_limiter
 from app.main import app
-from app.models.agent import AgentStatus
+from app.models.agent import AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution
-from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead import Lead, LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend
 from app.models.lead_follow_up import LeadFollowUp
 from app.models.membership import MembershipRole
 from app.models.sales_run import SalesRun
 from app.schemas.website_capture import UNAVAILABLE_DETAIL
 from tests.test_agent_api import _add_org_member
-from tests.test_agent_runtime import FakeAIProvider, _headers
+from tests.test_agent_runtime import FakeAIProvider, _create_agent, _headers
 from tests.test_lead_email_send import FakeEmailProvider
 from tests.test_leads import _auth
 from tests.test_sales_run import SalesPipelineProvider, _override_provider, _ready_sales_agent
@@ -59,14 +60,24 @@ def _payload(**overrides: Any) -> dict[str, Any]:
     return body
 
 
+def _settings_payload(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "website_capture_enabled": False,
+        "sales_agent_auto_start_enabled": False,
+        "default_sales_agent_id": None,
+    }
+    body.update(overrides)
+    return body
+
+
 def _enable(client: TestClient, token: str) -> None:
     response = client.patch(
         SETTINGS,
-        json={"website_capture_enabled": True},
+        json=_settings_payload(website_capture_enabled=True),
         headers=_headers(token),
     )
     assert response.status_code == 200
-    assert response.json() == {"website_capture_enabled": True}
+    assert response.json() == _settings_payload(website_capture_enabled=True)
 
 
 def test_unauthenticated_public_post_succeeds_when_enabled(
@@ -94,6 +105,7 @@ def test_unauthenticated_public_post_succeeds_when_enabled(
     assert row.status == LeadStatus.NEW
     assert row.enquiry == ENQUIRY
     assert row.organization_id == org_id
+    assert row.sales_agent_auto_start_status is None
     assert db.scalar(select(func.count()).select_from(SalesRun)) == 0
     assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
     assert db.scalar(select(func.count()).select_from(LeadEmailSend)) == 0
@@ -189,6 +201,14 @@ def test_honeypot_does_not_create_a_lead(client: TestClient, db: Session) -> Non
     assert enabled.status_code == 204
     assert db.scalar(select(func.count()).select_from(Lead)) == 0
     assert db.scalar(select(func.count()).select_from(SalesRun)) == 0
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING)
+        )
+        == 0
+    )
 
 
 def test_owner_and_admin_can_enable_member_cannot(
@@ -203,39 +223,48 @@ def test_owner_and_admin_can_enable_member_cannot(
     )
     member_read = client.get(SETTINGS, headers=_headers(member))
     assert member_read.status_code == 200
-    assert member_read.json() == {"website_capture_enabled": False}
+    assert member_read.json() == _settings_payload()
     member_patch = client.patch(
-        SETTINGS, json={"website_capture_enabled": True}, headers=_headers(member)
+        SETTINGS, json=_settings_payload(website_capture_enabled=True), headers=_headers(member)
     )
     assert member_patch.status_code == 403
     still_off = client.get(SETTINGS, headers=_headers(owner))
-    assert still_off.json() == {"website_capture_enabled": False}
+    assert still_off.json() == _settings_payload()
     assert (
         client.patch(
-            SETTINGS, json={"website_capture_enabled": True}, headers=_headers(admin)
+            SETTINGS,
+            json=_settings_payload(website_capture_enabled=True),
+            headers=_headers(admin),
         ).status_code
         == 200
     )
     assert (
         client.patch(
-            SETTINGS, json={"website_capture_enabled": False}, headers=_headers(owner)
+            SETTINGS,
+            json=_settings_payload(website_capture_enabled=False),
+            headers=_headers(owner),
         ).status_code
         == 200
     )
     assert (
         client.patch(
-            SETTINGS, json={"website_capture_enabled": True}, headers=_headers(owner)
+            SETTINGS,
+            json=_settings_payload(website_capture_enabled=True),
+            headers=_headers(owner),
         ).status_code
         == 200
     )
-    assert client.get(SETTINGS, headers=_headers(member)).json() == {
-        "website_capture_enabled": True
-    }
+    assert client.get(SETTINGS, headers=_headers(member)).json() == _settings_payload(
+        website_capture_enabled=True
+    )
 
 
 def test_unauthenticated_settings_are_rejected(client: TestClient) -> None:
     assert client.get(SETTINGS).status_code == 401
-    assert client.patch(SETTINGS, json={"website_capture_enabled": True}).status_code == 401
+    assert (
+        client.patch(SETTINGS, json=_settings_payload(website_capture_enabled=True)).status_code
+        == 401
+    )
 
 
 def test_rate_limit_returns_429(client: TestClient, monkeypatch: object) -> None:
@@ -319,3 +348,272 @@ def test_existing_start_from_lead_still_works_after_capture(
     assert lead.status == LeadStatus.NEW
     assert lead.source == LeadSource.WEBSITE
     assert db.scalar(select(func.count()).select_from(SalesRun)) == 1
+
+
+def test_settings_get_returns_three_fields_with_auto_start_off(
+    client: TestClient,
+) -> None:
+    created = _auth(client)
+    response = client.get(SETTINGS, headers=_headers(created["access_token"]))
+    assert response.status_code == 200
+    assert response.json() == {
+        "website_capture_enabled": False,
+        "sales_agent_auto_start_enabled": False,
+        "default_sales_agent_id": None,
+    }
+
+
+def test_owner_and_admin_can_patch_valid_auto_start_configuration(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    owner = created["access_token"]
+    admin = _add_org_member(db, org_id, email="admin@example.com", role=MembershipRole.ADMIN)
+    member = _add_org_member(
+        db, org_id, email="member@example.com", role=MembershipRole.MEMBER
+    )
+    agent = _ready_sales_agent(db, org_id, status=AgentStatus.READY)
+    enabled = _settings_payload(
+        website_capture_enabled=True,
+        sales_agent_auto_start_enabled=True,
+        default_sales_agent_id=agent.id,
+    )
+    owner_patch = client.patch(SETTINGS, json=enabled, headers=_headers(owner))
+    assert owner_patch.status_code == 200
+    assert owner_patch.json() == enabled
+    assert client.get(SETTINGS, headers=_headers(member)).json() == enabled
+
+    active = _ready_sales_agent(db, org_id, status=AgentStatus.ACTIVE, name="Active sales")
+    admin_body = _settings_payload(
+        website_capture_enabled=True,
+        sales_agent_auto_start_enabled=True,
+        default_sales_agent_id=active.id,
+    )
+    admin_patch = client.patch(SETTINGS, json=admin_body, headers=_headers(admin))
+    assert admin_patch.status_code == 200
+    assert admin_patch.json() == admin_body
+    assert db.scalar(select(func.count()).select_from(SalesRun)) == 0
+
+
+def test_auto_start_true_requires_capture_and_default_agent(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    agent = _ready_sales_agent(db, created["organization"]["id"])
+    missing_capture = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=False,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id=agent.id,
+        ),
+        headers=_headers(token),
+    )
+    assert missing_capture.status_code == 422
+    missing_agent = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id=None,
+        ),
+        headers=_headers(token),
+    )
+    assert missing_agent.status_code == 422
+    blank_agent = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id="   ",
+        ),
+        headers=_headers(token),
+    )
+    assert blank_agent.status_code == 422
+    assert client.get(SETTINGS, headers=_headers(token)).json() == _settings_payload()
+
+
+def test_default_agent_must_be_same_org_executable_sales_agent(
+    client: TestClient, db: Session
+) -> None:
+    first = _auth(client, email="a@example.com", organization_name="Alpha")
+    second = _auth(client, email="b@example.com", organization_name="Beta")
+    own = _ready_sales_agent(db, first["organization"]["id"])
+    foreign = _ready_sales_agent(db, second["organization"]["id"], name="Foreign sales")
+    support = _create_agent(
+        db, first["organization"]["id"], status=AgentStatus.READY, name="Support bot"
+    )
+    support.agent_type = AgentType.SUPPORT
+    db.commit()
+    draft = _ready_sales_agent(
+        db, first["organization"]["id"], status=AgentStatus.DRAFT, name="Draft sales"
+    )
+    paused = _ready_sales_agent(
+        db, first["organization"]["id"], status=AgentStatus.PAUSED, name="Paused sales"
+    )
+    token = first["access_token"]
+    for agent_id in (foreign.id, support.id, draft.id, paused.id, "missing-agent"):
+        response = client.patch(
+            SETTINGS,
+            json=_settings_payload(
+                website_capture_enabled=True,
+                sales_agent_auto_start_enabled=True,
+                default_sales_agent_id=agent_id,
+            ),
+            headers=_headers(token),
+        )
+        assert response.status_code == 422, agent_id
+    assert client.get(SETTINGS, headers=_headers(token)).json() == _settings_payload()
+    assert client.get(SETTINGS, headers=_headers(second["access_token"])).json() == (
+        _settings_payload()
+    )
+    valid = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id=own.id,
+        ),
+        headers=_headers(token),
+    )
+    assert valid.status_code == 200
+    stolen = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id=own.id,
+        ),
+        headers=_headers(second["access_token"]),
+    )
+    assert stolen.status_code == 422
+    assert client.get(SETTINGS, headers=_headers(second["access_token"])).json() == (
+        _settings_payload()
+    )
+
+
+def test_auto_start_false_allows_null_agent_and_rejects_unknown_fields(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    agent = _ready_sales_agent(db, created["organization"]["id"])
+    enabled = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id=agent.id,
+        ),
+        headers=_headers(token),
+    )
+    assert enabled.status_code == 200
+    disabled = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=False,
+            default_sales_agent_id=None,
+        ),
+        headers=_headers(token),
+    )
+    assert disabled.status_code == 200
+    assert disabled.json() == _settings_payload(website_capture_enabled=True)
+    extra = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            organization_id=created["organization"]["id"],
+        ),
+        headers=_headers(token),
+    )
+    assert extra.status_code == 422
+    missing = client.patch(
+        SETTINGS,
+        json={"website_capture_enabled": True},
+        headers=_headers(token),
+    )
+    assert missing.status_code == 422
+    assert client.get(SETTINGS, headers=_headers(token)).json() == _settings_payload(
+        website_capture_enabled=True
+    )
+    assert db.scalar(select(func.count()).select_from(SalesRun)) == 0
+
+
+def test_auto_start_enabled_queues_pending_without_starting_sales_run(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    org_id = created["organization"]["id"]
+    token = created["access_token"]
+    agent = _ready_sales_agent(db, org_id, status=AgentStatus.READY)
+    configured = client.patch(
+        SETTINGS,
+        json=_settings_payload(
+            website_capture_enabled=True,
+            sales_agent_auto_start_enabled=True,
+            default_sales_agent_id=agent.id,
+        ),
+        headers=_headers(token),
+    )
+    assert configured.status_code == 200
+    app.dependency_overrides[get_ai_provider] = lambda: BoomAIProvider()
+    app.dependency_overrides[get_email_provider] = lambda: BoomEmailProvider()
+    client.app = app
+
+    def boom_generate(self: object, request: object) -> object:
+        raise AssertionError("public capture must not call OpenAI")
+
+    monkeypatch.setattr(OpenAIProvider, "generate", boom_generate)
+
+    response = client.post(PATH.format(slug=slug), json=_payload())
+    assert response.status_code == 204
+    assert response.content == b""
+
+    row = db.scalar(select(Lead).where(Lead.organization_id == org_id))
+    assert row is not None
+    assert row.source == LeadSource.WEBSITE
+    assert row.status == LeadStatus.NEW
+    assert row.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING
+    assert row.enquiry == ENQUIRY
+    assert db.scalar(select(func.count()).select_from(SalesRun)) == 0
+    assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
+    assert db.scalar(select(func.count()).select_from(LeadEmailSend)) == 0
+    assert db.scalar(select(func.count()).select_from(LeadFollowUp)) == 0
+
+
+def test_honeypot_with_auto_start_enabled_does_not_queue_pending(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    agent = _ready_sales_agent(db, created["organization"]["id"])
+    assert (
+        client.patch(
+            SETTINGS,
+            json=_settings_payload(
+                website_capture_enabled=True,
+                sales_agent_auto_start_enabled=True,
+                default_sales_agent_id=agent.id,
+            ),
+            headers=_headers(created["access_token"]),
+        ).status_code
+        == 200
+    )
+    response = client.post(
+        PATH.format(slug=slug),
+        json=_payload(website="http://spam.test"),
+    )
+    assert response.status_code == 204
+    assert db.scalar(select(func.count()).select_from(Lead)) == 0
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING)
+        )
+        == 0
+    )

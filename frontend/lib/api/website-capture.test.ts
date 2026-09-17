@@ -57,16 +57,21 @@ describe("Website capture API client", () => {
   });
 
   it("patches authenticated capture settings", async () => {
+    const payload = {
+      website_capture_enabled: true,
+      sales_agent_auto_start_enabled: true,
+      default_sales_agent_id: "agent-sales-1",
+    };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ website_capture_enabled: true }), {
+        new Response(JSON.stringify(payload), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
       ),
     );
     await getWebsiteCaptureSettings();
-    await updateWebsiteCaptureSettings(true);
+    await updateWebsiteCaptureSettings(payload);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "http://localhost:8000/api/v1/organizations/current/website-capture",
@@ -81,8 +86,11 @@ describe("Website capture API client", () => {
       "http://localhost:8000/api/v1/organizations/current/website-capture",
       expect.objectContaining({
         method: "PATCH",
-        body: JSON.stringify({ website_capture_enabled: true }),
+        body: JSON.stringify(payload),
       }),
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).not.toHaveProperty(
+      "organization_id",
     );
   });
 });

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
-from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead import Lead, LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend
 from app.models.lead_follow_up import LeadFollowUp
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
@@ -73,6 +73,7 @@ class LeadService:
         enquiry: str | None = None,
         initiated_by_user_id: str | None = None,
         website_enquiry: bool = False,
+        sales_agent_auto_start_status: LeadSalesAgentAutoStartStatus | None = None,
     ) -> Lead:
         lead = Lead(
             organization_id=organization_id,
@@ -84,6 +85,9 @@ class LeadService:
             status=status,
             notes=notes,
             enquiry=enquiry,
+            sales_agent_auto_start_status=(
+                sales_agent_auto_start_status if website_enquiry else None
+            ),
         )
         self.leads.add(lead)
         self.session.flush()

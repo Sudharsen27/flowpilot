@@ -39,9 +39,7 @@ def read_current_members(
 def read_website_capture_settings(
     organization: Organization = Depends(get_current_organization),
 ) -> WebsiteCaptureSettings:
-    return WebsiteCaptureSettings(
-        website_capture_enabled=organization.website_capture_enabled,
-    )
+    return WebsiteCaptureSettings.model_validate(organization)
 
 
 @router.patch("/current/website-capture", response_model=WebsiteCaptureSettings)
@@ -51,11 +49,11 @@ def update_website_capture_settings(
     membership: Membership = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> WebsiteCaptureSettings:
-    updated = OrganizationService(db).set_website_capture_enabled(
+    updated = OrganizationService(db).update_website_capture_settings(
         organization_id=organization.id,
         role=membership.role,
-        enabled=payload.website_capture_enabled,
+        website_capture_enabled=payload.website_capture_enabled,
+        sales_agent_auto_start_enabled=payload.sales_agent_auto_start_enabled,
+        default_sales_agent_id=payload.default_sales_agent_id,
     )
-    return WebsiteCaptureSettings(
-        website_capture_enabled=updated.website_capture_enabled,
-    )
+    return WebsiteCaptureSettings.model_validate(updated)

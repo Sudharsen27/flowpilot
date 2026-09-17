@@ -6,7 +6,7 @@ from app.models.activity_event import (
 )
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
-from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead import Lead, LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend
 from app.models.lead_follow_up import LeadFollowUp
 from app.models.lead_follow_up_execution import LeadFollowUpExecution
@@ -34,6 +34,7 @@ __all__ = [
     "LeadFollowUpExecution",
     "LeadQualification",
     "LeadResponseDraft",
+    "LeadSalesAgentAutoStartStatus",
     "LeadSource",
     "LeadStatus",
     "Membership",

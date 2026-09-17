@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,6 +38,14 @@ class LeadSource(StrEnum):
     IMPORT = "IMPORT"
 
 
+class LeadSalesAgentAutoStartStatus(StrEnum):
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    STARTED = "STARTED"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
 class Lead(Base):
     __tablename__ = "leads"
     __table_args__ = (
@@ -49,6 +58,11 @@ class Lead(Base):
             "source IN ('MANUAL', 'WEBSITE', 'EMAIL', 'CHAT', 'API', 'IMPORT')",
             name="ck_leads_source",
         ),
+        CheckConstraint(
+            "sales_agent_auto_start_status IS NULL OR sales_agent_auto_start_status IN ("
+            "'PENDING', 'CLAIMED', 'STARTED', 'SKIPPED', 'FAILED')",
+            name="ck_leads_sales_agent_auto_start_status",
+        ),
         Index(
             "ix_leads_organization_id_created_at_id",
             "organization_id",
@@ -57,6 +71,13 @@ class Lead(Base):
         ),
         Index("ix_leads_organization_id_status", "organization_id", "status"),
         Index("ix_leads_organization_id_source", "organization_id", "source"),
+        Index(
+            "ix_leads_auto_start_pending",
+            "created_at",
+            "id",
+            postgresql_where=text("sales_agent_auto_start_status = 'PENDING'"),
+            sqlite_where=text("sales_agent_auto_start_status = 'PENDING'"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -74,6 +95,7 @@ class Lead(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=LeadStatus.NEW)
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     enquiry: Mapped[str | None] = mapped_column(String(8000), nullable=True)
+    sales_agent_auto_start_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -210,7 +210,7 @@ export default function SettingsPage() {
           <section className="grid gap-5">
             <SectionHeader
               title="Website enquiries"
-              description="Hosted form for website visitors. The Sales Agent does not start automatically, and email is not sent automatically."
+              description="Hosted form for website visitors. Email is not sent until a person approves a response."
             />
             <WebsiteEnquirySettings
               slug={session.organization.slug}

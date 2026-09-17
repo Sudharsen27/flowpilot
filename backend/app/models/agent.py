@@ -76,7 +76,7 @@ class Agent(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    organization: Mapped["Organization"] = relationship()
+    organization: Mapped["Organization"] = relationship(foreign_keys=[organization_id])
     executions: Mapped[list["AgentExecution"]] = relationship(
         back_populates="agent",
         overlaps="organization",

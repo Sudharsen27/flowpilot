@@ -52,9 +52,11 @@ class PublicEnquiryFormPublic(BaseModel):
 
 
 class WebsiteCaptureSettingsPublic(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     website_capture_enabled: bool
+    sales_agent_auto_start_enabled: bool
+    default_sales_agent_id: str | None = None
 
 
 WebsiteCaptureSettings = WebsiteCaptureSettingsPublic
@@ -64,3 +66,12 @@ class WebsiteCaptureSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     website_capture_enabled: bool
+    sales_agent_auto_start_enabled: bool
+    default_sales_agent_id: str | None = Field(max_length=36)
+
+    @field_validator("default_sales_agent_id", mode="before")
+    @classmethod
+    def empty_agent_id(cls, value: object) -> object:
+        if isinstance(value, str):
+            return _blank_to_none(value)
+        return value

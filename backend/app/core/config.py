@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     follow_up_worker_enabled: bool = False
     follow_up_worker_poll_interval_seconds: float = Field(default=30, ge=1)
     follow_up_worker_batch_size: int = Field(default=10, ge=1, le=50)
+    # The Sales Agent auto-start worker shares `python -m app.worker`. It is
+    # never started by the API process. Disabled by default so a local API
+    # server never calls the model for website enquiries unexpectedly.
+    sales_agent_auto_start_worker_enabled: bool = False
+    sales_agent_auto_start_worker_poll_interval_seconds: float = Field(default=30, ge=1)
+    sales_agent_auto_start_worker_batch_size: int = Field(default=10, ge=1, le=50)
     # In-process sliding window for public website capture. Single-instance only;
     # it is not shared across API processes and does not use Redis.
     website_capture_rate_limit_max: int = Field(default=5, ge=1)

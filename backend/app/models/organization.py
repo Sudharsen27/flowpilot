@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, String, false, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -22,6 +22,23 @@ class Organization(Base):
         nullable=False,
         default=False,
         server_default=false(),
+    )
+    sales_agent_auto_start_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
+    default_sales_agent_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "agents.id",
+            ondelete="SET NULL",
+            name="fk_organizations_default_sales_agent_id",
+            use_alter=True,
+        ),
+        nullable=True,
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

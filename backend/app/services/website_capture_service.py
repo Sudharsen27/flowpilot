@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.exceptions import NotFoundError, RateLimitError
 from app.core.rate_limit import website_capture_limiter
-from app.models.lead import LeadSource, LeadStatus
+from app.models.lead import LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 from app.models.organization import Organization
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.website_capture import UNAVAILABLE_DETAIL
@@ -40,6 +40,9 @@ class WebsiteCaptureService:
         if honeypot:
             return
         organization = self._resolve_enabled(slug)
+        auto_start_status = None
+        if organization.sales_agent_auto_start_enabled:
+            auto_start_status = LeadSalesAgentAutoStartStatus.PENDING
         self.leads.create(
             organization_id=organization.id,
             name=name,
@@ -49,6 +52,7 @@ class WebsiteCaptureService:
             status=LeadStatus.NEW,
             enquiry=enquiry,
             website_enquiry=True,
+            sales_agent_auto_start_status=auto_start_status,
         )
 
     def _resolve_enabled(self, slug: str) -> Organization:

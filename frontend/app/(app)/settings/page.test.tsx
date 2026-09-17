@@ -4,7 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "@/app/(app)/settings/page";
 
-const { apiGet, signOut, authState, getWebsiteCaptureSettings, updateWebsiteCaptureSettings } =
+const {
+  apiGet,
+  signOut,
+  authState,
+  getWebsiteCaptureSettings,
+  updateWebsiteCaptureSettings,
+  getAgents,
+} =
   vi.hoisted(() => {
     const signOut = vi.fn();
     return {
@@ -12,6 +19,7 @@ const { apiGet, signOut, authState, getWebsiteCaptureSettings, updateWebsiteCapt
       signOut,
       getWebsiteCaptureSettings: vi.fn(),
       updateWebsiteCaptureSettings: vi.fn(),
+      getAgents: vi.fn(),
       authState: {
         isLoading: false,
         session: {
@@ -50,12 +58,19 @@ vi.mock("@/lib/api/website-capture", () => ({
   updateWebsiteCaptureSettings,
 }));
 
+vi.mock("@/lib/api/agents", () => ({
+  getAgents,
+}));
+
 describe("identity-backed settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getWebsiteCaptureSettings.mockResolvedValue({
       website_capture_enabled: false,
+      sales_agent_auto_start_enabled: false,
+      default_sales_agent_id: null,
     });
+    getAgents.mockResolvedValue([]);
   });
 
   it("renders authenticated identity and real organization members", async () => {
@@ -93,8 +108,9 @@ describe("identity-backed settings", () => {
     expect(screen.getAllByText("jordan@example.com")).not.toHaveLength(0);
     expect(screen.getAllByText("Member")).not.toHaveLength(0);
     expect(screen.getByRole("heading", { name: "Website enquiries" })).toBeVisible();
+    expect(screen.getByText(/Hosted form for website visitors/)).toBeVisible();
     expect(
-      screen.getByText(/will not start the Sales Agent or send email automatically/),
+      await screen.findByRole("switch", { name: "Start Sales Agent automatically" }),
     ).toBeVisible();
   });
 

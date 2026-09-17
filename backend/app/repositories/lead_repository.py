@@ -1,7 +1,7 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead import Lead, LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 
 LEAD_LIST_MAX_LIMIT = 50
 LEAD_LIST_DEFAULT_LIMIT = 20
@@ -88,3 +88,73 @@ class LeadRepository:
         for status, count in rows:
             counts[str(status)] = int(count)
         return counts
+
+    def pending_auto_start_claim_statement(self, limit: int) -> Select[tuple[Lead]]:
+        """Claim statement for PENDING website leads across all organizations.
+
+        Always carries FOR UPDATE SKIP LOCKED. Only PostgreSQL honours it;
+        SQLite ignores the clause, so the locking guarantee exists in
+        PostgreSQL only. Rows include organization_id and id for tenant-safe
+        worker claiming; organization is never taken from client input.
+        """
+        return (
+            select(Lead)
+            .where(
+                Lead.sales_agent_auto_start_status
+                == LeadSalesAgentAutoStartStatus.PENDING,
+                Lead.source == LeadSource.WEBSITE,
+            )
+            .order_by(Lead.created_at.asc(), Lead.id.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+
+    def list_pending_auto_start(
+        self,
+        *,
+        limit: int,
+        for_update_skip_locked: bool = False,
+    ) -> list[Lead]:
+        bind = self.session.get_bind()
+        is_postgres = bind is not None and bind.dialect.name == "postgresql"
+        if for_update_skip_locked and is_postgres:
+            return list(
+                self.session.scalars(self.pending_auto_start_claim_statement(limit))
+            )
+        stmt = (
+            select(Lead)
+            .where(
+                Lead.sales_agent_auto_start_status
+                == LeadSalesAgentAutoStartStatus.PENDING,
+                Lead.source == LeadSource.WEBSITE,
+            )
+            .order_by(Lead.created_at.asc(), Lead.id.asc())
+            .limit(limit)
+        )
+        return list(self.session.scalars(stmt))
+
+    def cas_auto_start_status(
+        self,
+        organization_id: str,
+        lead_id: str,
+        from_status: LeadSalesAgentAutoStartStatus,
+        to_status: LeadSalesAgentAutoStartStatus,
+    ) -> int:
+        self._expire_leads()
+        self.session.flush()
+        result = self.session.execute(
+            update(Lead)
+            .where(
+                Lead.organization_id == organization_id,
+                Lead.id == lead_id,
+                Lead.sales_agent_auto_start_status == from_status,
+            )
+            .values(sales_agent_auto_start_status=to_status)
+        )
+        self.session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    def _expire_leads(self) -> None:
+        for obj in list(self.session.identity_map.values()):
+            if isinstance(obj, Lead):
+                self.session.expire(obj)

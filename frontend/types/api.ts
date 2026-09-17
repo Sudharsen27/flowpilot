@@ -674,10 +674,14 @@ export type SalesRunListParams = {
 
 export type WebsiteCaptureSettings = {
   website_capture_enabled: boolean;
+  sales_agent_auto_start_enabled: boolean;
+  default_sales_agent_id: string | null;
 };
 
 export type WebsiteCaptureSettingsUpdate = {
   website_capture_enabled: boolean;
+  sales_agent_auto_start_enabled: boolean;
+  default_sales_agent_id: string | null;
 };
 
 export type PublicEnquiryForm = {
