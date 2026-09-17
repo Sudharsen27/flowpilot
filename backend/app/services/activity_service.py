@@ -98,6 +98,7 @@ class ActivityService:
     ) -> ActivityListResponse:
         capped = min(max(limit, 1), ACTIVITY_LIST_MAX_LIMIT)
         safe_offset = max(offset, 0)
+        search = _sanitize_search(search)
         items, total = self.events.list_for_organization(
             organization_id,
             limit=capped,
@@ -105,9 +106,15 @@ class ActivityService:
             event_type=event_type,
             entity_type=entity_type,
             entity_id=entity_id,
-            search=_sanitize_search(search),
+            search=search,
         )
-        raw_counts = self.events.type_counts(organization_id)
+        raw_counts = self.events.type_counts(
+            organization_id,
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            search=search,
+        )
         return ActivityListResponse(
             items=[to_activity_public(item, include_summary=False) for item in items],
             limit=capped,

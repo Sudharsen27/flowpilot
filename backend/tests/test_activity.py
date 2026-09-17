@@ -83,16 +83,36 @@ def test_activity_list_filter_search_and_pagination(client: TestClient) -> None:
     assert body["offset"] == 0
     assert body["total"] == 3
     assert len(body["items"]) == 1
+    assert body["type_counts"]["HUMAN_ACTION"] == 3
+    assert sum(body["type_counts"].values()) == body["total"]
     page_two = _activity(client, token, limit=1, offset=1).json()
     assert page_two["items"][0]["id"] != body["items"][0]["id"]
     human = _activity(client, token, type="HUMAN_ACTION").json()
     assert human["total"] == 3
+    assert human["type_counts"] == {
+        "AI_ACTION": 0,
+        "APPROVAL": 0,
+        "HUMAN_ACTION": 3,
+        "SYSTEM_EVENT": 0,
+    }
     assert all(item["type"] == "HUMAN_ACTION" for item in human["items"])
     leads = _activity(client, token, entity_type="LEAD").json()
     assert leads["total"] == 3
+    assert leads["type_counts"]["HUMAN_ACTION"] == 3
+    assert sum(leads["type_counts"].values()) == leads["total"]
+    by_entity = _activity(client, token, entity_id=first["id"]).json()
+    assert by_entity["total"] == 2
+    assert by_entity["type_counts"]["HUMAN_ACTION"] == 2
+    assert sum(by_entity["type_counts"].values()) == by_entity["total"]
     searched = _activity(client, token, q="status changed").json()
     assert searched["total"] == 1
     assert searched["items"][0]["title"] == "Lead status changed"
+    assert searched["type_counts"] == {
+        "AI_ACTION": 0,
+        "APPROVAL": 0,
+        "HUMAN_ACTION": 1,
+        "SYSTEM_EVENT": 0,
+    }
     invalid = _activity(client, token, type="WORKFLOW")
     assert invalid.status_code == 422
 
@@ -105,6 +125,12 @@ def test_activity_detail_and_cross_tenant_isolation(client: TestClient) -> None:
     listed_b = _activity(client, org_b["access_token"])
     assert listed_b.status_code == 200
     assert listed_b.json()["total"] == 0
+    assert listed_b.json()["type_counts"] == {
+        "AI_ACTION": 0,
+        "APPROVAL": 0,
+        "HUMAN_ACTION": 0,
+        "SYSTEM_EVENT": 0,
+    }
     detail_b = client.get(f"/api/v1/activity/{event_id}", headers=_headers(org_b["access_token"]))
     assert detail_b.status_code == 404
     detail_a = client.get(f"/api/v1/activity/{event_id}", headers=_headers(org_a["access_token"]))
@@ -166,6 +192,19 @@ def test_qualification_and_draft_lifecycle_emit_activity(client: TestClient) -> 
     assert "Response draft generated" in titles
     assert "Response draft edited" in titles
     assert "Response draft approved" in titles
+    unfiltered = _activity(client, token).json()
+    assert unfiltered["type_counts"]["AI_ACTION"] >= 1
+    assert unfiltered["type_counts"]["HUMAN_ACTION"] >= 1
+    assert unfiltered["type_counts"]["APPROVAL"] >= 1
+    assert sum(unfiltered["type_counts"].values()) == unfiltered["total"]
+    human_only = _activity(client, token, type="HUMAN_ACTION").json()
+    assert human_only["type_counts"]["AI_ACTION"] == 0
+    assert human_only["type_counts"]["APPROVAL"] == 0
+    assert human_only["type_counts"]["HUMAN_ACTION"] == human_only["total"]
+    ai_only = _activity(client, token, type="AI_ACTION").json()
+    assert ai_only["type_counts"]["HUMAN_ACTION"] == 0
+    assert ai_only["type_counts"]["APPROVAL"] == 0
+    assert ai_only["type_counts"]["AI_ACTION"] == ai_only["total"]
     blob = str(_activity(client, token).json())
     assert SECRET_ENQUIRY not in blob
     assert SECRET_DRAFT not in blob
