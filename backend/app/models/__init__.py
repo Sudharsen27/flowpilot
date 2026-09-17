@@ -1,3 +1,9 @@
+from app.models.activity_event import (
+    ActivityActorType,
+    ActivityEntityType,
+    ActivityEvent,
+    ActivityEventType,
+)
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.lead import Lead, LeadSource, LeadStatus
@@ -13,6 +19,10 @@ from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
 
 __all__ = [
+    "ActivityActorType",
+    "ActivityEntityType",
+    "ActivityEvent",
+    "ActivityEventType",
     "Agent",
     "AgentExecution",
     "AgentExecutionStatus",

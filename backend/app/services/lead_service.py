@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend
 from app.models.lead_follow_up import LeadFollowUp
@@ -37,6 +38,7 @@ from app.schemas.sales_run import (
     LeadLatestSalesRunFollowUpSummary,
     LeadLatestSalesRunSummary,
 )
+from app.services.activity_service import ActivityService
 from app.services.lead_follow_up_service import to_follow_up_public
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
@@ -69,6 +71,8 @@ class LeadService:
         status: LeadStatus = LeadStatus.NEW,
         notes: str | None = None,
         enquiry: str | None = None,
+        initiated_by_user_id: str | None = None,
+        website_enquiry: bool = False,
     ) -> Lead:
         lead = Lead(
             organization_id=organization_id,
@@ -82,6 +86,36 @@ class LeadService:
             enquiry=enquiry,
         )
         self.leads.add(lead)
+        self.session.flush()
+        if website_enquiry:
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.SYSTEM_EVENT,
+                actor_type=ActivityActorType.PUBLIC_VISITOR,
+                title="Website enquiry received",
+                summary="A website visitor submitted an enquiry and a lead was created.",
+                entity_type=ActivityEntityType.LEAD,
+                entity_id=lead.id,
+                lead_id=lead.id,
+                status=lead.status,
+                dedupe_key=f"lead:{lead.id}:WEBSITE_ENQUIRY",
+            )
+        else:
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.HUMAN_ACTION,
+                actor_type=(
+                    ActivityActorType.USER if initiated_by_user_id else ActivityActorType.SYSTEM
+                ),
+                title="Lead created",
+                summary="A lead record was created in this organization.",
+                entity_type=ActivityEntityType.LEAD,
+                entity_id=lead.id,
+                lead_id=lead.id,
+                actor_user_id=initiated_by_user_id,
+                status=lead.status,
+                dedupe_key=f"lead:{lead.id}:CREATED",
+            )
         self.session.commit()
         self.session.refresh(lead)
         return lead
@@ -145,8 +179,16 @@ class LeadService:
             status_counts={LeadStatus(key): value for key, value in raw_counts.items()},
         )
 
-    def update(self, *, organization_id: str, lead_id: str, payload: LeadUpdate) -> Lead:
+    def update(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        payload: LeadUpdate,
+        initiated_by_user_id: str | None = None,
+    ) -> Lead:
         lead = self.get_or_raise(organization_id, lead_id)
+        previous_status = lead.status
         fields = payload.model_fields_set
         if "name" in fields and payload.name is not None:
             lead.name = payload.name.strip()
@@ -165,6 +207,22 @@ class LeadService:
         if "enquiry" in fields:
             lead.enquiry = payload.enquiry
         lead.updated_at = datetime.now(UTC)
+        if "status" in fields and payload.status is not None and payload.status != previous_status:
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.HUMAN_ACTION,
+                actor_type=(
+                    ActivityActorType.USER if initiated_by_user_id else ActivityActorType.SYSTEM
+                ),
+                title="Lead status changed",
+                summary="A lead CRM status was updated.",
+                entity_type=ActivityEntityType.LEAD,
+                entity_id=lead.id,
+                lead_id=lead.id,
+                actor_user_id=initiated_by_user_id,
+                status=payload.status,
+                dedupe_key=f"lead:{lead.id}:STATUS:{payload.status}",
+            )
         self.session.commit()
         self.session.refresh(lead)
         return lead

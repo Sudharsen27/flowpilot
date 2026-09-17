@@ -15,6 +15,7 @@ from app.core.exceptions import (
 )
 from app.email.headers import safe_header, safe_optional_name
 from app.email.provider import EmailMessage, EmailProvider
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead
 from app.models.lead_email_send import LeadEmailSend, LeadEmailSendStatus
@@ -27,6 +28,7 @@ from app.repositories.lead_email_send_repository import LeadEmailSendRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.schemas.lead_email_send import LeadEmailSendPublic
+from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 
 logger = logging.getLogger(__name__)
@@ -151,6 +153,21 @@ class LeadEmailSendService:
         row.error = None
         row.failure_category = None
         row.completed_at = datetime.now(UTC)
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=(
+                ActivityActorType.USER if initiated_by_user_id else ActivityActorType.SYSTEM
+            ),
+            title="Email sent",
+            summary="An approved response was accepted by the email provider.",
+            entity_type=ActivityEntityType.LEAD_EMAIL_SEND,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            actor_user_id=initiated_by_user_id,
+            status=LeadEmailSendStatus.SENT,
+            dedupe_key=f"email_send:{row.id}:SENT",
+        )
         self.session.commit()
         self.session.refresh(row)
         return row
@@ -202,6 +219,20 @@ class LeadEmailSendService:
         row.failure_category = category
         row.completed_at = datetime.now(UTC)
         self.sends.add(row)
+        if row.id:
+            ActivityService(self.session).record(
+                organization_id=row.organization_id,
+                event_type=ActivityEventType.SYSTEM_EVENT,
+                actor_type=ActivityActorType.SYSTEM,
+                title="Email send failed",
+                summary="An approved response could not be sent.",
+                entity_type=ActivityEntityType.LEAD_EMAIL_SEND,
+                entity_id=row.id,
+                lead_id=row.lead_id,
+                actor_user_id=row.initiated_by_user_id,
+                status=LeadEmailSendStatus.FAILED,
+                dedupe_key=f"email_send:{row.id}:FAILED",
+            )
         self.session.commit()
         self.session.refresh(row)
         payload = to_email_send_public(row).model_dump(mode="json") | {"detail": error}

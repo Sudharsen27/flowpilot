@@ -1,45 +1,53 @@
-import { Bot, UserRound, Workflow, ListTree } from "lucide-react";
+import { Bot, CheckCheck, ListTree, UserRound } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import type { ActivityEventType } from "@/types/api";
 
-const activityMetrics = [
-  {
-    label: "Events",
-    unavailableLabel: "No activity data",
-    icon: ListTree,
-  },
-  {
-    label: "AI actions",
-    unavailableLabel: "No AI activity data",
-    icon: Bot,
-  },
-  {
-    label: "Workflow events",
-    unavailableLabel: "No workflow activity data",
-    icon: Workflow,
-  },
-  {
-    label: "Human actions",
-    unavailableLabel: "No human activity data",
-    icon: UserRound,
-  },
-] as const;
+type ActivitySummaryProps = {
+  loading?: boolean;
+  total?: number;
+  typeCounts?: Partial<Record<ActivityEventType, number>>;
+};
 
-export function ActivitySummary() {
+export function ActivitySummary({
+  loading = false,
+  total,
+  typeCounts,
+}: ActivitySummaryProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {activityMetrics.map((metric) => {
-        const Icon = metric.icon;
-        return (
-          <MetricCard
-            key={metric.label}
-            label={metric.label}
-            unavailableLabel={metric.unavailableLabel}
-            headingLevel={3}
-            icon={<Icon />}
-          />
-        );
-      })}
+      <MetricCard
+        label="Events"
+        value={total}
+        description="Organization events recorded so far."
+        loading={loading}
+        headingLevel={3}
+        icon={<ListTree />}
+      />
+      <MetricCard
+        label="AI actions"
+        value={typeCounts?.AI_ACTION}
+        description="Qualification, drafting, Sales Agent, and executions."
+        loading={loading}
+        headingLevel={3}
+        icon={<Bot />}
+      />
+      <MetricCard
+        label="Approvals"
+        value={typeCounts?.APPROVAL}
+        description="Draft approvals and rejections."
+        loading={loading}
+        headingLevel={3}
+        icon={<CheckCheck />}
+      />
+      <MetricCard
+        label="Human actions"
+        value={typeCounts?.HUMAN_ACTION}
+        description="Leads, review edits, sends, and follow-ups."
+        loading={loading}
+        headingLevel={3}
+        icon={<UserRound />}
+      />
     </div>
   );
 }

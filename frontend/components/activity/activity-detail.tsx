@@ -1,33 +1,49 @@
 import { ArrowLeft, FileClock } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { ActivityStatusBadge } from "@/components/activity/activity-status-badge";
+import {
+  actorLabels,
+  entityLabels,
+} from "@/components/activity/activity-timeline";
 import { ActivityTypeBadge } from "@/components/activity/activity-type-badge";
-import type { ActivityEventItem } from "@/components/activity/activity-timeline";
-import { Button } from "@/components/ui/button";
+import { formatTimestamp } from "@/components/agents/execution-status";
+import { AiBadge } from "@/components/ai/ai-badge";
+import { DetailRow } from "@/components/data-display/detail-row";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { cn } from "@/lib/utils";
+import { statusPresentation } from "@/lib/status";
+import type { ActivityEvent } from "@/types/api";
 
 type ActivityDetailProps = {
-  event?: ActivityEventItem;
+  event?: ActivityEvent | null;
+  loading?: boolean;
   onBack?: () => void;
 };
 
-type DetailFieldProps = {
+function DetailField({
+  label,
+  value,
+}: {
   label: string;
   value?: ReactNode;
-};
-
-function DetailField({ label, value }: DetailFieldProps) {
+}) {
   return (
     <div className="grid gap-1.5">
       <dt className="text-muted-foreground text-xs font-medium">{label}</dt>
-      <dd className="text-sm leading-6">{value ?? "No event selected."}</dd>
+      <dd className="text-sm leading-6">{value ?? "—"}</dd>
     </div>
   );
 }
 
-export function ActivityDetail({ event, onBack }: ActivityDetailProps) {
+export function ActivityDetail({ event, loading = false, onBack }: ActivityDetailProps) {
+  const status = event?.status
+    ? statusPresentation(event.status, event.status)
+    : null;
+
   return (
     <Card
       as="section"
@@ -56,20 +72,25 @@ export function ActivityDetail({ event, onBack }: ActivityDetailProps) {
               Event detail
             </h3>
             <p className="text-muted-foreground mt-1 text-sm">
-              Inspect the source and context of a recorded event.
+              Inspect a recorded organization event.
             </p>
           </div>
         </div>
-        {event ? (
-          <ActivityStatusBadge status={event.status} />
-        ) : (
-          <StatusBadge status="draft" label="Unavailable" />
-        )}
+        {event && status ? (
+          <StatusBadge status={status.status} label={status.label} />
+        ) : null}
       </header>
 
       {!event ? (
+        loading ? (
+          <div className="grid gap-3 p-5" role="status">
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-24" />
+            <span className="sr-only">Loading event detail</span>
+          </div>
+        ) : (
         <section
-          className="border-border flex flex-col items-center justify-center border-b px-6 py-10 text-center"
+          className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center"
           aria-labelledby="event-selection-title"
         >
           <div
@@ -82,31 +103,61 @@ export function ActivityDetail({ event, onBack }: ActivityDetailProps) {
             No event selected
           </h4>
           <p className="text-muted-foreground mt-1.5 max-w-sm text-sm leading-6">
-            Event details will appear here after a real activity source exists
-            and an event is selected.
+            Select an event from the timeline to see when it happened and which
+            record it relates to.
           </p>
         </section>
-      ) : null}
-
-      <dl className="grid flex-1 content-start gap-6 p-5 sm:grid-cols-2 sm:p-6">
-        <DetailField
-          label="Event type"
-          value={event ? <ActivityTypeBadge type={event.type} /> : undefined}
-        />
-        <DetailField label="Actor" value={event?.actor} />
-        <DetailField label="Description" value={event?.description} />
-        <DetailField label="Related object" value={event?.relatedObject} />
-        <DetailField label="Timestamp" value={event?.timestamp} />
-        <DetailField
-          label="Status"
-          value={
-            event ? <ActivityStatusBadge status={event.status} /> : undefined
-          }
-        />
-        <div className="sm:col-span-2">
-          <DetailField label="Details and context" value={event?.details} />
+        )
+      ) : loading && !event.summary ? (
+        <div className="grid gap-3 p-5" role="status">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-24" />
+          <span className="sr-only">Loading event detail</span>
         </div>
-      </dl>
+      ) : (
+        <div className="grid flex-1 content-start gap-6 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <ActivityTypeBadge type={event.type} />
+            {event.type === "AI_ACTION" ? <AiBadge label="Agent" /> : null}
+          </div>
+          <h4 className="text-card-title font-medium tracking-tight">
+            {event.title}
+          </h4>
+          <dl className="grid gap-5 sm:grid-cols-2">
+            <DetailField
+              label="When"
+              value={formatTimestamp(event.occurred_at) ?? "—"}
+            />
+            <DetailField label="Actor" value={actorLabels[event.actor_type]} />
+            <DetailField
+              label="Entity"
+              value={entityLabels[event.entity_type]}
+            />
+            <DetailField label="Entity ID" value={event.entity_id} />
+            <div className="sm:col-span-2">
+              <DetailRow label="Summary" value={event.summary ?? "—"} />
+            </div>
+          </dl>
+          <div className="flex flex-wrap gap-2">
+            {event.lead_id ? (
+              <Link
+                href={`/leads/${event.lead_id}`}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              >
+                Open lead
+              </Link>
+            ) : null}
+            {event.agent_id ? (
+              <Link
+                href={`/agents/${event.agent_id}`}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              >
+                Open agent
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

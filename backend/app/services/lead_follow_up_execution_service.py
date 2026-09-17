@@ -15,6 +15,7 @@ from app.core.exceptions import (
 )
 from app.email.headers import safe_header, safe_optional_name
 from app.email.provider import EmailMessage, EmailProvider
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
 from app.models.lead_follow_up_execution import (
@@ -31,6 +32,7 @@ from app.schemas.lead_follow_up_execution import (
     LeadFollowUpExecutionPublic,
     LeadFollowUpExecutionSnapshot,
 )
+from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 
 logger = logging.getLogger(__name__)
@@ -428,7 +430,21 @@ class LeadFollowUpExecutionService:
         )
         if updated != 1:
             raise ConflictError("This follow-up execution cannot be marked sent")
-        return self.get(organization_id, execution_id)
+        row = self.get(organization_id, execution_id)
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            title="Follow-up executed",
+            summary="A due email follow-up was sent.",
+            entity_type=ActivityEntityType.LEAD_FOLLOW_UP_EXECUTION,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            status=LeadFollowUpExecutionStatus.SENT,
+            dedupe_key=f"follow_up_execution:{row.id}:SENT",
+        )
+        self.session.commit()
+        return row
 
     def mark_failed(
         self,
@@ -454,7 +470,21 @@ class LeadFollowUpExecutionService:
         )
         if updated != 1:
             raise ConflictError("This follow-up execution cannot be marked failed")
-        return self.get(organization_id, execution_id)
+        row = self.get(organization_id, execution_id)
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            title="Follow-up failed",
+            summary="A due email follow-up could not be sent.",
+            entity_type=ActivityEntityType.LEAD_FOLLOW_UP_EXECUTION,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            status=LeadFollowUpExecutionStatus.FAILED,
+            dedupe_key=f"follow_up_execution:{row.id}:FAILED",
+        )
+        self.session.commit()
+        return row
 
     def recover_stale_running_executions(
         self,
@@ -611,6 +641,7 @@ class LeadFollowUpExecutionService:
                 lead_id=follow_up.lead_id,
                 follow_up_id=follow_up.id,
                 expected_revision=follow_up.revision,
+                emit_activity=False,
             )
         except ConflictError:
             logger.info(

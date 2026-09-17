@@ -13,6 +13,7 @@ from app.core.exceptions import (
     ProviderError,
     ProviderNotConfiguredError,
 )
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead
 from app.models.lead_qualification import (
@@ -27,6 +28,7 @@ from app.schemas.lead_qualification import (
     ExtractedContact,
     LeadQualificationAnalysis,
 )
+from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 
 logger = logging.getLogger(__name__)
@@ -117,6 +119,19 @@ class LeadQualificationService:
             row.provider = generated.provider
             row.model = generated.model
             row.completed_at = datetime.now(UTC)
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.AI_ACTION,
+                actor_type=ActivityActorType.AGENT,
+                title="Lead qualified",
+                summary="AI completed enquiry qualification for this lead.",
+                entity_type=ActivityEntityType.LEAD_QUALIFICATION,
+                entity_id=row.id,
+                lead_id=row.lead_id,
+                actor_user_id=initiated_by_user_id,
+                status=row.status,
+                dedupe_key=f"qualification:{row.id}:COMPLETED",
+            )
             self.session.commit()
             self.session.refresh(row)
             return row

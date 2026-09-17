@@ -18,6 +18,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.email.provider import EmailProvider
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, Agent, AgentStatus, AgentType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead, LeadSource, LeadStatus
@@ -52,6 +53,7 @@ from app.schemas.sales_run import (
     SalesRunPublic,
     SalesRunQualificationSummary,
 )
+from app.services.activity_service import ActivityService
 from app.services.agent_service import AgentService
 from app.services.lead_email_send_service import LeadEmailSendService
 from app.services.lead_follow_up_service import LeadFollowUpService, to_follow_up_public
@@ -152,6 +154,21 @@ class SalesRunService:
                 ) from exc
             raise
         self.session.refresh(row)
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.AI_ACTION,
+            actor_type=ActivityActorType.AGENT,
+            title="Sales Agent started",
+            summary="A Sales Agent run started for this lead.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            agent_id=row.agent_id,
+            actor_user_id=initiated_by_user_id,
+            status=SalesRunStatus.RUNNING,
+            dedupe_key=f"sales_run:{row.id}:STARTED",
+        )
+        self.session.commit()
         logger.info(
             "sales_run_started sales_run_id=%s agent_id=%s lead_id=%s",
             row.id,
@@ -311,6 +328,20 @@ class SalesRunService:
         cancelled = self.sales_runs.get_for_agent(organization_id, agent_id, sales_run_id)
         if cancelled is None:
             raise NotFoundError("Sales run not found")
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            title="Sales Run cancelled",
+            summary="A Sales Agent run was cancelled.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=cancelled.id,
+            lead_id=cancelled.lead_id,
+            agent_id=cancelled.agent_id,
+            status=SalesRunStatus.CANCELLED,
+            dedupe_key=f"sales_run:{cancelled.id}:CANCELLED",
+        )
+        self.session.commit()
         logger.info(
             "sales_run_cancelled sales_run_id=%s agent_id=%s lead_id=%s",
             cancelled.id,
@@ -545,6 +576,20 @@ class SalesRunService:
             current.lead_id,
             current.email_send_id,
         )
+        ActivityService(self.session).record(
+            organization_id=current.organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            title="Sales Run completed",
+            summary="A Sales Agent run finished after the approved response was sent.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=current.id,
+            lead_id=current.lead_id,
+            agent_id=current.agent_id,
+            status=SalesRunStatus.COMPLETED,
+            dedupe_key=f"sales_run:{current.id}:COMPLETED",
+        )
+        self.session.commit()
         return self._to_public(current, include_enquiry=True)
 
     def _fail_send(
@@ -584,6 +629,20 @@ class SalesRunService:
             failed.lead_id,
             failed.failure_category,
         )
+        ActivityService(self.session).record(
+            organization_id=failed.organization_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            title="Sales Run failed",
+            summary="A Sales Agent run failed while sending email.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=failed.id,
+            lead_id=failed.lead_id,
+            agent_id=failed.agent_id,
+            status=SalesRunStatus.FAILED,
+            dedupe_key=f"sales_run:{failed.id}:FAILED",
+        )
+        self.session.commit()
         payload = self._to_public(failed, include_enquiry=True).model_dump(mode="json")
         payload["detail"] = error
         raise type(exc)(error, content=payload)
@@ -664,6 +723,20 @@ class SalesRunService:
             current.agent_id,
             current.lead_id,
         )
+        ActivityService(self.session).record(
+            organization_id=current.organization_id,
+            event_type=ActivityEventType.AI_ACTION,
+            actor_type=ActivityActorType.AGENT,
+            title="Waiting for review",
+            summary="A Sales Agent run is waiting for a person to review the draft.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=current.id,
+            lead_id=current.lead_id,
+            agent_id=current.agent_id,
+            status=SalesRunStatus.WAITING_APPROVAL,
+            dedupe_key=f"sales_run:{current.id}:WAITING_APPROVAL",
+        )
+        self.session.commit()
         return self._to_public(current, include_enquiry=True)
 
     def _handle_provider_failure(
@@ -713,6 +786,20 @@ class SalesRunService:
             failed.lead_id,
             failed.failure_category,
         )
+        ActivityService(self.session).record(
+            organization_id=failed.organization_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            title="Sales Run failed",
+            summary="A Sales Agent run failed during qualification or drafting.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=failed.id,
+            lead_id=failed.lead_id,
+            agent_id=failed.agent_id,
+            status=SalesRunStatus.FAILED,
+            dedupe_key=f"sales_run:{failed.id}:FAILED",
+        )
+        self.session.commit()
         payload = self._to_public(failed, include_enquiry=True).model_dump(mode="json")
         payload["detail"] = error
         raise type(exc)(error, content=payload)
@@ -800,6 +887,7 @@ class SalesRunService:
             name=name,
             email=email,
             source=LeadSource.API,
+            initiated_by_user_id=None,
         )
 
     def _require_sales_agent(self, organization_id: str, agent_id: str) -> Agent:

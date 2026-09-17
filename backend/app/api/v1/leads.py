@@ -55,6 +55,7 @@ router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 def create_lead(
     payload: LeadCreate,
     organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> LeadPublic:
     lead = LeadService(db).create(
@@ -67,6 +68,7 @@ def create_lead(
         status=payload.status,
         notes=payload.notes,
         enquiry=payload.enquiry,
+        initiated_by_user_id=membership.user_id,
     )
     return LeadPublic.model_validate(lead)
 
@@ -105,6 +107,7 @@ def update_lead(
     lead_id: str,
     payload: LeadUpdate,
     organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> LeadPublic:
     service = LeadService(db)
@@ -112,6 +115,7 @@ def update_lead(
         organization_id=organization.id,
         lead_id=lead_id,
         payload=payload,
+        initiated_by_user_id=membership.user_id,
     )
     return service.get_public(organization.id, lead_id)
 

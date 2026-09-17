@@ -6,7 +6,7 @@ import { AiWorkforceStatus } from "@/components/command-center/ai-workforce-stat
 import { BusinessOverview } from "@/components/command-center/business-overview";
 import { NeedsAttention } from "@/components/command-center/needs-attention";
 import { QuickActions } from "@/components/command-center/quick-actions";
-import { StatePanel } from "@/components/data-display/state-panel";
+import { RecentActivity } from "@/components/command-center/recent-activity";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { getAgents } from "@/lib/api/agents";
@@ -59,7 +59,7 @@ export default function CommandCenterPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Command Center"
-        description="See what needs a decision or a retry from live records. Conversations, appointments, and an activity feed are not available yet."
+        description="See what needs a decision or a retry from live records. Conversations and appointments are not available yet."
       />
 
       <section className="grid gap-5">
@@ -89,12 +89,7 @@ export default function CommandCenterPage() {
         }}
       />
 
-      <StatePanel
-        kind="unavailable"
-        className="max-w-none"
-        title="Recent activity"
-        description="An organization-wide activity feed is not available yet. Open a lead for Sales Agent history, or an agent for execution history."
-      />
+      <RecentActivity />
 
       <section className="grid gap-5">
         <SectionHeader

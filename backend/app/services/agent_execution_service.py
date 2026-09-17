@@ -20,6 +20,7 @@ from app.core.exceptions import (
     ProviderNotConfiguredError,
     ValidationError,
 )
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, AgentStatus
 from app.models.agent_execution import (
     AgentExecution,
@@ -48,6 +49,7 @@ from app.schemas.agents import (
     ToolInvocationListItem,
     ToolInvocationListResponse,
 )
+from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
@@ -297,6 +299,20 @@ class AgentExecutionService:
         current = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if current is None:
             raise NotFoundError("Agent execution not found")
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            title="Agent execution cancelled",
+            summary="A running agent execution was cancelled.",
+            entity_type=ActivityEntityType.AGENT_EXECUTION,
+            entity_id=current.id,
+            agent_id=current.agent_id,
+            actor_user_id=current.initiated_by_user_id,
+            status=AgentExecutionStatus.CANCELLED,
+            dedupe_key=f"agent_execution:{current.id}:CANCELLED",
+        )
+        self.session.commit()
         return _to_run_result(current)
 
     def _claim_running_execution(
@@ -494,6 +510,20 @@ class AgentExecutionService:
         )
         if current is None:
             raise NotFoundError("Agent execution not found")
+        ActivityService(self.session).record(
+            organization_id=current.organization_id,
+            event_type=ActivityEventType.AI_ACTION,
+            actor_type=ActivityActorType.AGENT,
+            title="Agent execution completed",
+            summary="An agent execution finished successfully.",
+            entity_type=ActivityEntityType.AGENT_EXECUTION,
+            entity_id=current.id,
+            agent_id=current.agent_id,
+            actor_user_id=current.initiated_by_user_id,
+            status=AgentExecutionStatus.COMPLETED,
+            dedupe_key=f"agent_execution:{current.id}:COMPLETED",
+        )
+        self.session.commit()
         return _to_run_result(current)
 
     def _fail(
@@ -530,6 +560,20 @@ class AgentExecutionService:
             )
             if current is not None:
                 execution = current
+        ActivityService(self.session).record(
+            organization_id=execution.organization_id,
+            event_type=ActivityEventType.AI_ACTION,
+            actor_type=ActivityActorType.AGENT,
+            title="Agent execution failed",
+            summary="An agent execution did not complete.",
+            entity_type=ActivityEntityType.AGENT_EXECUTION,
+            entity_id=execution.id,
+            agent_id=execution.agent_id,
+            actor_user_id=execution.initiated_by_user_id,
+            status=AgentExecutionStatus.FAILED,
+            dedupe_key=f"agent_execution:{execution.id}:FAILED",
+        )
+        self.session.commit()
         result = AgentExecutionResult(
             execution_id=execution.id,
             status=AgentExecutionStatus.FAILED,

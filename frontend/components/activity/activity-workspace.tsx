@@ -1,18 +1,85 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ActivityDetail } from "@/components/activity/activity-detail";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ActivityToolbar } from "@/components/activity/activity-toolbar";
+import { StatePanel } from "@/components/data-display/state-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api/client";
+import { getActivity, listActivity } from "@/lib/api/activity";
+import type {
+  ActivityEntityType,
+  ActivityEvent,
+  ActivityEventType,
+  ActivityListResponse,
+} from "@/types/api";
+
+const PAGE_SIZE = 20;
 
 type MobileActivityView = "timeline" | "detail";
 
-export function ActivityWorkspace() {
+type ActivityWorkspaceProps = {
+  onSummary?: (page: ActivityListResponse | null) => void;
+};
+
+export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
   const [mobileView, setMobileView] = useState<MobileActivityView>("timeline");
+  const [query, setQuery] = useState("");
+  const [eventType, setEventType] = useState<ActivityEventType | "">("");
+  const [entityType, setEntityType] = useState<ActivityEntityType | "">("");
+  const [offset, setOffset] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState<ActivityListResponse | null>(null);
+  const [selected, setSelected] = useState<ActivityEvent | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listActivity({
+      q: query.trim() || undefined,
+      type: eventType || undefined,
+      entity_type: entityType || undefined,
+      limit: PAGE_SIZE,
+      offset,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setPage(data);
+        onSummary?.(data);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setPage(null);
+        onSummary?.(null);
+        setError(
+          cause instanceof ApiError && cause.status === 401
+            ? "Your session has expired. Sign in again to view activity."
+            : "Activity could not be loaded.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entityType, eventType, offset, onSummary, query, retryKey]);
+
+  function beginFetch() {
+    setLoading(true);
+    setError(null);
+  }
+
+  const total = page?.total ?? 0;
+  const start = total === 0 ? 0 : offset + 1;
+  const end = Math.min(offset + PAGE_SIZE, total);
 
   return (
     <div className="grid gap-3">
@@ -60,13 +127,117 @@ export function ActivityWorkspace() {
               Activity timeline
             </h3>
             <p className="text-muted-foreground mt-1 text-sm">
-              Important events in chronological order.
+              Newest events across this organization.
             </p>
           </header>
           <div className="border-border border-t p-4">
-            <ActivityToolbar />
+            <ActivityToolbar
+              query={query}
+              eventType={eventType}
+              entityType={entityType}
+              onQueryChange={(value) => {
+                beginFetch();
+                setQuery(value);
+                setOffset(0);
+              }}
+              onEventTypeChange={(value) => {
+                beginFetch();
+                setEventType(value);
+                setOffset(0);
+              }}
+              onEntityTypeChange={(value) => {
+                beginFetch();
+                setEntityType(value);
+                setOffset(0);
+              }}
+              onClearFilters={() => {
+                beginFetch();
+                setQuery("");
+                setEventType("");
+                setEntityType("");
+                setOffset(0);
+              }}
+            />
           </div>
-          <ActivityTimeline events={[]} />
+          {error ? (
+            <div className="p-4">
+              <StatePanel
+                kind="error"
+                title="Activity could not be loaded"
+                description={error}
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      beginFetch();
+                      setRetryKey((value) => value + 1);
+                    }}
+                  >
+                    Retry
+                  </Button>
+                }
+              />
+            </div>
+          ) : loading && page === null ? (
+            <div className="grid gap-3 p-4" role="status">
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+              <span className="sr-only">Loading activity</span>
+            </div>
+          ) : !loading && page && page.total === 0 && (query.trim() || eventType || entityType) ? (
+            <div className="p-4">
+              <StatePanel
+                title="No matching activity"
+                description="Nothing matches the current search or filters."
+              />
+            </div>
+          ) : (
+            <ActivityTimeline
+              events={page?.items ?? []}
+              selectedId={selected?.id}
+              onSelect={(event) => {
+                setSelected(event);
+                setMobileView("detail");
+                setDetailLoading(true);
+                void getActivity(event.id)
+                  .then((detail) => setSelected(detail))
+                  .catch(() => setSelected(event))
+                  .finally(() => setDetailLoading(false));
+              }}
+            />
+          )}
+          {total > 0 ? (
+            <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+              <p className="text-muted-foreground text-sm">
+                Showing {start}–{end} of {total}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={offset === 0 || loading}
+                  onClick={() => {
+                    beginFetch();
+                    setOffset(Math.max(0, offset - PAGE_SIZE));
+                  }}
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={offset + PAGE_SIZE >= total || loading}
+                  onClick={() => {
+                    beginFetch();
+                    setOffset(offset + PAGE_SIZE);
+                  }}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </Card>
 
         <div
@@ -77,7 +248,11 @@ export function ActivityWorkspace() {
             "md:block",
           )}
         >
-          <ActivityDetail onBack={() => setMobileView("timeline")} />
+          <ActivityDetail
+            event={selected}
+            loading={detailLoading}
+            onBack={() => setMobileView("timeline")}
+          />
         </div>
       </div>
     </div>

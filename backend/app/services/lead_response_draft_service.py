@@ -14,6 +14,7 @@ from app.core.exceptions import (
     ProviderError,
     ProviderNotConfiguredError,
 )
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
@@ -32,6 +33,7 @@ from app.schemas.lead_response_draft import (
     LeadResponseDraftOutput,
     LeadResponseDraftPublic,
 )
+from app.services.activity_service import ActivityService
 from app.services.lead_email_send_service import to_email_send_public
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
@@ -135,6 +137,19 @@ class LeadResponseDraftService:
             row.provider = generated.provider
             row.model = generated.model
             row.completed_at = datetime.now(UTC)
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.AI_ACTION,
+                actor_type=ActivityActorType.AGENT,
+                title="Response draft generated",
+                summary="AI generated a customer response draft. It has not been sent.",
+                entity_type=ActivityEntityType.LEAD_RESPONSE_DRAFT,
+                entity_id=row.id,
+                lead_id=row.lead_id,
+                actor_user_id=initiated_by_user_id,
+                status=row.review_status,
+                dedupe_key=f"draft:{row.id}:GENERATED",
+            )
             self.session.commit()
             self.session.refresh(row)
             return row
@@ -232,6 +247,19 @@ class LeadResponseDraftService:
         row.rejection_reason = None
         row.revision = row.revision + 1
         row.updated_at = now
+        if row.review_status == LeadResponseReviewStatus.EDITED:
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.HUMAN_ACTION,
+                actor_type=ActivityActorType.USER,
+                title="Response draft edited",
+                summary="A person edited a customer response draft.",
+                entity_type=ActivityEntityType.LEAD_RESPONSE_DRAFT,
+                entity_id=row.id,
+                lead_id=row.lead_id,
+                status=row.review_status,
+                dedupe_key=f"draft:{row.id}:EDITED:r{row.revision}",
+            )
         self.session.commit()
         self.session.refresh(row)
         return row
@@ -264,6 +292,19 @@ class LeadResponseDraftService:
         row.rejection_reason = None
         row.revision = row.revision + 1
         row.updated_at = now
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.APPROVAL,
+            actor_type=ActivityActorType.USER,
+            title="Response draft approved",
+            summary="A person approved a customer response draft. Approval does not send email.",
+            entity_type=ActivityEntityType.LEAD_RESPONSE_DRAFT,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            actor_user_id=actor_user_id,
+            status=row.review_status,
+            dedupe_key=f"draft:{row.id}:APPROVED:r{row.revision}",
+        )
         self.session.commit()
         self.session.refresh(row)
         return row
@@ -296,6 +337,19 @@ class LeadResponseDraftService:
         row.rejection_reason = reason
         row.revision = row.revision + 1
         row.updated_at = now
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.APPROVAL,
+            actor_type=ActivityActorType.USER,
+            title="Response draft rejected",
+            summary="A person rejected a customer response draft.",
+            entity_type=ActivityEntityType.LEAD_RESPONSE_DRAFT,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            actor_user_id=actor_user_id,
+            status=row.review_status,
+            dedupe_key=f"draft:{row.id}:REJECTED:r{row.revision}",
+        )
         self.session.commit()
         self.session.refresh(row)
         return row

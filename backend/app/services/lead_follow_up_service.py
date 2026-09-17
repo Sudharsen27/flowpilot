@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead_email_send import LeadEmailSendStatus
 from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
@@ -24,6 +25,7 @@ from app.schemas.lead_follow_up_operations import (
     FollowUpOperationsResponse,
     FollowUpOperationsSummary,
 )
+from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 
 
@@ -63,6 +65,22 @@ class LeadFollowUpService:
             revision=1,
         )
         self.follow_ups.add(row)
+        self.session.flush()
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=(
+                ActivityActorType.USER if initiated_by_user_id else ActivityActorType.SYSTEM
+            ),
+            title="Follow-up scheduled",
+            summary="A follow-up was scheduled for this lead.",
+            entity_type=ActivityEntityType.LEAD_FOLLOW_UP,
+            entity_id=row.id,
+            lead_id=lead_id,
+            actor_user_id=initiated_by_user_id,
+            status=LeadFollowUpStatus.PENDING,
+            dedupe_key=f"follow_up:{row.id}:SCHEDULED",
+        )
         self.session.commit()
         self.session.refresh(row)
         return row
@@ -193,6 +211,19 @@ class LeadFollowUpService:
             _require_email_body(resulting_type, row.body_text)
         row.revision = row.revision + 1
         row.updated_at = datetime.now(UTC)
+        if due_at is not None:
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.HUMAN_ACTION,
+                actor_type=ActivityActorType.USER,
+                title="Follow-up rescheduled",
+                summary="A pending follow-up due time was changed.",
+                entity_type=ActivityEntityType.LEAD_FOLLOW_UP,
+                entity_id=row.id,
+                lead_id=lead_id,
+                status=row.status,
+                dedupe_key=f"follow_up:{row.id}:RESCHEDULED:r{row.revision}",
+            )
         self.session.commit()
         self.session.refresh(row)
         return row
@@ -204,6 +235,7 @@ class LeadFollowUpService:
         lead_id: str,
         follow_up_id: str,
         expected_revision: int,
+        emit_activity: bool = True,
     ) -> LeadFollowUp:
         row = self._lock_pending(organization_id, lead_id, follow_up_id, expected_revision)
         now = datetime.now(UTC)
@@ -211,6 +243,19 @@ class LeadFollowUpService:
         row.completed_at = now
         row.revision = row.revision + 1
         row.updated_at = now
+        if emit_activity:
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.HUMAN_ACTION,
+                actor_type=ActivityActorType.USER,
+                title="Follow-up completed",
+                summary="A follow-up was marked completed.",
+                entity_type=ActivityEntityType.LEAD_FOLLOW_UP,
+                entity_id=row.id,
+                lead_id=lead_id,
+                status=LeadFollowUpStatus.COMPLETED,
+                dedupe_key=f"follow_up:{row.id}:COMPLETED",
+            )
         self.session.commit()
         self.session.refresh(row)
         return row
@@ -229,6 +274,18 @@ class LeadFollowUpService:
         row.cancelled_at = now
         row.revision = row.revision + 1
         row.updated_at = now
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            title="Follow-up cancelled",
+            summary="A pending follow-up was cancelled.",
+            entity_type=ActivityEntityType.LEAD_FOLLOW_UP,
+            entity_id=row.id,
+            lead_id=lead_id,
+            status=LeadFollowUpStatus.CANCELLED,
+            dedupe_key=f"follow_up:{row.id}:CANCELLED",
+        )
         self.session.commit()
         self.session.refresh(row)
         return row

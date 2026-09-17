@@ -691,3 +691,64 @@ export type PublicEnquiryCreateRequest = {
   enquiry: string;
   website?: string | null;
 };
+
+export type ActivityEventType =
+  | "AI_ACTION"
+  | "APPROVAL"
+  | "HUMAN_ACTION"
+  | "SYSTEM_EVENT";
+
+export type ActivityActorType =
+  | "USER"
+  | "AGENT"
+  | "SYSTEM"
+  | "PUBLIC_VISITOR";
+
+export type ActivityEntityType =
+  | "LEAD"
+  | "SALES_RUN"
+  | "LEAD_EMAIL_SEND"
+  | "AGENT_EXECUTION"
+  | "LEAD_FOLLOW_UP"
+  | "LEAD_FOLLOW_UP_EXECUTION"
+  | "LEAD_RESPONSE_DRAFT"
+  | "LEAD_QUALIFICATION";
+
+export type ActivityEvent = {
+  id: string;
+  type: ActivityEventType;
+  title: string;
+  summary: string | null;
+  occurred_at: string;
+  actor_type: ActivityActorType;
+  actor_user_id: string | null;
+  agent_id: string | null;
+  entity_type: ActivityEntityType;
+  entity_id: string;
+  lead_id: string | null;
+  status: string | null;
+  sales_run_id: string | null;
+  execution_id: string | null;
+  email_send_id: string | null;
+  follow_up_id: string | null;
+  follow_up_execution_id: string | null;
+  draft_id: string | null;
+  qualification_id: string | null;
+};
+
+export type ActivityListResponse = {
+  items: ActivityEvent[];
+  limit: number;
+  offset: number;
+  total: number;
+  type_counts: Record<ActivityEventType, number>;
+};
+
+export type ActivityListParams = {
+  type?: ActivityEventType;
+  entity_type?: ActivityEntityType;
+  entity_id?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+};

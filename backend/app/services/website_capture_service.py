@@ -48,6 +48,7 @@ class WebsiteCaptureService:
             source=LeadSource.WEBSITE,
             status=LeadStatus.NEW,
             enquiry=enquiry,
+            website_enquiry=True,
         )
 
     def _resolve_enabled(self, slug: str) -> Organization:

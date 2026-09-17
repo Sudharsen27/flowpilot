@@ -241,7 +241,7 @@ GET  /api/v1/sales-runs
 
 ## Lead-scoped Sales Agent history (Phase 5E)
 
-Sales Agent work is visible from the Leads workspace. This is a read-only composition of existing rows. There is no Activity event model.
+Sales Agent work is visible from the Leads workspace. This is a read-only composition of existing rows. Organization-wide Activity is a separate Phase 6A timeline.
 
 `GET /api/v1/leads` and `GET /api/v1/leads/{lead_id}` include `latest_sales_run`: the newest `SalesRun` for that lead (`created_at DESC`, then `id DESC`), including cancelled and failed runs. The summary is safe for a directory: run id, agent id, status, stage, email-send status/completed_at, follow-up status/due_at/is_overdue. It omits enquiry, email body, draft body, follow-up body, and provider payloads. `null` when the lead has no runs. Hydration is one batched `SalesRun` query for the page of leads, plus batched email-send and follow-up lookups for those latest rows.
 
@@ -259,9 +259,9 @@ Three stacked queues, each from existing list APIs (default 20, max 50):
 2. Failed sends — `GET /api/v1/sales-runs?status=FAILED&stage=SEND`
 3. Overdue follow-ups — `GET /api/v1/follow-ups?overdue=true`
 
-Queue rows omit enquiry, draft body, follow-up body, and provider payloads. Review, send, cancel, and follow-up manage reuse the existing draft dialog, send/cancel confirmations, and follow-up dialog. Mutations are not optimistic; lists refetch after the server response. Organization comes from the JWT. Cross-tenant ids remain 404. There is no new AI call, no Activity table, and no database migration.
+Queue rows omit enquiry, draft body, follow-up body, and provider payloads. Review, send, cancel, and follow-up manage reuse the existing draft dialog, send/cancel confirmations, and follow-up dialog. Mutations are not optimistic; lists refetch after the server response. Organization comes from the JWT. Cross-tenant ids remain 404. Phase 5F added no new AI call and no Activity table. Phase 6A later added `ActivityEvent` as a separate organization timeline.
 
-Recent activity on Command Center stays unavailable. Inbox, Approvals, Analytics, and conversation history are unchanged placeholders.
+Command Center Recent activity reads `GET /api/v1/activity`. Inbox, Approvals, Analytics, and conversation history remain placeholders.
 
 ## Lead workspace (Phase 5G)
 
@@ -269,7 +269,7 @@ Operators start Sales Agent work from the lead, not by pasting a lead UUID on th
 
 `POST /api/v1/leads/{lead_id}/sales-runs` body `{ enquiry, agent_id }` (`extra=forbid`). `lead_id` is the path only. Organization comes from the JWT. The route loads the lead in that org (404 if missing), then reuses `SalesRunService.start_sales_run` with that `lead_id`. It does not create a second lead and does not match by email. Open-run protection, SALES + READY/ACTIVE checks, qualification, drafting, and MEMBER start permission are unchanged. Non-SALES agents remain 422; ineligible status remains 400. Agent-nested start remains for creating a lead from an enquiry.
 
-The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity, stored enquiry text when present, and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. Inbox, Activity, and automatic CRM status changes are out of this slice.
+The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity, stored enquiry text when present, and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. Inbox and automatic CRM status changes are out of this slice. Organization-wide Activity is a separate workspace and is not duplicated here.
 
 ## Website enquiry capture (Phase 5H)
 
@@ -288,6 +288,27 @@ Abuse control is an **in-process sliding window** per slug + IP (`WEBSITE_CAPTUR
 Settings: `GET` / `PATCH /api/v1/organizations/current/website-capture`. `OWNER` and `ADMIN` may enable or disable. `MEMBER` may read. Hosted UI is `/capture/{slug}` (no AppShell). Authenticated lead APIs stay JWT-only and do not list leads on the public router.
 
 `Lead.enquiry` is optional text (max 8000). Authenticated create/update may set it; capture always persists it. Duplicate visitor emails still create additional leads.
+
+## Organization activity (Phase 6A)
+
+`ActivityEvent` is a tenant-owned, append-only operational timeline. It is **not** a compliance or WORM audit log.
+
+Existing services record events through `ActivityService.record()` in the same application process and PostgreSQL database. There is no message broker, Redis queue, or public POST API. Clients cannot create events.
+
+```
+GET /api/v1/activity
+GET /api/v1/activity/{activity_id}
+```
+
+Organization comes from the membership JWT. Any org member may read. Cross-tenant ids return 404. List pagination matches other directories (default 20, max 50). Filters: `type`, `entity_type`, `entity_id`, `q` (title and summary only).
+
+Types in this phase: `AI_ACTION`, `APPROVAL`, `HUMAN_ACTION`, `SYSTEM_EVENT`. Actors: `USER`, `AGENT`, `SYSTEM`, `PUBLIC_VISITOR`. Titles and summaries are server-authored. Enquiry text, draft/email/follow-up bodies, provider payloads, tool arguments, visitor IP, and secrets are not stored.
+
+`dedupe_key` is unique per organization so retries and at-least-once worker delivery do not duplicate the same logical event (for example `email_send:{id}:SENT`, `follow_up_execution:{id}:SENT`).
+
+There is no historical backfill. The timeline starts when 6A is deployed. Lead Sales Agent history, agent execution history, and tool-invocation history remain separate source records; Activity is an organization index over those operations.
+
+Command Center Recent activity lists the newest events. The Activity workspace is the full filtered timeline.
 
 ## Lead domain (Phase 4A)
 
@@ -327,7 +348,7 @@ Lead API
 
 Organization comes from the membership JWT. `organization_id` is not accepted from the client. Authenticated `OWNER`, `ADMIN`, and `MEMBER` may create, read, and update leads in their organization. Cross-tenant ids return 404. List pagination matches execution history (default 20, max 50, `created_at DESC`, `id DESC`). List responses include org-wide `status_counts` (not filtered by the current query) for overview metrics.
 
-There is no Activity event model yet; lead writes do not emit activity rows.
+There is no Activity event model in this slice; Phase 6A later records lead create and meaningful CRM status changes.
 
 ## AI lead qualification (Phase 4B)
 
@@ -355,7 +376,7 @@ If a completed `LeadQualification` exists for the same org/lead, a small validat
 
 Completed drafts have a review lifecycle on the same `lead_response_drafts` row: `GENERATED` → `EDITED` (optional) → `APPROVED` or `REJECTED`. The original AI text is stored in `original_response` and is never overwritten. `current_response` is what a human may edit. `revision` is an optimistic concurrency token (`expected_revision`); mismatches return 409.
 
-`APPROVED` means a human approved that exact current text for **future** sending. It is not sent. Editing an approved draft clears the approval (`EDITED`). Rejected drafts stay persisted and cannot be edited or approved; generate a new draft instead. `Lead.status` is unchanged. There is no Activity event model; reviewer id and timestamps live on the draft row.
+`APPROVED` means a human approved that exact current text for **future** sending. It is not sent. Editing an approved draft clears the approval (`EDITED`). Rejected drafts stay persisted and cannot be edited or approved; generate a new draft instead. `Lead.status` is unchanged. Reviewer id and timestamps live on the draft row. Phase 6A records generate/edit/approve/reject as Activity events without storing draft text.
 
 ## Approved response email sending (Phase 4E)
 
@@ -377,7 +398,7 @@ Limitation: a crash after the provider accepts a message and before `SENT` is co
 
 `EMAIL_FOLLOW_UP` stores a dedicated human-authored `body_text` (required, trimmed, max 8000). This is not `notes`. `MANUAL_FOLLOW_UP` does not require `body_text`. Existing rows may have NULL `body_text`; new EMAIL follow-ups cannot. Only `PENDING` rows may be edited.
 
-Create/list/get/patch plus explicit complete/cancel. `due_at` is timezone-aware UTC. List order is `due_at ASC`, `id ASC` (default 20, max 50). Optional `email_send_id` must be a `SENT` send for the same org and lead. Optimistic `revision` / `expected_revision` returns 409 on stale lifecycle actions. There is no Activity model; timestamps on the row are the audit trail.
+Create/list/get/patch plus explicit complete/cancel. `due_at` is timezone-aware UTC. List order is `due_at ASC`, `id ASC` (default 20, max 50). Optional `email_send_id` must be a `SENT` send for the same org and lead. Optimistic `revision` / `expected_revision` returns 409 on stale lifecycle actions. Timestamps on the row remain the source trail. Phase 6A records schedule/reschedule/complete/cancel as Activity events without storing follow-up body.
 
 Due follow-ups are **not** executed automatically. No cron, workers, agent runs, or Resend calls from this domain. Storing `body_text` does not schedule or send mail.
 
@@ -489,3 +510,7 @@ LeadFollowUp (PENDING, EMAIL_FOLLOW_UP, due_at <= now)
 ## Design system (Phase 5A)
 
 FlowPilot UI uses Tailwind v4 tokens in `frontend/app/globals.css`, shadcn/ui, and Lucide. Domain statuses map through `frontend/lib/status.ts` onto one `StatusBadge` semantic language; wrappers keep domain labels. AI origin is marked with `AiBadge` (Generated / Suggested / Analysis / Processing / Agent), not glow or decorative effects. Confirm destructive or irreversible actions with `ConfirmDialog`. Dark-mode tokens exist for future theming; there is no theme toggle yet.
+
+## Phase 6A (organization activity)
+
+See **Organization activity (Phase 6A)** above. Activity is a user-facing operational timeline recorded by existing services. It does not replace execution history, Sales Agent history, or application logs.

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import type { ActivityEventType as ActivityEventTypeApi } from "@/types/api";
 
 export type ActivityEventType =
   | "ai-action"
@@ -18,8 +19,24 @@ export type ActivityEventType =
   | "system-event";
 
 type ActivityTypeBadgeProps = {
-  type: ActivityEventType;
+  type: ActivityEventType | ActivityEventTypeApi;
 };
+
+const apiToUi: Record<ActivityEventTypeApi, ActivityEventType> = {
+  AI_ACTION: "ai-action",
+  APPROVAL: "approval",
+  HUMAN_ACTION: "human-action",
+  SYSTEM_EVENT: "system-event",
+};
+
+export function toActivityBadgeType(
+  type: ActivityEventType | ActivityEventTypeApi,
+): ActivityEventType {
+  if (type in apiToUi) {
+    return apiToUi[type as ActivityEventTypeApi];
+  }
+  return type as ActivityEventType;
+}
 
 const typePresentation = {
   "ai-action": {
@@ -55,13 +72,13 @@ const typePresentation = {
 } as const;
 
 export function ActivityTypeBadge({ type }: ActivityTypeBadgeProps) {
-  const presentation = typePresentation[type];
+  const presentation = typePresentation[toActivityBadgeType(type)];
   const Icon = presentation.icon;
 
   return (
     <span
       data-slot="activity-type-badge"
-      data-event-type={type}
+      data-event-type={toActivityBadgeType(type)}
       className={cn(
         "inline-flex min-h-6 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
         presentation.className,

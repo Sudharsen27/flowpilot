@@ -1,11 +1,18 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandCenterPage from "@/app/(app)/page";
 import { getAgents } from "@/lib/api/agents";
+import { listActivity } from "@/lib/api/activity";
 import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
 import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
 import type { Agent, FollowUpOperationsResponse, LeadListResponse } from "@/types/api";
+
+vi.mock("@/lib/api/activity", () => ({
+  listActivity: vi.fn(),
+  getActivity: vi.fn(),
+}));
 
 vi.mock("@/lib/api/agents", () => ({
   getAgents: vi.fn(),
@@ -31,6 +38,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
 }));
 
 const getAgentsMock = vi.mocked(getAgents);
+const listActivityMock = vi.mocked(listActivity);
 const getLeadsMock = vi.mocked(getLeads);
 const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
 const listOrganizationSalesRunsMock = vi.mocked(listOrganizationSalesRuns);
@@ -81,10 +89,23 @@ function followUps(overdue: number): FollowUpOperationsResponse {
 describe("Command Center", () => {
   beforeEach(() => {
     getAgentsMock.mockReset();
+    listActivityMock.mockReset();
     getLeadsMock.mockReset();
     getFollowUpOperationsMock.mockReset();
     listOrganizationSalesRunsMock.mockReset();
     getAgentsMock.mockResolvedValue([]);
+    listActivityMock.mockResolvedValue({
+      items: [],
+      limit: 8,
+      offset: 0,
+      total: 0,
+      type_counts: {
+        AI_ACTION: 0,
+        APPROVAL: 0,
+        HUMAN_ACTION: 0,
+        SYSTEM_EVENT: 0,
+      },
+    });
     getLeadsMock.mockResolvedValue(leads(0));
     getFollowUpOperationsMock.mockResolvedValue(followUps(0));
     listOrganizationSalesRunsMock.mockResolvedValue({
@@ -135,8 +156,13 @@ describe("Command Center", () => {
       screen.getByText("Appointment scheduling is not available yet."),
     ).toBeVisible();
     expect(
-      screen.getByText(/organization-wide activity feed is not available yet/),
+      await screen.findByRole("heading", { name: "No activity yet" }),
     ).toBeVisible();
+    expect(screen.getByRole("link", { name: "View all activity" })).toHaveAttribute(
+      "href",
+      "/activity",
+    );
+    expect(screen.queryByText("Example event")).not.toBeInTheDocument();
     const articles = screen.getAllByRole("article");
     const conversations = articles.find((card) =>
       within(card).queryByRole("heading", { name: "Conversations" }),
@@ -178,6 +204,71 @@ describe("Command Center", () => {
     ).toBeVisible();
   });
 
+  it("shows recent activity error and retry", async () => {
+    listActivityMock.mockRejectedValueOnce(new Error("network"));
+    render(<CommandCenterPage />);
+    expect(
+      await screen.findByRole("heading", {
+        name: "Recent activity could not be loaded",
+      }),
+    ).toBeVisible();
+    listActivityMock.mockResolvedValueOnce({
+      items: [],
+      limit: 8,
+      offset: 0,
+      total: 0,
+      type_counts: {
+        AI_ACTION: 0,
+        APPROVAL: 0,
+        HUMAN_ACTION: 0,
+        SYSTEM_EVENT: 0,
+      },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "No activity yet" })).toBeVisible();
+  });
+
+  it("renders live recent activity without fabricated rows", async () => {
+    listActivityMock.mockResolvedValue({
+      items: [
+        {
+          id: "event-1",
+          type: "AI_ACTION",
+          title: "Lead qualified",
+          summary: null,
+          occurred_at: "2026-09-17T10:00:00Z",
+          actor_type: "AGENT",
+          actor_user_id: null,
+          agent_id: "agent-1",
+          entity_type: "LEAD_QUALIFICATION",
+          entity_id: "qual-1",
+          lead_id: "lead-1",
+          status: "COMPLETED",
+          sales_run_id: null,
+          execution_id: null,
+          email_send_id: null,
+          follow_up_id: null,
+          follow_up_execution_id: null,
+          draft_id: null,
+          qualification_id: "qual-1",
+        },
+      ],
+      limit: 8,
+      offset: 0,
+      total: 1,
+      type_counts: {
+        AI_ACTION: 1,
+        APPROVAL: 0,
+        HUMAN_ACTION: 0,
+        SYSTEM_EVENT: 0,
+      },
+    });
+    render(<CommandCenterPage />);
+    expect(await screen.findByText("Lead qualified")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "No activity yet" })).not.toBeInTheDocument();
+    expect(listActivityMock).toHaveBeenCalledWith({ limit: 8, offset: 0 });
+  });
+
   it("links quick actions only to valid product routes", () => {
     render(<CommandCenterPage />);
     const hrefs = screen
@@ -189,6 +280,7 @@ describe("Command Center", () => {
       "/inbox",
       "/approvals",
       "/workflows",
+      "/activity",
     ]) {
       expect(hrefs).toContain(href);
     }
