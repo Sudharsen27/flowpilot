@@ -98,11 +98,13 @@ def test_openai_provider_malformed_tool_arguments() -> None:
 
 def test_openai_provider_sanitizes_secrets_in_errors() -> None:
     cleaned = sanitize_provider_error(
-        "invalid key sk-secretvalue123 Bearer abc.def re_supersecretkey123"
+        "invalid key sk-secretvalue123 Bearer abc.def re_supersecretkey123 "
+        "gsk_groqsecretvalue123"
     )
     assert "sk-secretvalue123" not in cleaned
     assert "Bearer abc.def" not in cleaned
     assert "re_supersecretkey123" not in cleaned
+    assert "gsk_groqsecretvalue123" not in cleaned
     assert "[redacted]" in cleaned
 
 

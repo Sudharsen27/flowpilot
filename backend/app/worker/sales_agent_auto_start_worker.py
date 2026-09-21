@@ -30,7 +30,7 @@ from types import FrameType
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.ai.openai_provider import OpenAIProvider
+from app.ai.factory import create_ai_provider
 from app.ai.provider import AIProvider
 from app.core.config import settings
 from app.core.exceptions import ProviderError, ProviderNotConfiguredError
@@ -65,7 +65,7 @@ class SalesAgentAutoStartWorker:
         self,
         *,
         session_factory: SessionFactory = SessionLocal,
-        provider_factory: ProviderFactory = OpenAIProvider,
+        provider_factory: ProviderFactory = create_ai_provider,
         poll_interval_seconds: float | None = None,
         batch_size: int | None = None,
     ) -> None:

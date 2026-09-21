@@ -1,13 +1,30 @@
-from typing import Self
+from pathlib import Path
+from typing import Literal, Self
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_DEFAULT_SECRET = "replace-with-a-long-random-local-secret"
 
+AiProviderName = Literal["openai", "groq"]
+
+# Resolve .env from this file's location so loading does not depend on the
+# process cwd (uvicorn may be started from repo root or backend/).
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def default_env_files() -> tuple[Path, ...]:
+    """Repo-root .env first, then backend/.env. Missing files are ignored."""
+    return (_REPO_ROOT / ".env", _BACKEND_DIR / ".env")
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=default_env_files(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "FlowPilot"
     environment: str = "development"
@@ -19,9 +36,16 @@ class Settings(BaseSettings):
     secret_key: str = INSECURE_DEFAULT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    # Selects which AIProvider implementation the factory will construct (Step 3).
+    # Default keeps existing OpenAI-only deployments working without new env vars.
+    ai_provider: AiProviderName = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    # Shared AI request timeout for OpenAIProvider today; GroqProvider (Step 3)
+    # should reuse this field rather than adding a second timeout setting.
     openai_request_timeout_seconds: float = 60
+    groq_api_key: str | None = None
+    groq_model: str = "openai/gpt-oss-20b"
     email_provider: str = "resend"
     resend_api_key: str | None = None
     email_from_address: str | None = None

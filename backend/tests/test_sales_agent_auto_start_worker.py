@@ -12,9 +12,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.ai.factory import create_ai_provider
+from app.ai.groq_provider import GroqProvider
 from app.ai.openai_provider import OpenAIProvider
 from app.core.config import settings
-from app.core.exceptions import ProviderError
+from app.core.exceptions import ProviderError, ProviderNotConfiguredError
 from app.models.lead import LeadSalesAgentAutoStartStatus
 from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus
 from app.models.sales_run import SalesRun, SalesRunStatus
@@ -415,7 +417,9 @@ def test_follow_up_and_auto_start_workers_share_a_process(
     assert pending.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.STARTED
 
 
-def test_worker_configuration_defaults() -> None:
+def test_worker_configuration_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from a developer .env that may set AI_PROVIDER=groq.
+    monkeypatch.setattr(settings, "ai_provider", "openai")
     assert settings.sales_agent_auto_start_worker_enabled is False
     assert settings.sales_agent_auto_start_worker_poll_interval_seconds == 30
     assert settings.sales_agent_auto_start_worker_batch_size == 10
@@ -423,7 +427,25 @@ def test_worker_configuration_defaults() -> None:
     assert worker.poll_interval_seconds == 30
     assert worker.batch_size == 10
     assert worker.is_stopping is False
-    assert worker._provider_factory is OpenAIProvider
+    assert worker._provider_factory is create_ai_provider
+    assert type(worker._provider_factory()) is OpenAIProvider
+
+
+def test_worker_uses_shared_factory_for_groq(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ai_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", None)
+    worker = SalesAgentAutoStartWorker(session_factory=TestingSessionLocal)
+    assert worker._provider_factory is create_ai_provider
+    provider = worker._provider_factory()
+    assert type(provider) is GroqProvider
+    with pytest.raises(ProviderNotConfiguredError, match="GROQ_API_KEY"):
+        from app.ai.provider import AIGenerateRequest
+
+        provider.generate(
+            AIGenerateRequest(system_instructions="sys", user_input="hi")
+        )
 
 
 def test_worker_logs_are_safe(

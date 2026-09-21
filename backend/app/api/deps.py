@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.ai.openai_provider import OpenAIProvider
+from app.ai.factory import create_ai_provider
 from app.ai.provider import AIProvider
 from app.core.exceptions import UnauthorizedError
 from app.core.security import decode_access_token
@@ -103,7 +103,7 @@ def get_current_organization(
 
 
 def get_ai_provider() -> AIProvider:
-    return OpenAIProvider()
+    return create_ai_provider()
 
 
 def get_email_provider() -> EmailProvider:

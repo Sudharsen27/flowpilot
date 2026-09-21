@@ -19,10 +19,11 @@ from app.tools.schema import ToolCall, ToolDefinition
 
 logger = logging.getLogger(__name__)
 
-# Covers OpenAI-style keys, Resend keys (re_...) and Authorization values.
-# The length floor on re_ avoids redacting ordinary words such as "re_try".
+# Covers OpenAI-style keys, Groq keys (gsk_...), Resend keys (re_...), and
+# Authorization values. The length floor on re_ avoids redacting ordinary words
+# such as "re_try".
 _SECRET_PATTERN = re.compile(
-    r"(sk-[A-Za-z0-9_-]+)|(re_[A-Za-z0-9_-]{12,})|(Bearer\s+\S+)",
+    r"(gsk_[A-Za-z0-9_-]+)|(sk-[A-Za-z0-9_-]+)|(re_[A-Za-z0-9_-]{12,})|(Bearer\s+\S+)",
     re.IGNORECASE,
 )
 
@@ -34,6 +35,9 @@ def sanitize_provider_error(message: str) -> str:
 
 class OpenAIProvider:
     provider_name = "openai"
+    _missing_key_detail = "OPENAI_API_KEY is not configured"
+    _request_failed_log = "OpenAI request failed: %s"
+    _request_failed_unexpected_log = "OpenAI request failed unexpectedly"
 
     def __init__(
         self,
@@ -47,12 +51,12 @@ class OpenAIProvider:
         self._timeout = settings.openai_request_timeout_seconds
         self._client = client
 
-    def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
-        if not self._api_key:
-            raise ProviderNotConfiguredError("OPENAI_API_KEY is not configured")
+    def _create_client(self) -> OpenAI:
+        return OpenAI(api_key=self._api_key, timeout=self._timeout)
 
-        model = request.model or self._model
-        client = self._client or OpenAI(api_key=self._api_key, timeout=self._timeout)
+    def _prepare_request_kwargs(
+        self, request: AIGenerateRequest, model: str
+    ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": self._messages(request),
@@ -70,14 +74,23 @@ class OpenAIProvider:
                     "schema": request.json_schema,
                 },
             }
+        return kwargs
+
+    def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
+        if not self._api_key:
+            raise ProviderNotConfiguredError(self._missing_key_detail)
+
+        model = request.model or self._model
+        client = self._client or self._create_client()
+        kwargs = self._prepare_request_kwargs(request, model)
 
         try:
             response = client.chat.completions.create(**kwargs)
         except APIError as exc:
-            logger.warning("OpenAI request failed: %s", sanitize_provider_error(str(exc)))
+            logger.warning(self._request_failed_log, sanitize_provider_error(str(exc)))
             raise ProviderError(sanitize_provider_error(str(exc))) from exc
         except Exception as exc:
-            logger.warning("OpenAI request failed unexpectedly")
+            logger.warning(self._request_failed_unexpected_log)
             raise ProviderError("AI provider request failed") from exc
 
         if not response.choices:
