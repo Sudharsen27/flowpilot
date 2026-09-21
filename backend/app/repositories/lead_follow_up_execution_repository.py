@@ -32,6 +32,21 @@ class LeadFollowUpExecutionRepository:
             )
         )
 
+    def get_by_ids(
+        self, organization_id: str, execution_ids: list[str]
+    ) -> dict[str, LeadFollowUpExecution]:
+        if not execution_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(LeadFollowUpExecution).where(
+                    LeadFollowUpExecution.organization_id == organization_id,
+                    LeadFollowUpExecution.id.in_(execution_ids),
+                )
+            )
+        )
+        return {row.id: row for row in rows}
+
     def list_for_follow_up(
         self,
         organization_id: str,

@@ -92,6 +92,7 @@ class ActivityService:
         event_type: ActivityEventType | None = None,
         entity_type: ActivityEntityType | None = None,
         entity_id: str | None = None,
+        lead_id: str | None = None,
         search: str | None = None,
         limit: int = ACTIVITY_LIST_DEFAULT_LIMIT,
         offset: int = 0,
@@ -106,6 +107,7 @@ class ActivityService:
             event_type=event_type,
             entity_type=entity_type,
             entity_id=entity_id,
+            lead_id=lead_id,
             search=search,
         )
         raw_counts = self.events.type_counts(
@@ -113,6 +115,7 @@ class ActivityService:
             event_type=event_type,
             entity_type=entity_type,
             entity_id=entity_id,
+            lead_id=lead_id,
             search=search,
         )
         return ActivityListResponse(

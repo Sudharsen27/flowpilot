@@ -347,6 +347,68 @@ def test_sales_run_lifecycle_emits_activity(
     app.dependency_overrides.pop(get_ai_provider, None)
 
 
+def test_activity_lead_id_filter(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    first = _create(client, token, name="Lead One").json()
+    second = _create(client, token, name="Lead Two").json()
+    client.patch(
+        f"/api/v1/leads/{first['id']}",
+        json={"status": "CONTACTED"},
+        headers=_headers(token),
+    )
+    filtered = _activity(client, token, lead_id=first["id"]).json()
+    assert filtered["total"] == 2
+    assert all(item["lead_id"] == first["id"] for item in filtered["items"])
+    other = _activity(client, token, lead_id=second["id"]).json()
+    assert other["total"] == 1
+    assert other["items"][0]["title"] == "Lead created"
+    combined = _activity(
+        client, token, lead_id=first["id"], type="HUMAN_ACTION", entity_type="LEAD"
+    ).json()
+    assert combined["total"] == 2
+    assert combined["type_counts"]["HUMAN_ACTION"] == 2
+    searched = _activity(client, token, lead_id=first["id"], q="status changed").json()
+    assert searched["total"] == 1
+    assert searched["items"][0]["title"] == "Lead status changed"
+    omitted = _activity(client, token).json()
+    assert omitted["total"] == 3
+
+
+def test_activity_lead_id_organization_isolation(client: TestClient) -> None:
+    org_a = _auth(client, email="act-a@example.com", organization_name="Act A")
+    org_b = _auth(client, email="act-b@example.com", organization_name="Act B")
+    lead = _create(client, org_a["access_token"], name="Scoped").json()
+    foreign = _activity(client, org_b["access_token"], lead_id=lead["id"]).json()
+    assert foreign["total"] == 0
+    assert foreign["items"] == []
+    assert foreign["type_counts"] == {
+        "AI_ACTION": 0,
+        "APPROVAL": 0,
+        "HUMAN_ACTION": 0,
+        "SYSTEM_EVENT": 0,
+    }
+    too_long = _activity(client, org_a["access_token"], lead_id="x" * 37)
+    assert too_long.status_code == 422
+
+
+def test_activity_lead_id_omitted_behavior_unchanged(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    first = _create(client, token, name="First").json()
+    _create(client, token, name="Second")
+    client.patch(
+        f"/api/v1/leads/{first['id']}",
+        json={"status": "QUALIFIED"},
+        headers=_headers(token),
+    )
+    listed = _activity(client, token, limit=1, offset=0).json()
+    assert listed["total"] == 3
+    assert listed["limit"] == 1
+    assert len(listed["items"]) == 1
+    human = _activity(client, token, type="HUMAN_ACTION").json()
+    assert human["total"] == 3
+    assert all(item["type"] == "HUMAN_ACTION" for item in human["items"])
+
+
 def test_agent_execution_emits_activity(client: TestClient, db: Session) -> None:
     created = _auth(client)
     token = created["access_token"]

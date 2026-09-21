@@ -47,3 +47,18 @@ class LeadResponseDraftRepository:
             if row.lead_id not in latest:
                 latest[row.lead_id] = row
         return latest
+
+    def get_by_ids(
+        self, organization_id: str, draft_ids: list[str]
+    ) -> dict[str, LeadResponseDraft]:
+        if not draft_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(LeadResponseDraft).where(
+                    LeadResponseDraft.organization_id == organization_id,
+                    LeadResponseDraft.id.in_(draft_ids),
+                )
+            )
+        )
+        return {row.id: row for row in rows}

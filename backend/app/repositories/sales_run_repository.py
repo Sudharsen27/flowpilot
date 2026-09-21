@@ -31,6 +31,21 @@ class SalesRunRepository:
             )
         )
 
+    def get_by_ids(
+        self, organization_id: str, sales_run_ids: list[str]
+    ) -> dict[str, SalesRun]:
+        if not sales_run_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(SalesRun).where(
+                    SalesRun.organization_id == organization_id,
+                    SalesRun.id.in_(sales_run_ids),
+                )
+            )
+        )
+        return {row.id: row for row in rows}
+
     def get_for_agent(
         self,
         organization_id: str,

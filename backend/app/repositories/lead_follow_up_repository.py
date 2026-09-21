@@ -218,3 +218,39 @@ class LeadFollowUpRepository:
         if for_update_skip_locked and bind is not None and bind.dialect.name == "postgresql":
             stmt = stmt.with_for_update(skip_locked=True)
         return self.session.scalar(stmt)
+
+    def latest_for_leads(
+        self, organization_id: str, lead_ids: list[str]
+    ) -> dict[str, LeadFollowUp]:
+        if not lead_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(LeadFollowUp)
+                .where(
+                    LeadFollowUp.organization_id == organization_id,
+                    LeadFollowUp.lead_id.in_(lead_ids),
+                )
+                .order_by(LeadFollowUp.created_at.desc(), LeadFollowUp.id.desc())
+            )
+        )
+        latest: dict[str, LeadFollowUp] = {}
+        for row in rows:
+            if row.lead_id not in latest:
+                latest[row.lead_id] = row
+        return latest
+
+    def get_by_ids(
+        self, organization_id: str, follow_up_ids: list[str]
+    ) -> dict[str, LeadFollowUp]:
+        if not follow_up_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == organization_id,
+                    LeadFollowUp.id.in_(follow_up_ids),
+                )
+            )
+        )
+        return {row.id: row for row in rows}
