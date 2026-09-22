@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,6 +21,7 @@ import {
 import type {
   Agent,
   InboxConversationResponse,
+  InboxTimelineItem,
   Lead,
   SalesRun,
 } from "@/types/api";
@@ -76,7 +77,7 @@ const lead: Lead = {
   id: "lead-1",
   name: "Ada Prospect",
   email: "ada@example.com",
-  phone: null,
+  phone: "+1 555 0100",
   company: "Acme",
   source: "WEBSITE",
   status: "NEW",
@@ -104,7 +105,7 @@ function emptyConversation(
       lead_id: "lead-1",
       name: "Ada Prospect",
       email: "ada@example.com",
-      phone: null,
+      phone: "+1 555 0100",
       company: "Acme",
       source: "WEBSITE",
       lead_status: "NEW",
@@ -116,6 +117,28 @@ function emptyConversation(
     },
     items: [],
     total_items: 0,
+    ...overrides,
+  };
+}
+
+function timelineItem(
+  overrides: Partial<InboxTimelineItem> & Pick<InboxTimelineItem, "id" | "kind">,
+): InboxTimelineItem {
+  return {
+    direction: "internal",
+    occurred_at: "2026-09-11T10:00:00Z",
+    title: overrides.kind,
+    summary: null,
+    body: null,
+    status: null,
+    actor_type: null,
+    actor_user_id: null,
+    agent_id: null,
+    source_entity_type: "LEAD",
+    source_entity_id: "lead-1",
+    activity_id: null,
+    is_draft: false,
+    is_sent_message: false,
     ...overrides,
   };
 }
@@ -220,11 +243,12 @@ describe("Lead workspace", () => {
       screen.getByRole("heading", { name: "Conversation timeline" }),
     ).toBeVisible();
     expect(screen.getByRole("heading", { name: "AI insights" })).toBeVisible();
-    expect(screen.getByText("No Sales Agent work yet")).toBeVisible();
+    expect(screen.getByText("No Sales Agent activity yet")).toBeVisible();
     expect(
       screen.getByText(/Approval does not send the email/),
     ).toBeVisible();
-    expect(await screen.findByText("No timeline events yet")).toBeVisible();
+    expect(screen.getByText("No action required")).toBeVisible();
+    expect(await screen.findByText("No conversation activity yet")).toBeVisible();
     expect(screen.queryByText("SECRET ENQUIRY BODY")).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 1, name: "Ada Prospect" }),
@@ -236,12 +260,40 @@ describe("Lead workspace", () => {
       "href",
       "/inbox?lead=lead-1",
     );
+    expect(screen.getByRole("link", { name: "Back to Leads" })).toHaveAttribute(
+      "href",
+      "/leads",
+    );
     await waitFor(() =>
       expect(getInboxConversationMock).toHaveBeenCalledWith("lead-1"),
     );
     expect(screen.getAllByRole("button", { name: "Start Sales Agent" }).length).toBeGreaterThan(
       0,
     );
+  });
+
+  it("renders customer profile contact, company, source, and enquiry", async () => {
+    getLeadMock.mockResolvedValue({
+      ...lead,
+      enquiry: "We want a hosted demo",
+    });
+    render(<LeadWorkspacePage />);
+    expect(
+      await screen.findByRole("heading", { name: "What they want" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "ada@example.com" })).toHaveAttribute(
+      "href",
+      "mailto:ada@example.com",
+    );
+    expect(screen.getByRole("link", { name: "+1 555 0100" })).toHaveAttribute(
+      "href",
+      "tel:+1 555 0100",
+    );
+    expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Website").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("New").length).toBeGreaterThan(0);
+    expect(screen.getByText("We want a hosted demo")).toBeVisible();
+    expect(await screen.findByText("Open")).toBeVisible();
   });
 
   it("shows a 404 when the lead is missing", async () => {
@@ -261,7 +313,7 @@ describe("Lead workspace", () => {
       .mockRejectedValueOnce(new ApiError("down", 500, { detail: "unavailable" }))
       .mockResolvedValue(lead);
     render(<LeadWorkspacePage />);
-    expect(await screen.findByText("This lead could not be loaded.")).toBeVisible();
+    expect(await screen.findByText("Unable to load customer")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(
       await screen.findByRole("heading", { level: 1, name: "Ada Prospect" }),
@@ -275,35 +327,85 @@ describe("Lead workspace", () => {
       .mockResolvedValue(
         emptyConversation({
           items: [
-            {
+            timelineItem({
               id: "evt-1",
               kind: "LEAD_CREATED",
-              direction: "internal",
-              occurred_at: "2026-09-01T10:00:00Z",
-              title: "Lead created",
               summary: "Lead captured",
-              body: null,
-              status: null,
               actor_type: "SYSTEM",
-              actor_user_id: null,
-              agent_id: null,
-              source_entity_type: "LEAD",
-              source_entity_id: "lead-1",
-              activity_id: null,
-              is_draft: false,
-              is_sent_message: false,
-            },
+            }),
           ],
           total_items: 1,
         }),
       );
     render(<LeadWorkspacePage />);
-    expect(await screen.findByText("Unable to load conversation")).toBeVisible();
+    expect(
+      await screen.findByText("Unable to load conversation history"),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "AI insights" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Lead created")).toBeVisible();
     expect(
       screen.getByRole("list", { name: "Conversation timeline" }),
     ).toBeVisible();
+  });
+
+  it("distinguishes customer, AI draft, sent, and failed timeline events", async () => {
+    getInboxConversationMock.mockResolvedValue(
+      emptyConversation({
+        items: [
+          timelineItem({
+            id: "evt-1",
+            kind: "WEBSITE_ENQUIRY",
+            direction: "inbound",
+            body: "Please call about pricing.",
+            actor_type: "PUBLIC_VISITOR",
+          }),
+          timelineItem({
+            id: "evt-2",
+            kind: "DRAFT_GENERATED",
+            body: "Thanks for reaching out.",
+            is_draft: true,
+            actor_type: "AGENT",
+            agent_id: "agent-1",
+            source_entity_type: "LEAD_RESPONSE_DRAFT",
+            source_entity_id: "draft-1",
+          }),
+          timelineItem({
+            id: "evt-3",
+            kind: "EMAIL_SENT",
+            direction: "outbound",
+            body: "Sent reply body",
+            is_sent_message: true,
+            actor_type: "USER",
+            source_entity_type: "LEAD_EMAIL_SEND",
+            source_entity_id: "send-1",
+          }),
+          timelineItem({
+            id: "evt-4",
+            kind: "EMAIL_FAILED",
+            direction: "outbound",
+            body: "Failed reply body",
+            actor_type: "SYSTEM",
+            source_entity_type: "LEAD_EMAIL_SEND",
+            source_entity_id: "send-2",
+          }),
+        ],
+        total_items: 4,
+      }),
+    );
+    render(<LeadWorkspacePage />);
+    const timeline = await screen.findByRole("list", {
+      name: "Conversation timeline",
+    });
+    expect(within(timeline).getByText("Customer")).toBeVisible();
+    expect(within(timeline).getByText("Please call about pricing.")).toBeVisible();
+    expect(within(timeline).getByText("AI-generated response")).toBeVisible();
+    expect(
+      within(timeline).getByText(/Prepared by FlowPilot AI · Not sent to the customer/),
+    ).toBeVisible();
+    expect(within(timeline).getByText("Sent")).toBeVisible();
+    expect(within(timeline).getByText("Failed")).toBeVisible();
+    expect(within(timeline).getByText("Needs your review")).toBeVisible();
   });
 
   it("shows latest Sales Agent status and AI insights without exposing enquiry", async () => {
@@ -346,7 +448,7 @@ describe("Lead workspace", () => {
         extracted_contact: { name: "Ada", email: "ada@example.com", phone: null },
         extracted_company: { name: "Acme" },
         buying_signals: ["Asked for hosted demo"],
-        missing_information: [],
+        missing_information: ["Timeline"],
       },
       error: null,
       failure_category: null,
@@ -364,7 +466,7 @@ describe("Lead workspace", () => {
           lead_id: "lead-1",
           name: "Ada Prospect",
           email: "ada@example.com",
-          phone: null,
+          phone: "+1 555 0100",
           company: "Acme",
           source: "WEBSITE",
           lead_status: "NEW",
@@ -391,10 +493,14 @@ describe("Lead workspace", () => {
     render(<LeadWorkspacePage />);
     expect((await screen.findAllByText("Waiting for approval")).length).toBeGreaterThan(0);
     expect(screen.getByText("Inbound qualifier")).toBeVisible();
-    expect(screen.getByText("Needs your review")).toBeVisible();
-    expect(screen.getByText("Strong buying intent for a demo.")).toBeVisible();
+    expect(screen.getByText("Review AI response")).toBeVisible();
+    expect(await screen.findByText("Needs approval")).toBeVisible();
+    expect(await screen.findByText("Strong buying intent for a demo.")).toBeVisible();
     expect(screen.getByText("Asked for hosted demo")).toBeVisible();
+    expect(screen.getByText("Missing information")).toBeVisible();
+    expect(screen.getByText(/Intent:\s*Request demo/)).toBeVisible();
     expect(screen.getByText("Latest AI draft")).toBeVisible();
+    expect(screen.getAllByText(/Not sent to the customer/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Start Sales Agent" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Review draft" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sales Agent history" })).toBeVisible();
@@ -402,6 +508,34 @@ describe("Lead workspace", () => {
     expect(screen.queryByText("SECRET ENQUIRY BODY")).not.toBeInTheDocument();
     expect(screen.queryByText("run-1")).not.toBeInTheDocument();
     expect(getLeadQualificationMock).toHaveBeenCalledWith("lead-1", "q-1");
+  });
+
+  it("shows follow-up next step from sales run summary", async () => {
+    getLeadMock.mockResolvedValue({
+      ...lead,
+      latest_sales_run: {
+        id: "run-1",
+        agent_id: "agent-1",
+        status: "COMPLETED",
+        stage: "DONE",
+        email_send: { status: "SENT", completed_at: "2026-09-11T11:00:00Z" },
+        follow_up: {
+          status: "PENDING",
+          due_at: "2026-09-12T10:00:00Z",
+          is_overdue: false,
+        },
+      },
+    });
+    getSalesRunMock.mockResolvedValue(
+      run({
+        status: "COMPLETED",
+        stage: "DONE",
+        response_draft_id: null,
+      }),
+    );
+    render(<LeadWorkspacePage />);
+    expect(await screen.findByText("Follow-up scheduled")).toBeVisible();
+    expect(screen.getByText("Scheduled")).toBeVisible();
   });
 
   it("starts a sales run with enquiry and agent_id only", async () => {

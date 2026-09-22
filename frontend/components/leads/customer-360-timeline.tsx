@@ -25,18 +25,18 @@ export function Customer360Timeline({
 
   return (
     <section
-      className="bg-card border-border flex min-h-[28rem] min-w-0 flex-col overflow-hidden rounded-lg border"
+      className="bg-card border-border flex min-h-[28rem] min-w-0 flex-col overflow-hidden rounded-lg border motion-safe:transition-shadow"
       aria-labelledby="customer-360-timeline-title"
     >
       <header className="border-border flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span
-            className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-md"
+            className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
             aria-hidden="true"
           >
             <MessageSquareText className="size-4" />
           </span>
-          <div>
+          <div className="min-w-0">
             <h2
               id="customer-360-timeline-title"
               className="text-sm font-semibold tracking-tight"
@@ -44,8 +44,8 @@ export function Customer360Timeline({
               Conversation timeline
             </h2>
             <p className="text-muted-foreground text-xs">
-              Enquiry, AI activity, human decisions, and outbound email in one
-              place.
+              Customer journey: enquiry, AI work, human decisions, and outbound
+              email.
             </p>
           </div>
         </div>
@@ -62,8 +62,8 @@ export function Customer360Timeline({
             <StatePanel
               kind="error"
               className="max-w-none"
-              title="Unable to load conversation"
-              description={error}
+              title="Unable to load conversation history"
+              description="The conversation timeline could not be loaded. Customer profile and AI insights remain available."
               action={
                 onRetry ? (
                   <Button type="button" variant="outline" onClick={onRetry}>
@@ -81,7 +81,11 @@ export function Customer360Timeline({
             <span className="sr-only">Loading conversation timeline</span>
           </div>
         ) : (
-          <ConversationTimeline items={items} />
+          <ConversationTimeline
+            items={items}
+            emptyTitle="No conversation activity yet"
+            emptyDescription="Website enquiries, AI drafts, approvals, emails, and follow-ups will appear here as they are recorded."
+          />
         )}
       </div>
     </section>

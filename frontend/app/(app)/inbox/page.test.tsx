@@ -385,7 +385,7 @@ describe("AI Inbox page", () => {
       screen.getByText(/Prepared by FlowPilot AI · Not sent to the customer/i),
     ).toBeVisible();
     expect(screen.getByText("Email sent")).toBeVisible();
-    expect(screen.getAllByText("Sent to customer").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Sent").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Email could not be delivered")).toBeVisible();
     expect(screen.getByText("Follow-up email sent")).toBeVisible();
     expect(screen.getByText("What they want")).toBeVisible();

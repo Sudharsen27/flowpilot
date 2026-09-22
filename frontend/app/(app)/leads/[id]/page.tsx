@@ -57,13 +57,6 @@ function canReviewDraft(run: SalesRun | null) {
   return run.status === "FAILED" && run.stage === "SEND";
 }
 
-function leadNeedsApproval(lead: Lead, conversation?: InboxConversationResponse | null) {
-  if (conversation?.lead.needs_approval) return true;
-  if (lead.latest_sales_run?.status === "WAITING_APPROVAL") return true;
-  const review = lead.latest_response_draft?.review_status;
-  return review === "GENERATED" || review === "EDITED";
-}
-
 export default function LeadWorkspacePage() {
   const params = useParams<{ id: string }>();
   const leadId = params.id;
@@ -76,6 +69,7 @@ export default function LeadWorkspacePage() {
   const [conversationLoading, setConversationLoading] = useState(true);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [conversationRetryKey, setConversationRetryKey] = useState(0);
+  const [insightsDetailLoading, setInsightsDetailLoading] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorKind, setErrorKind] = useState<"not-found" | "error" | null>(null);
@@ -100,7 +94,16 @@ export default function LeadWorkspacePage() {
 
         const qualificationId = data.latest_qualification?.id;
         const salesSummary = data.latest_sales_run;
+        const needsDetail = Boolean(qualificationId || salesSummary);
 
+        if (!needsDetail) {
+          setLatestRun(null);
+          setQualificationDetail(null);
+          setInsightsDetailLoading(false);
+          return;
+        }
+
+        setInsightsDetailLoading(true);
         const [runResult, qualificationResult] = await Promise.allSettled([
           salesSummary
             ? getSalesRun(salesSummary.agent_id, salesSummary.id)
@@ -120,12 +123,14 @@ export default function LeadWorkspacePage() {
             ? qualificationResult.value
             : null,
         );
+        setInsightsDetailLoading(false);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLead(null);
         setLatestRun(null);
         setQualificationDetail(null);
+        setInsightsDetailLoading(false);
         setErrorKind(
           cause instanceof ApiError && cause.status === 404 ? "not-found" : "error",
         );
@@ -151,13 +156,11 @@ export default function LeadWorkspacePage() {
         setConversation(data);
         setConversationError(null);
       })
-      .catch((cause: unknown) => {
+      .catch(() => {
         if (cancelled) return;
         setConversation(null);
         setConversationError(
-          cause instanceof ApiError
-            ? cause.message || "Conversation could not be loaded."
-            : "Conversation could not be loaded.",
+          "Conversation history could not be loaded right now.",
         );
       })
       .finally(() => {
@@ -173,6 +176,7 @@ export default function LeadWorkspacePage() {
     setLoading(true);
     setConversationLoading(true);
     setConversationError(null);
+    setInsightsDetailLoading(false);
     setErrorKind(null);
     setRetryKey((value) => value + 1);
   }
@@ -200,8 +204,8 @@ export default function LeadWorkspacePage() {
           role="status"
         >
           <Skeleton className="h-72 w-full" />
-          <Skeleton className="h-[28rem] w-full" />
-          <Skeleton className="h-72 w-full" />
+          <Skeleton className="order-3 h-[28rem] w-full xl:order-none" />
+          <Skeleton className="order-2 h-72 w-full xl:order-none" />
           <span className="sr-only">Loading lead</span>
         </div>
       </div>
@@ -222,7 +226,11 @@ export default function LeadWorkspacePage() {
         <StatePanel
           kind="error"
           className="max-w-none"
-          title={notFound ? "This lead could not be found." : "This lead could not be loaded."}
+          title={
+            notFound
+              ? "This lead could not be found."
+              : "Unable to load customer"
+          }
           description={
             notFound
               ? "Return to Leads to select an available record."
@@ -247,7 +255,6 @@ export default function LeadWorkspacePage() {
 
   const summary = lead.latest_sales_run;
   const openRun = hasOpenSalesRun(lead);
-  const needsApproval = leadNeedsApproval(lead, conversation);
 
   const salesAgentActions = (
     <>
@@ -299,7 +306,7 @@ export default function LeadWorkspacePage() {
     ) : (
       <EmptyState
         className="max-w-none"
-        title="No Sales Agent work yet"
+        title="No Sales Agent activity yet"
         description="Start a run to qualify an enquiry and draft a reply. Approval does not send the email."
         action={
           <Button type="button" onClick={() => setStartOpen(true)}>
@@ -316,16 +323,24 @@ export default function LeadWorkspacePage() {
         title={lead.name}
         description={`${lead.email || "No email"} · ${statusLabels[lead.status]} · ${inboxSourceLabels[lead.source]}`}
         secondaryActions={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setEditKey((value) => value + 1);
-              setEditOpen(true);
-            }}
-          >
-            Edit
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/leads"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Back to Leads
+            </Link>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEditKey((value) => value + 1);
+                setEditOpen(true);
+              }}
+            >
+              Edit
+            </Button>
+          </div>
         }
         primaryAction={
           <Button
@@ -338,12 +353,12 @@ export default function LeadWorkspacePage() {
         }
       />
 
+      {/* Mobile: Profile → Insights → Timeline. Desktop xl: Profile | Timeline | Insights */}
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)_minmax(16rem,20rem)] xl:items-start">
-        <div className="order-1 grid gap-4 xl:order-none">
+        <div className="order-1 min-w-0 xl:order-none">
           <Customer360Profile
             lead={lead}
             conversationState={conversation?.lead.conversation_state}
-            needsApproval={needsApproval}
           />
         </div>
 
@@ -357,14 +372,18 @@ export default function LeadWorkspacePage() {
           />
         </div>
 
-        <div className="order-2 grid gap-4 xl:order-none">
+        <div className="order-2 min-w-0 xl:order-none">
           <Customer360Insights
             lead={lead}
             latestRun={latestRun}
             qualificationDetail={qualificationDetail}
+            conversation={conversation}
             agentName={agentName}
+            detailLoading={insightsDetailLoading}
             emptyState={insightsEmptyState}
-            actions={summary || canReviewDraft(latestRun) ? salesAgentActions : null}
+            actions={
+              summary || canReviewDraft(latestRun) ? salesAgentActions : null
+            }
           />
         </div>
       </div>
@@ -380,7 +399,7 @@ export default function LeadWorkspacePage() {
         }}
       />
       <LeadFormDialog
-        key={editKey}
+        key={`lead-edit-${editKey}`}
         open={editOpen}
         lead={lead}
         onOpenChange={setEditOpen}
@@ -390,13 +409,13 @@ export default function LeadWorkspacePage() {
         }}
       />
       <LeadSalesAgentHistory
-        key={historyKey}
+        key={`lead-history-${historyKey}`}
         open={historyOpen}
         lead={lead}
         onOpenChange={setHistoryOpen}
       />
       <LeadFollowUpsDialog
-        key={followUpsKey}
+        key={`lead-follow-ups-${followUpsKey}`}
         open={followUpsOpen}
         lead={lead}
         onOpenChange={setFollowUpsOpen}

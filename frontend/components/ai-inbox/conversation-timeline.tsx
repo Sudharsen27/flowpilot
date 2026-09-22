@@ -20,6 +20,8 @@ import type {
 
 type ConversationTimelineProps = {
   items: InboxTimelineItem[];
+  emptyTitle?: string;
+  emptyDescription?: string;
 };
 
 type TimelineLane =
@@ -133,15 +135,19 @@ const lanePresentation: Record<
   },
 };
 
-export function ConversationTimeline({ items }: ConversationTimelineProps) {
+export function ConversationTimeline({
+  items,
+  emptyTitle = "No timeline events yet",
+  emptyDescription = "Activity for this lead will appear here as drafts, emails, Sales Runs, and follow-ups are recorded.",
+}: ConversationTimelineProps) {
   if (items.length === 0) {
     return (
       <EmptyState
         compact
         icon={<MessageSquareText />}
         className="max-w-none rounded-none border-0 shadow-none"
-        title="No timeline events yet"
-        description="Activity for this lead will appear here as drafts, emails, Sales Runs, and follow-ups are recorded."
+        title={emptyTitle}
+        description={emptyDescription}
       />
     );
   }
@@ -193,10 +199,13 @@ export function ConversationTimeline({ items }: ConversationTimelineProps) {
                   </span>
                   {isDraft ? <AiBadge label="Generated" /> : null}
                   {isSent ? (
-                    <StatusBadge status="success" label="Sent to customer" />
+                    <StatusBadge status="success" label="Sent" />
                   ) : null}
                   {failed ? (
                     <StatusBadge status="failed" label="Failed" />
+                  ) : null}
+                  {item.kind === "DRAFT_REJECTED" ? (
+                    <StatusBadge status="failed" label="Rejected" />
                   ) : null}
                   {item.kind === "SALES_RUN_WAITING_APPROVAL" ||
                   (isDraft &&
