@@ -4,27 +4,32 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { formatTimestamp } from "@/components/agents/execution-status";
-import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { EmptyState } from "@/components/empty-state";
+import { Customer360Insights } from "@/components/leads/customer-360-insights";
+import { Customer360Profile } from "@/components/leads/customer-360-profile";
+import { Customer360Timeline } from "@/components/leads/customer-360-timeline";
 import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
 import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadSalesAgentHistory } from "@/components/leads/lead-sales-agent-history";
-import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
-import { SalesAgentStatus } from "@/components/leads/sales-agent-status";
 import { StartLeadSalesRunDialog } from "@/components/leads/start-lead-sales-run-dialog";
-import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAgents } from "@/lib/api/agents";
 import { ApiError } from "@/lib/api/client";
-import { getLead } from "@/lib/api/leads";
+import { getInboxConversation } from "@/lib/api/inbox";
+import { getLead, getLeadQualification } from "@/lib/api/leads";
 import { getSalesRun } from "@/lib/api/sales-runs";
-import type { Agent, Lead, LeadSource, SalesRun } from "@/types/api";
+import { inboxSourceLabels } from "@/lib/inbox-labels";
+import type {
+  Agent,
+  InboxConversationResponse,
+  Lead,
+  LeadQualificationResult,
+  SalesRun,
+} from "@/types/api";
 
 const statusLabels: Record<Lead["status"], string> = {
   NEW: "New",
@@ -32,24 +37,6 @@ const statusLabels: Record<Lead["status"], string> = {
   QUALIFIED: "Qualified",
   UNQUALIFIED: "Unqualified",
   CONVERTED: "Converted",
-};
-
-const sourceLabels: Record<LeadSource, string> = {
-  MANUAL: "Manual",
-  WEBSITE: "Website",
-  EMAIL: "Email",
-  CHAT: "Chat",
-  API: "API",
-  IMPORT: "Import",
-};
-
-const stageLabels: Record<SalesRun["stage"], string> = {
-  MATCH_LEAD: "Match lead",
-  QUALIFY: "Qualify",
-  DRAFT: "Draft",
-  AWAIT_APPROVAL: "Await approval",
-  SEND: "Send",
-  DONE: "Done",
 };
 
 function isEligibleSalesAgent(agent: Agent) {
@@ -70,11 +57,25 @@ function canReviewDraft(run: SalesRun | null) {
   return run.status === "FAILED" && run.stage === "SEND";
 }
 
+function leadNeedsApproval(lead: Lead, conversation?: InboxConversationResponse | null) {
+  if (conversation?.lead.needs_approval) return true;
+  if (lead.latest_sales_run?.status === "WAITING_APPROVAL") return true;
+  const review = lead.latest_response_draft?.review_status;
+  return review === "GENERATED" || review === "EDITED";
+}
+
 export default function LeadWorkspacePage() {
   const params = useParams<{ id: string }>();
   const leadId = params.id;
   const [lead, setLead] = useState<Lead | null>(null);
   const [latestRun, setLatestRun] = useState<SalesRun | null>(null);
+  const [qualificationDetail, setQualificationDetail] =
+    useState<LeadQualificationResult | null>(null);
+  const [conversation, setConversation] =
+    useState<InboxConversationResponse | null>(null);
+  const [conversationLoading, setConversationLoading] = useState(true);
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const [conversationRetryKey, setConversationRetryKey] = useState(0);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorKind, setErrorKind] = useState<"not-found" | "error" | null>(null);
@@ -96,24 +97,35 @@ export default function LeadWorkspacePage() {
         setLead(data);
         setAgents(listed);
         setErrorKind(null);
-        if (data.latest_sales_run) {
-          try {
-            const run = await getSalesRun(
-              data.latest_sales_run.agent_id,
-              data.latest_sales_run.id,
-            );
-            if (!cancelled) setLatestRun(run);
-          } catch {
-            if (!cancelled) setLatestRun(null);
-          }
-        } else if (!cancelled) {
-          setLatestRun(null);
-        }
+
+        const qualificationId = data.latest_qualification?.id;
+        const salesSummary = data.latest_sales_run;
+
+        const [runResult, qualificationResult] = await Promise.allSettled([
+          salesSummary
+            ? getSalesRun(salesSummary.agent_id, salesSummary.id)
+            : Promise.resolve(null),
+          qualificationId
+            ? getLeadQualification(data.id, qualificationId)
+            : Promise.resolve(null),
+        ]);
+
+        if (cancelled) return;
+
+        setLatestRun(
+          runResult.status === "fulfilled" ? runResult.value : null,
+        );
+        setQualificationDetail(
+          qualificationResult.status === "fulfilled"
+            ? qualificationResult.value
+            : null,
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLead(null);
         setLatestRun(null);
+        setQualificationDetail(null);
         setErrorKind(
           cause instanceof ApiError && cause.status === 404 ? "not-found" : "error",
         );
@@ -126,10 +138,49 @@ export default function LeadWorkspacePage() {
     };
   }, [leadId, retryKey]);
 
+  useEffect(() => {
+    if (!leadId || loading || errorKind) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void getInboxConversation(leadId)
+      .then((data) => {
+        if (cancelled) return;
+        setConversation(data);
+        setConversationError(null);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setConversation(null);
+        setConversationError(
+          cause instanceof ApiError
+            ? cause.message || "Conversation could not be loaded."
+            : "Conversation could not be loaded.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setConversationLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [leadId, loading, errorKind, retryKey, conversationRetryKey]);
+
   function reload() {
     setLoading(true);
+    setConversationLoading(true);
+    setConversationError(null);
     setErrorKind(null);
     setRetryKey((value) => value + 1);
+  }
+
+  function retryConversation() {
+    setConversationLoading(true);
+    setConversationError(null);
+    setConversationRetryKey((value) => value + 1);
   }
 
   const eligibleAgents = agents.filter(isEligibleSalesAgent);
@@ -144,8 +195,13 @@ export default function LeadWorkspacePage() {
           breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: "Lead" }]}
           title="Lead"
         />
-        <div role="status">
-          <Skeleton className="h-40 w-full" />
+        <div
+          className="grid gap-4 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)_minmax(16rem,20rem)]"
+          role="status"
+        >
+          <Skeleton className="h-72 w-full" />
+          <Skeleton className="h-[28rem] w-full" />
+          <Skeleton className="h-72 w-full" />
           <span className="sr-only">Loading lead</span>
         </div>
       </div>
@@ -191,13 +247,74 @@ export default function LeadWorkspacePage() {
 
   const summary = lead.latest_sales_run;
   const openRun = hasOpenSalesRun(lead);
+  const needsApproval = leadNeedsApproval(lead, conversation);
+
+  const salesAgentActions = (
+    <>
+      {canReviewDraft(latestRun) ? (
+        <Button type="button" variant="outline" onClick={() => setReviewOpen(true)}>
+          Review draft
+        </Button>
+      ) : null}
+      {summary ? (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setHistoryKey((value) => value + 1);
+              setHistoryOpen(true);
+            }}
+          >
+            Sales Agent history
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setFollowUpsKey((value) => value + 1);
+              setFollowUpsOpen(true);
+            }}
+          >
+            Follow-ups
+          </Button>
+        </>
+      ) : null}
+    </>
+  );
+
+  const insightsEmptyState =
+    eligibleAgents.length === 0 ? (
+      <StatePanel
+        kind="unavailable"
+        className="max-w-none"
+        title="No Sales Agent is ready"
+        description="No Sales Agent is ready. Open AI Agents to finish setup."
+        action={
+          <Link href="/agents" className={buttonVariants({ variant: "outline" })}>
+            Open AI Agents
+          </Link>
+        }
+      />
+    ) : (
+      <EmptyState
+        className="max-w-none"
+        title="No Sales Agent work yet"
+        description="Start a run to qualify an enquiry and draft a reply. Approval does not send the email."
+        action={
+          <Button type="button" onClick={() => setStartOpen(true)}>
+            Start Sales Agent
+          </Button>
+        }
+      />
+    );
 
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
         breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: lead.name }]}
         title={lead.name}
-        description={`${lead.email || "No email"} · ${statusLabels[lead.status]} · ${sourceLabels[lead.source]} · Updated ${formatTimestamp(lead.updated_at) ?? "unavailable"}`}
+        description={`${lead.email || "No email"} · ${statusLabels[lead.status]} · ${inboxSourceLabels[lead.source]}`}
         secondaryActions={
           <Button
             type="button"
@@ -221,146 +338,35 @@ export default function LeadWorkspacePage() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card as="section">
-          <CardContent className="grid gap-4">
-            <h2 className="text-section-title font-semibold tracking-tight">
-              Lead
-            </h2>
-            <dl className="grid gap-3">
-              <DetailRow label="Email" value={lead.email || "—"} muted={!lead.email} />
-              <DetailRow label="Status" value={<LeadStatusBadge status={lead.status} />} />
-              <DetailRow label="Source" value={sourceLabels[lead.source]} />
-              <DetailRow
-                label="Company"
-                value={lead.company || "—"}
-                muted={!lead.company}
-              />
-              <DetailRow
-                label="Updated"
-                value={formatTimestamp(lead.updated_at) ?? "—"}
-              />
-              <DetailRow
-                label="Enquiry"
-                value={
-                  lead.enquiry?.trim() ? (
-                    <span className="line-clamp-4 whitespace-pre-wrap">
-                      {lead.enquiry}
-                    </span>
-                  ) : (
-                    "—"
-                  )
-                }
-                muted={!lead.enquiry?.trim()}
-              />
-            </dl>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 lg:gap-5 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)_minmax(16rem,20rem)] xl:items-start">
+        <div className="order-1 grid gap-4 xl:order-none">
+          <Customer360Profile
+            lead={lead}
+            conversationState={conversation?.lead.conversation_state}
+            needsApproval={needsApproval}
+          />
+        </div>
 
-        <section className="grid gap-4" aria-label="Sales Agent">
-          <SectionHeader title="Sales Agent" />
-          {!summary ? (
-            eligibleAgents.length === 0 ? (
-              <StatePanel
-                kind="unavailable"
-                className="max-w-none"
-                title="No Sales Agent is ready"
-                description="No Sales Agent is ready. Open AI Agents to finish setup."
-                action={
-                  <Link href="/agents" className={buttonVariants({ variant: "outline" })}>
-                    Open AI Agents
-                  </Link>
-                }
-              />
-            ) : (
-              <EmptyState
-                className="max-w-none"
-                title="No Sales Agent work yet"
-                description="Start a run to qualify an enquiry and draft a reply. Approval does not send the email."
-                action={
-                  <Button type="button" onClick={() => setStartOpen(true)}>
-                    Start Sales Agent
-                  </Button>
-                }
-              />
-            )
-          ) : (
-            <Card>
-              <CardContent className="grid gap-4">
-                <SalesAgentStatus summary={summary} />
-                <dl className="grid gap-3">
-                  <DetailRow label="Stage" value={stageLabels[summary.stage]} />
-                  {agentName ? <DetailRow label="Agent" value={agentName} /> : null}
-                  <DetailRow
-                    label="Updated"
-                    value={
-                      formatTimestamp(latestRun?.updated_at ?? lead.updated_at) ??
-                      "—"
-                    }
-                  />
-                  {summary.email_send?.status === "SENT" ? (
-                    <DetailRow
-                      label="Email"
-                      value={
-                        summary.email_send.completed_at
-                          ? `Sent ${formatTimestamp(summary.email_send.completed_at) ?? ""}`.trim()
-                          : "Sent"
-                      }
-                    />
-                  ) : null}
-                  {summary.email_send?.status === "FAILED" ? (
-                    <DetailRow label="Email" value="Send failed" />
-                  ) : null}
-                  {summary.follow_up ? (
-                    <DetailRow
-                      label="Follow-up"
-                      value={
-                        summary.follow_up.is_overdue
-                          ? "Overdue"
-                          : summary.follow_up.status === "PENDING"
-                            ? "Pending"
-                            : summary.follow_up.status === "COMPLETED"
-                              ? "Completed"
-                              : "Cancelled"
-                      }
-                    />
-                  ) : null}
-                </dl>
-                <div className="flex flex-wrap gap-2">
-                  {canReviewDraft(latestRun) ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setReviewOpen(true)}
-                    >
-                      Review draft
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setHistoryKey((value) => value + 1);
-                      setHistoryOpen(true);
-                    }}
-                  >
-                    Sales Agent history
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setFollowUpsKey((value) => value + 1);
-                      setFollowUpsOpen(true);
-                    }}
-                  >
-                    Follow-ups
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </section>
+        <div className="order-3 min-w-0 xl:order-none">
+          <Customer360Timeline
+            items={conversation?.items}
+            totalItems={conversation?.total_items}
+            loading={conversationLoading}
+            error={conversationError}
+            onRetry={retryConversation}
+          />
+        </div>
+
+        <div className="order-2 grid gap-4 xl:order-none">
+          <Customer360Insights
+            lead={lead}
+            latestRun={latestRun}
+            qualificationDetail={qualificationDetail}
+            agentName={agentName}
+            emptyState={insightsEmptyState}
+            actions={summary || canReviewDraft(latestRun) ? salesAgentActions : null}
+          />
+        </div>
       </div>
 
       <StartLeadSalesRunDialog
