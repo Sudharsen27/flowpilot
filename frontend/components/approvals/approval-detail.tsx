@@ -20,7 +20,7 @@ import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
 import { ApiError } from "@/lib/api/client";
 import {
   approveLeadResponseDraft,
@@ -31,8 +31,6 @@ import {
   updateLeadResponseDraft,
 } from "@/lib/api/leads";
 import { getSalesRun, sendSalesRun } from "@/lib/api/sales-runs";
-import { draftReviewLabels, inboxSourceLabels } from "@/lib/inbox-labels";
-import { statusPresentation } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type {
   ApprovalQueueItem,
@@ -87,13 +85,37 @@ function actionError(cause: unknown, fallback: string) {
   return fallback;
 }
 
-function emailStateLabel(item: ApprovalQueueItem) {
-  if (item.email?.status === "SENT") return "Sent";
-  if (item.email?.status === "FAILED") return "Failed";
-  if (item.email?.status === "PENDING") return "Sending…";
-  if (item.draft.review_status === "APPROVED") return "Ready to send";
-  if (item.draft.review_status === "REJECTED") return "Not sent";
-  return "Not sent";
+function decisionPresentation(item: ApprovalQueueItem): {
+  status: StatusValue;
+  label: string;
+  notice: string;
+} {
+  if (item.email?.status === "SENT") {
+    return {
+      status: "success",
+      label: "Response sent",
+      notice: "This response was sent to the customer.",
+    };
+  }
+  if (item.draft.review_status === "APPROVED") {
+    return {
+      status: "success",
+      label: "Approved — ready to send",
+      notice: "Approved by human review. Sending remains a separate action.",
+    };
+  }
+  if (item.draft.review_status === "REJECTED") {
+    return {
+      status: "failed",
+      label: "Response rejected",
+      notice: "This response will not be sent.",
+    };
+  }
+  return {
+    status: "warning",
+    label: "Needs your review",
+    notice: "This response has NOT been sent yet.",
+  };
 }
 
 function mergeDraftIntoItem(
@@ -101,8 +123,7 @@ function mergeDraftIntoItem(
   draft: LeadResponseDraftResult,
 ): ApprovalQueueItem {
   const review = draft.review_status ?? item.draft.review_status;
-  const pending =
-    review === "GENERATED" || review === "EDITED";
+  const pending = review === "GENERATED" || review === "EDITED";
   const approved = review === "APPROVED";
   const rejected = review === "REJECTED";
   const email = draft.latest_email_send
@@ -111,8 +132,7 @@ function mergeDraftIntoItem(
         sent_at: draft.latest_email_send.completed_at,
       }
     : item.email;
-  const sent =
-    email?.status === "SENT" || email?.status === "PENDING";
+  const sent = email?.status === "SENT" || email?.status === "PENDING";
   return {
     ...item,
     enquiry: draft.enquiry,
@@ -128,7 +148,8 @@ function mergeDraftIntoItem(
     can_approve: pending && Boolean(draft.response),
     can_reject: pending || approved,
     can_edit: !rejected && draft.status === "COMPLETED",
-    can_send: approved && Boolean(draft.response) && Boolean(item.lead.email) && !sent,
+    can_send:
+      approved && Boolean(draft.response) && Boolean(item.lead.email) && !sent,
     updated_at: draft.updated_at ?? item.updated_at,
   };
 }
@@ -210,7 +231,7 @@ export function ApprovalDetail({
           <Skeleton className="h-6 w-48" />
           <Skeleton className="h-4 w-64" />
           <Skeleton className="mt-4 h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-40 w-full" />
           <span className="sr-only">Loading approval detail</span>
         </div>
       </Card>
@@ -242,26 +263,31 @@ export function ApprovalDetail({
               id="approval-detail-title"
               className="text-base font-medium tracking-tight"
             >
-              Approval detail
+              What needs a decision?
             </h3>
-            <p className="text-muted-foreground mt-1 text-sm">
+            <p className="text-muted-foreground mt-1 text-sm leading-6">
               Select an item from the queue to review the customer enquiry and
-              AI response.
+              AI-generated response.
             </p>
           </div>
         </header>
-        <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center text-sm">
+        <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center text-sm leading-6">
           No approval selected
         </div>
       </Card>
     );
   }
 
-  const review = approval.draft.review_status;
-  const reviewBadge = review
-    ? statusPresentation(review, draftReviewLabels[review] ?? review)
-    : statusPresentation("PENDING", "Needs review");
+  const decision = decisionPresentation(approval);
   const analysis = qualification?.analysis ?? null;
+  const company = approval.lead.company?.trim();
+  const email = approval.lead.email?.trim();
+  const showApprove = approval.can_approve;
+  const showReject = approval.can_reject;
+  const showEdit = approval.can_edit;
+  const showSend = approval.can_send;
+  const linkedWaitingRun =
+    approval.sales_run?.status === "WAITING_APPROVAL";
 
   async function handleApprove() {
     if (!approval || pending) return;
@@ -276,7 +302,7 @@ export function ApprovalDetail({
       );
       const next = mergeDraftIntoItem(approval, saved);
       onChanged?.(next);
-      setActionSuccess("Approved. Ready to send — approval does not send email.");
+      setActionSuccess("Approved — ready to send. Approval does not send email.");
     } catch (cause) {
       setActionErrorMessage(actionError(cause, "Could not approve this draft."));
     } finally {
@@ -308,8 +334,8 @@ export function ApprovalDetail({
       onChanged?.(next);
       setActionSuccess(
         next.sales_run
-          ? "Rejected. Linked Sales Run was cancelled."
-          : "Draft rejected.",
+          ? "Response rejected. Linked SalesRun was cancelled."
+          : "Response rejected.",
       );
       setRejectReason("");
     } catch (cause) {
@@ -336,7 +362,9 @@ export function ApprovalDetail({
       const next = mergeDraftIntoItem(approval, saved);
       onChanged?.(next);
       setEditing(false);
-      setActionSuccess("Draft updated. It still needs approval before sending.");
+      setActionSuccess(
+        "Draft updated. It still needs your review before sending.",
+      );
     } catch (cause) {
       setActionErrorMessage(actionError(cause, "Could not save this edit."));
     } finally {
@@ -395,7 +423,7 @@ export function ApprovalDetail({
         };
         onChanged?.(next);
       }
-      setActionSuccess("Email sent.");
+      setActionSuccess("Response sent.");
     } catch (cause) {
       setActionErrorMessage(actionError(cause, "Could not send this email."));
     } finally {
@@ -424,22 +452,29 @@ export function ApprovalDetail({
             </Button>
           ) : null}
           <div className="min-w-0">
+            <p className="text-muted-foreground text-[0.65rem] font-medium tracking-wide uppercase">
+              {decision.label}
+            </p>
             <h3
               id="approval-detail-title"
-              className="text-base font-medium tracking-tight"
+              className="mt-1 text-base font-semibold tracking-tight"
             >
               {approval.lead.name}
             </h3>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Decide whether this AI response is ready for the customer.
+            <p className="text-muted-foreground mt-1 text-sm leading-6">
+              {[company, email].filter(Boolean).join(" · ") ||
+                "No company or email on file"}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={reviewBadge.status} label={reviewBadge.label} />
+          <StatusBadge status={decision.status} label={decision.label} />
           <Link
             href={`/leads/${encodeURIComponent(approval.lead_id)}`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "text-muted-foreground",
+            )}
           >
             Open Customer 360
             <ExternalLink aria-hidden="true" />
@@ -447,7 +482,7 @@ export function ApprovalDetail({
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-6">
+      <div className="flex flex-1 flex-col gap-7 overflow-y-auto p-5 sm:p-6">
         {actionSuccess ? (
           <p
             className="border-success/25 bg-success/5 text-success-text rounded-md border px-3 py-2 text-sm"
@@ -465,55 +500,31 @@ export function ApprovalDetail({
           </p>
         ) : null}
 
-        <section aria-labelledby="approval-customer-title" className="grid gap-3">
-          <h4 id="approval-customer-title" className="text-sm font-medium">
-            Customer
-          </h4>
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <DetailRow label="Name" value={approval.lead.name} />
-            <DetailRow
-              label="Email"
-              value={
-                approval.lead.email ? (
-                  <a
-                    className="text-primary underline-offset-2 hover:underline"
-                    href={`mailto:${approval.lead.email}`}
-                  >
-                    {approval.lead.email}
-                  </a>
-                ) : (
-                  "—"
-                )
-              }
-            />
-            <DetailRow label="Company" value={approval.lead.company ?? "—"} />
-            <DetailRow
-              label="Lead status"
-              value={approval.lead.status.replaceAll("_", " ")}
-            />
-            <DetailRow
-              label="Source"
-              value={inboxSourceLabels[approval.lead.source]}
-            />
-            <DetailRow
-              label="Updated"
-              value={<RelativeTime value={approval.updated_at} />}
-            />
-          </dl>
-        </section>
+        <p
+          className="border-border bg-surface-subtle text-muted-foreground rounded-md border px-3 py-2 text-sm leading-6"
+          role="status"
+        >
+          {decision.notice}
+        </p>
 
         <section aria-labelledby="approval-enquiry-title" className="grid gap-2">
-          <h4 id="approval-enquiry-title" className="text-sm font-medium">
+          <h4
+            id="approval-enquiry-title"
+            className="text-muted-foreground text-xs font-medium tracking-wide uppercase"
+          >
             Customer enquiry
           </h4>
-          <p className="border-border bg-muted/40 whitespace-pre-wrap rounded-md border p-3 text-sm leading-6">
+          <p className="border-border bg-muted/50 text-foreground max-w-3xl whitespace-pre-wrap rounded-md border p-4 text-sm leading-7">
             {approval.enquiry}
           </p>
         </section>
 
-        <section aria-labelledby="approval-response-title" className="grid gap-2">
+        <section aria-labelledby="approval-response-title" className="grid gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 id="approval-response-title" className="text-sm font-medium">
+            <h4
+              id="approval-response-title"
+              className="text-sm font-semibold tracking-tight"
+            >
               AI-generated response
             </h4>
             <AiBadge label="Generated" />
@@ -525,8 +536,9 @@ export function ApprovalDetail({
                   id="approval-edit-response"
                   value={editText}
                   onChange={(event) => setEditText(event.target.value)}
-                  rows={8}
+                  rows={10}
                   required
+                  className="min-h-48 leading-7"
                 />
               </FormField>
               <div className="flex flex-wrap gap-2">
@@ -547,159 +559,163 @@ export function ApprovalDetail({
               </div>
             </form>
           ) : (
-            <p className="border-ai-border bg-ai/5 whitespace-pre-wrap rounded-md border p-3 text-sm leading-6">
-              {approval.draft.response?.trim() || "No response text."}
-            </p>
+            <div className="border-ai-border bg-ai/5 max-w-3xl rounded-md border p-4 sm:p-5">
+              <p className="text-foreground whitespace-pre-wrap text-[0.95rem] leading-7">
+                {approval.draft.response?.trim() || "No response text."}
+              </p>
+            </div>
           )}
         </section>
 
         <section
-          aria-labelledby="approval-qualification-title"
-          className="grid gap-2"
+          aria-labelledby="approval-context-title"
+          className="border-border grid gap-5 border-t pt-6"
         >
-          <h4 id="approval-qualification-title" className="text-sm font-medium">
-            Qualification
+          <h4
+            id="approval-context-title"
+            className="text-muted-foreground text-xs font-medium tracking-wide uppercase"
+          >
+            AI / Sales context
           </h4>
-          {contextLoading ? (
-            <div role="status" className="grid gap-2">
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-16 w-full" />
-              <span className="sr-only">Loading qualification</span>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="grid gap-2">
+              <h5 className="text-sm font-medium">Qualification</h5>
+              {contextLoading ? (
+                <div role="status" className="grid gap-2">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-16 w-full" />
+                  <span className="sr-only">Loading qualification</span>
+                </div>
+              ) : analysis ? (
+                <dl className="grid gap-3">
+                  <DetailRow label="Summary" value={analysis.summary} />
+                  <DetailRow
+                    label="Intent"
+                    value={intentLabels[analysis.intent] ?? analysis.intent}
+                  />
+                  {analysis.missing_information.length > 0 ? (
+                    <DetailRow
+                      label="Missing information"
+                      value={analysis.missing_information.join(", ")}
+                    />
+                  ) : null}
+                </dl>
+              ) : (
+                <p className="text-muted-foreground text-sm leading-6">
+                  No qualification analysis is available for this lead yet.
+                </p>
+              )}
             </div>
-          ) : analysis ? (
-            <dl className="grid gap-3">
-              <DetailRow label="Summary" value={analysis.summary} />
-              <DetailRow
-                label="Intent"
-                value={intentLabels[analysis.intent] ?? analysis.intent}
-              />
-              <DetailRow
-                label="Confidence"
-                value={`${Math.round(analysis.confidence * 100)}%`}
-              />
-              <DetailRow
-                label="Buying signals"
-                value={
-                  analysis.buying_signals.length > 0
-                    ? analysis.buying_signals.join(", ")
-                    : "None listed"
-                }
-              />
-              <DetailRow
-                label="Missing information"
-                value={
-                  analysis.missing_information.length > 0
-                    ? analysis.missing_information.join(", ")
-                    : "None listed"
-                }
-              />
-            </dl>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No qualification analysis is available for this lead yet.
-            </p>
-          )}
-        </section>
 
-        <section aria-labelledby="approval-agent-title" className="grid gap-2">
-          <h4 id="approval-agent-title" className="text-sm font-medium">
-            Sales Agent
-          </h4>
-          {approval.sales_run ? (
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <DetailRow
-                label="Agent"
-                value={approval.sales_run.agent_name ?? "Sales Agent"}
-              />
-              <DetailRow
-                label="SalesRun status"
-                value={approval.sales_run.status.replaceAll("_", " ")}
-              />
-              <DetailRow
-                label="Stage"
-                value={
-                  stageLabels[approval.sales_run.stage] ??
-                  approval.sales_run.stage
-                }
-              />
-            </dl>
-          ) : (
-            <p className="text-muted-foreground text-sm">Standalone draft</p>
-          )}
-        </section>
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <h5 className="text-sm font-medium">Sales Agent</h5>
+                {approval.sales_run ? (
+                  <dl className="grid gap-3">
+                    <DetailRow
+                      label="Sales Agent"
+                      value={approval.sales_run.agent_name ?? "Sales Agent"}
+                    />
+                    <DetailRow
+                      label="SalesRun status"
+                      value={approval.sales_run.status.replaceAll("_", " ")}
+                    />
+                    <DetailRow
+                      label="Stage"
+                      value={
+                        stageLabels[approval.sales_run.stage] ??
+                        approval.sales_run.stage
+                      }
+                    />
+                  </dl>
+                ) : (
+                  <p className="text-muted-foreground text-sm leading-6">
+                    Standalone draft — not linked to a SalesRun.
+                  </p>
+                )}
+              </div>
 
-        <section aria-labelledby="approval-email-title" className="grid gap-2">
-          <h4 id="approval-email-title" className="text-sm font-medium">
-            Email status
-          </h4>
-          <p className="text-sm">
-            {emailStateLabel(approval)}
-            {approval.draft.review_status === "APPROVED" &&
-            approval.email?.status !== "SENT" ? (
-              <span className="text-muted-foreground">
-                {" "}
-                — Approved is not the same as Sent.
-              </span>
-            ) : null}
-          </p>
-          {leadDetail?.phone ? (
-            <p className="text-muted-foreground text-xs">
-              Phone:{" "}
-              <a className="underline-offset-2 hover:underline" href={`tel:${leadDetail.phone}`}>
-                {leadDetail.phone}
-              </a>
-            </p>
-          ) : null}
+              <div className="grid gap-2">
+                <h5 className="text-sm font-medium">Email status</h5>
+                <p className="text-sm leading-6">{decision.label}</p>
+                <p className="text-muted-foreground text-xs">
+                  Updated <RelativeTime value={approval.updated_at} />
+                  {leadDetail?.phone ? ` · Phone ${leadDetail.phone}` : null}
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
 
-      <footer className="border-border bg-surface-subtle flex flex-wrap justify-end gap-2 border-t p-4">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={!approval.can_edit || pending || editing}
-          onClick={() => {
-            setEditing(true);
-            setEditText(approval.draft.response ?? "");
-            setActionSuccess(null);
-          }}
-        >
-          <Pencil aria-hidden="true" />
-          Edit
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={!approval.can_reject || pending}
-          onClick={() => setConfirmReject(true)}
-        >
-          <X aria-hidden="true" />
-          Reject
-        </Button>
-        <Button
-          type="button"
-          disabled={!approval.can_approve || pending}
-          onClick={() => setConfirmApprove(true)}
-        >
-          <Check aria-hidden="true" />
-          Approve
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={!approval.can_send || pending}
-          onClick={() => setConfirmSend(true)}
-        >
-          <Send aria-hidden="true" />
-          Send
-        </Button>
+      <footer
+        className="border-border bg-surface-subtle flex flex-col gap-3 border-t p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+        aria-label="Decision"
+      >
+        <p className="text-muted-foreground text-xs leading-5 sm:max-w-sm">
+          {showSend
+            ? "Send is a human-controlled outbound action."
+            : showApprove
+              ? "Approve marks the response ready to send. It does not send email."
+              : decision.notice}
+        </p>
+        <div className="flex flex-wrap justify-end gap-2">
+          {showEdit ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending || editing}
+              onClick={() => {
+                setEditing(true);
+                setEditText(approval.draft.response ?? "");
+                setActionSuccess(null);
+              }}
+            >
+              <Pencil aria-hidden="true" />
+              Edit
+            </Button>
+          ) : null}
+          {showReject ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => setConfirmReject(true)}
+            >
+              <X aria-hidden="true" />
+              Reject
+            </Button>
+          ) : null}
+          {showApprove ? (
+            <Button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirmApprove(true)}
+            >
+              <Check aria-hidden="true" />
+              Approve
+            </Button>
+          ) : null}
+          {showSend ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => setConfirmSend(true)}
+            >
+              <Send aria-hidden="true" />
+              Send response
+            </Button>
+          ) : null}
+        </div>
       </footer>
 
       <ConfirmDialog
         open={confirmApprove}
         onOpenChange={setConfirmApprove}
         title="Approve this response?"
-        description="Approval does not send the email. Sending remains a separate action."
+        description="Approving this response will mark it ready to send. It will NOT send the email automatically."
         confirmLabel={pending ? "Approving…" : "Approve"}
         confirmPending={pending}
         onConfirm={() => {
@@ -710,7 +726,11 @@ export function ApprovalDetail({
         open={confirmReject}
         onOpenChange={setConfirmReject}
         title="Reject this response?"
-        description="If this draft belongs to a waiting Sales Run, that run will be cancelled."
+        description={
+          linkedWaitingRun
+            ? "The AI response will be rejected. The linked SalesRun waiting for approval will be cancelled. No email will be sent."
+            : "The AI response will be rejected. No email will be sent."
+        }
         confirmLabel={pending ? "Rejecting…" : "Reject"}
         variant="destructive"
         confirmPending={pending}
@@ -724,6 +744,7 @@ export function ApprovalDetail({
             value={rejectReason}
             onChange={(event) => setRejectReason(event.target.value)}
             rows={3}
+            placeholder="Optional note for your team"
           />
         </FormField>
       </ConfirmDialog>
@@ -731,7 +752,7 @@ export function ApprovalDetail({
         open={confirmSend}
         onOpenChange={setConfirmSend}
         title="Send approved response?"
-        description="This sends the approved response to the customer. This is an external action."
+        description="This will send the approved response to the customer. This is a human-controlled outbound action."
         confirmLabel={pending ? "Sending…" : "Send"}
         confirmPending={pending}
         onConfirm={() => {

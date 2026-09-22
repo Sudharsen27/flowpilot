@@ -1,8 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import {
+  type ApprovalDecisionState,
+} from "@/components/approvals/human-control";
 import { ApprovalDetail } from "@/components/approvals/approval-detail";
 import { ApprovalQueue } from "@/components/approvals/approval-queue";
 import { StatePanel } from "@/components/data-display/state-panel";
@@ -10,7 +14,7 @@ import { FilterBar } from "@/components/forms/filter-bar";
 import { Label } from "@/components/forms/label";
 import { SearchInput } from "@/components/forms/search-input";
 import { Select } from "@/components/forms/select";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api/client";
@@ -36,7 +40,19 @@ type ApprovalsWorkspaceProps = {
     page: ApprovalListResponse | null,
     status: ApprovalQueueStatus,
   ) => void;
+  onDecisionChange?: (decision: ApprovalDecisionState) => void;
 };
+
+function decisionFromItem(
+  item: ApprovalQueueItem | null,
+): ApprovalDecisionState {
+  if (!item) return "idle";
+  if (item.email?.status === "SENT") return "sent";
+  if (item.draft.review_status === "APPROVED") return "approved";
+  if (item.draft.review_status === "REJECTED") return "rejected";
+  if (item.needs_approval) return "pending";
+  return "idle";
+}
 
 function listFilterKey(state: ApprovalsUrlState) {
   return serializeApprovalsSearchParams({ ...state, approvalId: null });
@@ -60,7 +76,10 @@ function listSkeleton() {
   );
 }
 
-export function ApprovalsWorkspace({ onSummary }: ApprovalsWorkspaceProps) {
+export function ApprovalsWorkspace({
+  onSummary,
+  onDecisionChange,
+}: ApprovalsWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -259,6 +278,11 @@ export function ApprovalsWorkspace({ onSummary }: ApprovalsWorkspaceProps) {
   const canNext = Boolean(
     page && urlState.offset + page.limit < page.total,
   );
+  const decision = decisionFromItem(selected);
+
+  useEffect(() => {
+    onDecisionChange?.(decision);
+  }, [decision, onDecisionChange]);
 
   return (
     <div className="grid gap-3">
@@ -341,8 +365,8 @@ export function ApprovalsWorkspace({ onSummary }: ApprovalsWorkspaceProps) {
             >
               Approval queue
             </h3>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Drafts that need a human decision before anything is sent.
+            <p className="text-muted-foreground mt-1 text-sm leading-6">
+              What does FlowPilot need you to decide before anything is sent?
             </p>
           </header>
 
@@ -351,7 +375,7 @@ export function ApprovalsWorkspace({ onSummary }: ApprovalsWorkspaceProps) {
               <StatePanel
                 kind="error"
                 title="Couldn't load approvals."
-                description="Check your connection and try again."
+                description="Try again."
                 className="max-w-none"
                 action={
                   <Button type="button" variant="outline" onClick={retryList}>
@@ -371,12 +395,40 @@ export function ApprovalsWorkspace({ onSummary }: ApprovalsWorkspaceProps) {
                 emptyTitle={
                   urlState.status === "pending"
                     ? "You're all caught up."
-                    : `No ${urlState.status} drafts`
+                    : `No ${urlState.status} responses`
                 }
                 emptyDescription={
                   urlState.status === "pending"
-                    ? "There are no approvals currently requiring review."
-                    : `No ${urlState.status} drafts match this filter.`
+                    ? "No responses are waiting for your review."
+                    : `No ${urlState.status} responses match this filter.`
+                }
+                emptyAction={
+                  urlState.status === "pending" ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          patchUrl({
+                            status: "approved",
+                            offset: 0,
+                            approvalId: null,
+                          })
+                        }
+                      >
+                        View approved
+                      </Button>
+                      <Link
+                        href="/inbox"
+                        className={cn(
+                          buttonVariants({ variant: "ghost", size: "sm" }),
+                        )}
+                      >
+                        Open Inbox
+                      </Link>
+                    </div>
+                  ) : undefined
                 }
               />
               {page && page.total > page.limit ? (

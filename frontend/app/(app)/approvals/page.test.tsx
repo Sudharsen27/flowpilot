@@ -192,30 +192,47 @@ describe("Approvals page", () => {
       ),
     );
 
+    expect(screen.getByText("Jordan Lee")).toBeVisible();
     expect(screen.getByText("Acme Technologies")).toBeVisible();
     expect(screen.getByText("jordan@acme.com")).toBeVisible();
     expect(
       screen.getByText(/Thanks for reaching out about a demo/),
     ).toBeVisible();
     expect(screen.getByText(/Sales Groq Verify/)).toBeVisible();
+    expect(screen.getAllByText("Needs your review").length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole("button", { name: /Acme Technologies/ }));
+    await user.click(screen.getByRole("button", { name: /Jordan Lee/ }));
 
+    const detail = document.querySelector(
+      "#approval-detail-pane",
+    ) as HTMLElement;
     expect(
-      await screen.findByRole("heading", { name: "Customer enquiry" }),
+      await within(detail).findByRole("heading", { name: "Customer enquiry" }),
     ).toBeVisible();
     expect(
-      screen.getByText("We need a demo of FlowPilot next week."),
+      within(detail).getByText("We need a demo of FlowPilot next week."),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: "AI-generated response" }),
+      within(detail).getByRole("heading", { name: "AI-generated response" }),
     ).toBeVisible();
-    expect(screen.getByText("Sales Groq Verify")).toBeVisible();
     expect(
-      screen.getByRole("link", { name: /Open Customer 360/ }),
+      within(detail).getByText("This response has NOT been sent yet."),
+    ).toBeVisible();
+    expect(within(detail).getByText("Sales Groq Verify")).toBeVisible();
+    expect(
+      within(detail).getByRole("link", { name: /Open Customer 360/ }),
     ).toHaveAttribute("href", "/leads/lead-1");
-    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(
+      within(detail).queryByRole("button", { name: /Send/ }),
+    ).not.toBeInTheDocument();
+    expect(within(detail).getByRole("button", { name: "Edit" })).toBeEnabled();
+    expect(within(detail).getByRole("button", { name: "Reject" })).toBeEnabled();
+    expect(
+      within(detail).getByRole("button", { name: "Approve" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("heading", { name: "Human decision required" }),
+    ).toBeVisible();
   });
 
   it("shows empty pending state", async () => {
@@ -224,8 +241,15 @@ describe("Approvals page", () => {
       await screen.findByRole("heading", { name: "You're all caught up." }),
     ).toBeVisible();
     expect(
-      screen.getByText(/no approvals currently requiring review/i),
+      screen.getByText(/No responses are waiting for your review/i),
     ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "View approved" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Inbox" })).toHaveAttribute(
+      "href",
+      "/inbox",
+    );
   });
 
   it("shows error state with retry", async () => {
@@ -284,7 +308,7 @@ describe("Approvals page", () => {
 
     render(<ApprovalsPage />);
     await user.click(
-      await screen.findByRole("button", { name: /Acme Technologies/ }),
+      await screen.findByRole("button", { name: /Jordan Lee/ }),
     );
     await user.click(await screen.findByRole("button", { name: "Approve" }));
     expect(
@@ -293,6 +317,11 @@ describe("Approvals page", () => {
     const dialog = screen
       .getByRole("heading", { name: "Approve this response?" })
       .closest("[data-slot=dialog-content]") as HTMLElement;
+    expect(
+      within(dialog).getByText(
+        /mark it ready to send\. It will NOT send the email automatically/i,
+      ),
+    ).toBeVisible();
     await user.click(within(dialog).getByRole("button", { name: "Approve" }));
 
     await waitFor(() =>
@@ -303,8 +332,8 @@ describe("Approvals page", () => {
     expect(sendDraftMock).not.toHaveBeenCalled();
     expect(sendSalesRunMock).not.toHaveBeenCalled();
     expect(
-      await screen.findByText(/Approved\. Ready to send/i),
-    ).toBeVisible();
+      (await screen.findAllByText(/Approved — ready to send/i)).length,
+    ).toBeGreaterThan(0);
   });
 
   it("rejects a SalesRun-linked draft and leaves pending queue", async () => {
@@ -357,12 +386,18 @@ describe("Approvals page", () => {
 
     render(<ApprovalsPage />);
     await user.click(
-      await screen.findByRole("button", { name: /Acme Technologies/ }),
+      await screen.findByRole("button", { name: /Jordan Lee/ }),
     );
     await user.click(await screen.findByRole("button", { name: "Reject" }));
     const dialog = screen
       .getByRole("heading", { name: "Reject this response?" })
       .closest("[data-slot=dialog-content]") as HTMLElement;
+    expect(
+      within(dialog).getByText(
+        /linked SalesRun waiting for approval will be cancelled/i,
+      ),
+    ).toBeVisible();
+    expect(within(dialog).getByText(/No email will be sent/i)).toBeVisible();
     await user.click(within(dialog).getByRole("button", { name: "Reject" }));
 
     await waitFor(() =>
@@ -379,6 +414,9 @@ describe("Approvals page", () => {
     expect(screen.getByRole("combobox", { name: "Approval status" })).toHaveValue(
       "rejected",
     );
+    expect(
+      (await screen.findAllByText(/Response rejected/i)).length,
+    ).toBeGreaterThan(0);
   });
 
   it("edits a draft using expected_revision", async () => {
@@ -407,7 +445,7 @@ describe("Approvals page", () => {
 
     render(<ApprovalsPage />);
     await user.click(
-      await screen.findByRole("button", { name: /Acme Technologies/ }),
+      await screen.findByRole("button", { name: /Jordan Lee/ }),
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
     const editor = screen.getByLabelText("Edit response");
@@ -422,7 +460,7 @@ describe("Approvals page", () => {
       }),
     );
     expect(
-      await screen.findByText(/still needs approval before sending/i),
+      await screen.findByText(/still needs your review before sending/i),
     ).toBeVisible();
   });
 
@@ -498,9 +536,25 @@ describe("Approvals page", () => {
     });
 
     render(<ApprovalsPage />);
-    expect(await screen.findByRole("button", { name: "Send" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(
+      (await screen.findAllByText("Approved — ready to send")).length,
+    ).toBeGreaterThan(0);
+    expect(
+      await screen.findByRole("button", { name: "Send response" }),
+    ).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Send response" }));
+    const dialog = screen
+      .getByRole("heading", { name: "Send approved response?" })
+      .closest("[data-slot=dialog-content]") as HTMLElement;
+    expect(
+      within(dialog).getByText(
+        /send the approved response to the customer/i,
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(/human-controlled outbound action/i),
+    ).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Send" }));
 
     await waitFor(() =>
       expect(sendSalesRunMock).toHaveBeenCalledWith("agent-1", "run-1", {
@@ -508,7 +562,7 @@ describe("Approvals page", () => {
       }),
     );
     expect(sendDraftMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Email sent.")).toBeVisible();
+    expect(await screen.findByText("Response sent.")).toBeVisible();
   });
 
   it("renders standalone draft without inventing an agent", async () => {
@@ -531,7 +585,9 @@ describe("Approvals page", () => {
     render(<ApprovalsPage />);
     await user.click(await screen.findByRole("button", { name: /Pat Solo/ }));
     const detail = document.querySelector("#approval-detail-pane") as HTMLElement;
-    expect(within(detail).getByText("Standalone draft")).toBeVisible();
+    expect(
+      within(detail).getByText(/Standalone draft/i),
+    ).toBeVisible();
     expect(screen.queryByText("Sales Groq Verify")).not.toBeInTheDocument();
   });
 
@@ -585,8 +641,9 @@ describe("Approvals page", () => {
     expect(screen.queryByText("High-risk actions")).not.toBeInTheDocument();
     expect(screen.queryByText("High risk")).not.toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Pending review" }),
-    ).toBeVisible();
+      (await screen.findAllByRole("heading", { name: "Needs your review" }))
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it("paginates with limit and offset", async () => {
@@ -671,7 +728,7 @@ describe("Approvals page", () => {
     );
 
     render(<ApprovalsPage />);
-    await user.click(await screen.findByRole("button", { name: "Send" }));
+    await user.click(await screen.findByRole("button", { name: "Send response" }));
     const dialog = screen
       .getByRole("heading", { name: "Send approved response?" })
       .closest("[data-slot=dialog-content]") as HTMLElement;
@@ -680,9 +737,11 @@ describe("Approvals page", () => {
     expect(
       await screen.findByText("The email provider could not send this message."),
     ).toBeVisible();
-    expect(screen.queryByText("Email sent.")).not.toBeInTheDocument();
-    expect(screen.getByText(/Ready to send/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.queryByText("Response sent.")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Approved — ready to send/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Send response" })).toBeEnabled();
   });
 
   it("sends standalone drafts through sendLeadResponseDraft", async () => {
@@ -731,7 +790,7 @@ describe("Approvals page", () => {
     });
 
     render(<ApprovalsPage />);
-    await user.click(await screen.findByRole("button", { name: "Send" }));
+    await user.click(await screen.findByRole("button", { name: "Send response" }));
     const dialog = screen
       .getByRole("heading", { name: "Send approved response?" })
       .closest("[data-slot=dialog-content]") as HTMLElement;
@@ -742,7 +801,9 @@ describe("Approvals page", () => {
     );
     expect(sendSalesRunMock).not.toHaveBeenCalled();
     expect(getSalesRunMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Email sent.")).toBeVisible();
-    expect(await screen.findByText(/^Sent$/)).toBeVisible();
+    expect(await screen.findByText("Response sent.")).toBeVisible();
+    expect(
+      (await screen.findAllByText("Response sent")).length,
+    ).toBeGreaterThan(0);
   });
 });

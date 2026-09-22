@@ -4,7 +4,10 @@ import { Suspense, useCallback, useState } from "react";
 
 import { ApprovalSummary } from "@/components/approvals/approval-summary";
 import { ApprovalsWorkspace } from "@/components/approvals/approvals-workspace";
-import { HumanControl } from "@/components/approvals/human-control";
+import {
+  type ApprovalDecisionState,
+  HumanControl,
+} from "@/components/approvals/human-control";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +37,7 @@ export default function ApprovalsPage() {
   const [totals, setTotals] = useState<
     Partial<Record<ApprovalQueueStatus, number | null>>
   >({});
+  const [decision, setDecision] = useState<ApprovalDecisionState>("idle");
 
   const onSummary = useCallback(
     (page: ApprovalListResponse | null, status: ApprovalQueueStatus) => {
@@ -46,6 +50,10 @@ export default function ApprovalsPage() {
     [],
   );
 
+  const onDecisionChange = useCallback((next: ApprovalDecisionState) => {
+    setDecision(next);
+  }, []);
+
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
@@ -55,8 +63,8 @@ export default function ApprovalsPage() {
 
       <section className="grid gap-5">
         <SectionHeader
-          title="Approval summary"
-          description="Counts reflect the active filter after the Approval Center loads from the API."
+          title="Needs your review"
+          description="Counts come from the Approval Center API for the filter you have open."
         />
         <ApprovalSummary
           loading={loading}
@@ -68,19 +76,22 @@ export default function ApprovalsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Approval workspace"
-          description="Review the customer enquiry, the AI response, and take Approve, Reject, Edit, or Send actions."
+          description="Read the customer enquiry, review the AI-generated response, then approve, reject, edit, or send."
         />
         <Suspense fallback={<ApprovalsWorkspaceFallback />}>
-          <ApprovalsWorkspace onSummary={onSummary} />
+          <ApprovalsWorkspace
+            onSummary={onSummary}
+            onDecisionChange={onDecisionChange}
+          />
         </Suspense>
       </section>
 
       <section className="grid gap-5">
         <SectionHeader
           title="Human control"
-          description="Sensitive customer communication stays under human review."
+          description="Customer email stays under human review. Approval never sends automatically."
         />
-        <HumanControl />
+        <HumanControl decision={decision} />
       </section>
     </div>
   );

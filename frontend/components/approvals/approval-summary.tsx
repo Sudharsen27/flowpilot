@@ -18,22 +18,22 @@ const metrics: {
 }[] = [
   {
     status: "pending",
-    label: "Pending review",
-    description: "Drafts waiting for a human decision",
+    label: "Needs your review",
+    description: "Responses waiting for a human decision",
     unavailableLabel: "Load pending to see count",
     icon: Clock3,
   },
   {
     status: "approved",
     label: "Approved",
-    description: "Approved drafts in this filter",
+    description: "Ready to send when you choose",
     unavailableLabel: "Open Approved to load count",
     icon: CircleCheck,
   },
   {
     status: "rejected",
     label: "Rejected",
-    description: "Rejected drafts in this filter",
+    description: "Responses you chose not to send",
     unavailableLabel: "Open Rejected to load count",
     icon: CircleX,
   },
@@ -56,7 +56,11 @@ export function ApprovalSummary({
           <MetricCard
             key={metric.status}
             label={metric.label}
-            value={showValue && value !== undefined && value !== null ? value : undefined}
+            value={
+              showValue && value !== undefined && value !== null
+                ? value
+                : undefined
+            }
             description={metric.description}
             unavailableLabel={metric.unavailableLabel}
             headingLevel={3}
