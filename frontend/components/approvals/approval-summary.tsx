@@ -1,41 +1,66 @@
-import { CircleCheck, CircleX, Clock3, ShieldAlert } from "lucide-react";
+import { CircleCheck, CircleX, Clock3 } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import type { ApprovalQueueStatus } from "@/types/api";
 
-const approvalMetrics = [
+type ApprovalSummaryProps = {
+  loading?: boolean;
+  activeStatus: ApprovalQueueStatus;
+  totals: Partial<Record<ApprovalQueueStatus, number | null>>;
+};
+
+const metrics: {
+  status: ApprovalQueueStatus;
+  label: string;
+  description: string;
+  unavailableLabel: string;
+  icon: typeof Clock3;
+}[] = [
   {
-    label: "Pending",
-    unavailableLabel: "No approval data",
+    status: "pending",
+    label: "Pending review",
+    description: "Drafts waiting for a human decision",
+    unavailableLabel: "Load pending to see count",
     icon: Clock3,
   },
   {
+    status: "approved",
     label: "Approved",
-    unavailableLabel: "No approval history",
+    description: "Approved drafts in this filter",
+    unavailableLabel: "Open Approved to load count",
     icon: CircleCheck,
   },
   {
+    status: "rejected",
     label: "Rejected",
-    unavailableLabel: "No approval history",
+    description: "Rejected drafts in this filter",
+    unavailableLabel: "Open Rejected to load count",
     icon: CircleX,
   },
-  {
-    label: "High-risk actions",
-    unavailableLabel: "No risk data",
-    icon: ShieldAlert,
-  },
-] as const;
+];
 
-export function ApprovalSummary() {
+export function ApprovalSummary({
+  loading = false,
+  activeStatus,
+  totals,
+}: ApprovalSummaryProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {approvalMetrics.map((metric) => {
+    <div className="grid gap-4 sm:grid-cols-3">
+      {metrics.map((metric) => {
         const Icon = metric.icon;
+        const value = totals[metric.status];
+        const showValue =
+          metric.status === activeStatus ||
+          (value !== undefined && value !== null);
         return (
           <MetricCard
-            key={metric.label}
+            key={metric.status}
             label={metric.label}
+            value={showValue && value !== undefined && value !== null ? value : undefined}
+            description={metric.description}
             unavailableLabel={metric.unavailableLabel}
             headingLevel={3}
+            loading={loading && metric.status === activeStatus}
             icon={<Icon />}
           />
         );

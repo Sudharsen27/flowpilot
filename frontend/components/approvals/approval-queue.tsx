@@ -1,45 +1,34 @@
 import { ClipboardCheck } from "lucide-react";
 
-import { RiskBadge, type RiskLevel } from "@/components/approvals/risk-badge";
 import { EmptyState } from "@/components/empty-state";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { cn } from "@/lib/utils";
+import { draftReviewLabels } from "@/lib/inbox-labels";
 import { statusPresentation } from "@/lib/status";
-
-export type ApprovalStatus = "pending" | "approved" | "rejected";
-
-export type ApprovalQueueItem = {
-  id: string;
-  action: string;
-  agentName: string;
-  requestedAction: string;
-  riskLevel: RiskLevel;
-  requestedTimeLabel?: string;
-  status: ApprovalStatus;
-};
+import { cn } from "@/lib/utils";
+import type { ApprovalQueueItem } from "@/types/api";
 
 type ApprovalQueueProps = {
   approvals: ApprovalQueueItem[];
-  selectedId?: string;
+  selectedId?: string | null;
   onSelect?: (approval: ApprovalQueueItem) => void;
+  emptyTitle?: string;
+  emptyDescription?: string;
 };
 
-const approvalStatusCodes: Record<ApprovalStatus, string> = {
-  pending: "PENDING",
-  approved: "APPROVED",
-  rejected: "REJECTED",
-};
-
-const approvalStatusLabels: Record<ApprovalStatus, string> = {
-  pending: "Pending",
-  approved: "Approved",
-  rejected: "Rejected",
-};
+function previewText(value: string | null | undefined) {
+  if (!value) return "No AI response yet";
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "No AI response yet";
+  return cleaned.length > 140 ? `${cleaned.slice(0, 139)}…` : cleaned;
+}
 
 export function ApprovalQueue({
   approvals,
   selectedId,
   onSelect,
+  emptyTitle = "You're all caught up.",
+  emptyDescription = "There are no approvals currently requiring review.",
 }: ApprovalQueueProps) {
   if (approvals.length === 0) {
     return (
@@ -47,8 +36,8 @@ export function ApprovalQueue({
         compact
         icon={<ClipboardCheck />}
         className="max-w-none rounded-none border-x-0 border-b-0 shadow-none"
-        title="No approval requests"
-        description="Approval requests will appear here when FlowPilot agents begin proposing actions that require human authorization."
+        title={emptyTitle}
+        description={emptyDescription}
       />
     );
   }
@@ -60,14 +49,26 @@ export function ApprovalQueue({
       data-slot="approval-queue"
     >
       {approvals.map((approval) => {
-        const status = statusPresentation(
-          approvalStatusCodes[approval.status],
-          approvalStatusLabels[approval.status],
-        );
-        const isSelected = selectedId === approval.id;
+        const review = approval.draft.review_status;
+        const reviewStatus = review
+          ? statusPresentation(
+              review,
+              draftReviewLabels[review] ?? review,
+            )
+          : statusPresentation("PENDING", "Needs review");
+        const isSelected = selectedId === approval.draft_id;
+        const agentLabel =
+          approval.sales_run?.agent_name ??
+          (approval.sales_run ? "Sales Agent" : "Standalone draft");
+        const runLabel =
+          approval.sales_run?.status === "WAITING_APPROVAL"
+            ? "Waiting for approval"
+            : approval.sales_run
+              ? approval.sales_run.status.replaceAll("_", " ")
+              : "Standalone draft";
 
         return (
-          <li key={approval.id}>
+          <li key={approval.draft_id}>
             <button
               type="button"
               className={cn(
@@ -75,29 +76,38 @@ export function ApprovalQueue({
                 isSelected && "bg-surface-subtle",
               )}
               aria-pressed={isSelected}
+              aria-current={isSelected ? "true" : undefined}
               onClick={() => onSelect?.(approval)}
             >
               <span className="flex items-start justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium">
-                    {approval.action}
+                  <span className="text-muted-foreground block text-[0.65rem] font-medium tracking-wide uppercase">
+                    Needs your review
+                  </span>
+                  <span className="mt-1 block text-sm font-medium">
+                    {approval.lead.company?.trim() || approval.lead.name}
                   </span>
                   <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                    Proposed by {approval.agentName}
+                    {approval.lead.email?.trim() || approval.lead.name}
                   </span>
                 </span>
-                {approval.requestedTimeLabel ? (
-                  <span className="text-muted-foreground shrink-0 text-xs">
-                    {approval.requestedTimeLabel}
-                  </span>
-                ) : null}
+                <RelativeTime
+                  value={approval.updated_at}
+                  className="text-muted-foreground shrink-0 text-xs"
+                />
               </span>
               <span className="text-muted-foreground mt-3 line-clamp-2 block text-sm leading-5">
-                {approval.requestedAction}
+                “{previewText(approval.draft.response)}”
               </span>
-              <span className="mt-3 flex flex-wrap gap-2">
-                <RiskBadge level={approval.riskLevel} />
-                <StatusBadge status={status.status} label={status.label} />
+              <span className="mt-3 flex flex-wrap items-center gap-2">
+                <StatusBadge
+                  status={reviewStatus.status}
+                  label={reviewStatus.label}
+                />
+                <span className="text-muted-foreground text-xs">
+                  {agentLabel}
+                  {approval.sales_run ? ` · ${runLabel}` : null}
+                </span>
               </span>
             </button>
           </li>

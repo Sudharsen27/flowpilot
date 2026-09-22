@@ -872,3 +872,65 @@ export type InboxConversationResponse = {
   items: InboxTimelineItem[];
   total_items: number;
 };
+
+export type ApprovalQueueStatus = "pending" | "approved" | "rejected";
+
+export type ApprovalLead = {
+  name: string;
+  email: string | null;
+  company: string | null;
+  status: LeadStatus;
+  source: LeadSource;
+};
+
+export type ApprovalDraft = {
+  response: string | null;
+  review_status: LeadResponseReviewStatus | null;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApprovalSalesRun = {
+  id: string;
+  status: SalesRunStatus;
+  stage: SalesRunStage;
+  agent_id: string;
+  agent_name: string | null;
+};
+
+export type ApprovalEmail = {
+  status: string;
+  sent_at: string | null;
+};
+
+export type ApprovalQueueItem = {
+  draft_id: string;
+  lead_id: string;
+  lead: ApprovalLead;
+  enquiry: string;
+  draft: ApprovalDraft;
+  sales_run: ApprovalSalesRun | null;
+  email: ApprovalEmail | null;
+  needs_approval: boolean;
+  can_approve: boolean;
+  can_reject: boolean;
+  can_edit: boolean;
+  can_send: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApprovalListResponse = {
+  items: ApprovalQueueItem[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type ApprovalListParams = {
+  q?: string;
+  status?: ApprovalQueueStatus;
+  limit?: number;
+  offset?: number;
+};
