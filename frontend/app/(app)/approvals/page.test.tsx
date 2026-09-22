@@ -176,6 +176,36 @@ describe("Approvals page", () => {
     vi.useRealTimers();
   });
 
+  it("selects the pending approval from the approval URL param", async () => {
+    currentSearch = "approval=draft-1";
+    const item = approvalItem();
+    getApprovalsMock.mockResolvedValue(pageOf([item]));
+
+    render(<ApprovalsPage />);
+
+    await waitFor(() =>
+      expect(getApprovalsMock).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "pending", limit: 20, offset: 0 }),
+      ),
+    );
+
+    const detail = document.querySelector(
+      "#approval-detail-pane",
+    ) as HTMLElement;
+    expect(
+      await within(detail).findByRole("heading", { name: "Customer enquiry" }),
+    ).toBeVisible();
+    expect(
+      within(detail).getByText("We need a demo of FlowPilot next week."),
+    ).toBeVisible();
+    expect(
+      within(detail).getByRole("heading", { name: "AI-generated response" }),
+    ).toBeVisible();
+    expect(
+      within(detail).getByText("This response has NOT been sent yet."),
+    ).toBeVisible();
+  });
+
   it("loads real API data into the queue and detail", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const item = approvalItem();

@@ -223,6 +223,66 @@ describe("Agent Workspace page", () => {
     expect(screen.queryByRole("button", { name: /^send$/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /^approve$/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /^send$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Review draft" })).toBeNull();
+  });
+
+  it("deep-links Review draft when create_response_draft returns draft_id", async () => {
+    const user = userEvent.setup();
+    orchestrateAgentMock.mockResolvedValue(
+      successResult({
+        outcome: "SUCCESS",
+        approval_required: false,
+        completed_step_count: 1,
+        total_step_count: 1,
+        step_results: [
+          {
+            step_id: "s1",
+            sequence: 0,
+            tool_name: "create_response_draft",
+            result: {
+              call_id: "s1",
+              tool_name: "create_response_draft",
+              success: true,
+              outcome: "SUCCESS",
+              decision: "ALLOW",
+              risk_level: "LOW",
+              side_effect_level: "WRITE",
+              output: {
+                draft_id: "draft-from-orch",
+                lead_id: "lead-9",
+                status: "COMPLETED",
+                review_status: "GENERATED",
+                revision: 1,
+                created_at: "2026-09-22T10:00:00Z",
+              },
+              error: null,
+              executed: true,
+              failure_category: null,
+            },
+          },
+        ],
+      }),
+    );
+    render(<AgentWorkspacePage />);
+    await user.type(
+      await screen.findByRole("textbox", {
+        name: /What would you like me to do/i,
+      }),
+      "Draft a reply for this lead",
+    );
+    await user.click(screen.getByRole("button", { name: "Run Agent" }));
+    expect(
+      await screen.findByRole("heading", { name: "Execution completed" }),
+    ).toBeVisible();
+    expect(screen.getByText("Draft created")).toBeVisible();
+    const reviewLink = screen.getByRole("link", { name: "Review draft" });
+    expect(reviewLink).toHaveAttribute(
+      "href",
+      "/approvals?approval=draft-from-orch",
+    );
+    expect(reviewLink.getAttribute("href")).not.toContain("exec-1");
+    expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^send$/i })).toBeNull();
   });
 
   it("shows tool denied state without approval handoff", async () => {
