@@ -79,13 +79,24 @@ def test_default_registry_registers_read_tools(db: Session) -> None:
     assert registry.has("get_lead")
     assert registry.has("get_customer_context")
     assert registry.has("get_followups")
+    assert registry.has("create_response_draft")
     names = registry.list_names()
     assert names == sorted(
-        ["echo", "get_customer_context", "get_followups", "get_lead", "search_leads"]
+        [
+            "create_response_draft",
+            "echo",
+            "get_customer_context",
+            "get_followups",
+            "get_lead",
+            "search_leads",
+        ]
     )
     search = registry.lookup("search_leads")
     assert search.side_effect_level == ToolSideEffectLevel.READ
     assert search.definition().requires_human_approval is False
+    write = registry.lookup("create_response_draft")
+    assert write.side_effect_level == ToolSideEffectLevel.WRITE
+    assert write.definition().requires_human_approval is False
 
 
 def test_registry_has_unknown_is_false() -> None:

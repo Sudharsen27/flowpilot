@@ -98,7 +98,7 @@ class AgentExecutionService:
         self.executions = AgentExecutionRepository(session)
         self.invocations = ToolInvocationRepository(session)
         self.memberships = MembershipRepository(session)
-        self.registry = registry or build_default_tool_registry(session)
+        self.registry = registry or build_default_tool_registry(session, provider)
         self.tool_executor = tool_executor or ToolExecutionService(
             session,
             self.registry,

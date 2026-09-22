@@ -13,7 +13,7 @@ class ToolRiskLevel(StrEnum):
 
 
 class ToolSideEffectLevel(StrEnum):
-    """Future policy hook. Phase 6D.2 registers READ tools only."""
+    """Policy classification for tool side effects."""
 
     READ = "READ"
     WRITE = "WRITE"

@@ -114,8 +114,11 @@ def get_email_provider() -> EmailProvider:
     return ResendEmailProvider()
 
 
-def get_tool_registry(db: Session = Depends(get_db)) -> ToolRegistry:
-    return build_default_tool_registry(db)
+def get_tool_registry(
+    db: Session = Depends(get_db),
+    provider: AIProvider = Depends(get_ai_provider),
+) -> ToolRegistry:
+    return build_default_tool_registry(db, provider)
 
 
 def get_agent_orchestration_service(

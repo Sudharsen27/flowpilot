@@ -1,17 +1,24 @@
-"""Read-only agent tools that delegate to existing FlowPilot services.
+"""Read and controlled-write agent tools that delegate to existing FlowPilot services.
 
 Tenant identity always comes from ToolContext.organization_id — never from
-tool arguments. These tools do not create ActivityEvents; read paths already
-use org-scoped repositories, and Phase 6D.3+ will decide invocation auditing.
+tool arguments. ActivityEvents for draft creation are owned by
+LeadResponseDraftService (not duplicated here).
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
+from app.ai.provider import AIProvider
+from app.core.exceptions import (
+    NotFoundError,
+    ProviderError,
+    ProviderNotConfiguredError,
+)
 from app.models.lead import LeadSource, LeadStatus
 from app.models.lead_follow_up import LeadFollowUpStatus
 from app.repositories.lead_follow_up_repository import (
@@ -21,7 +28,9 @@ from app.repositories.lead_follow_up_repository import (
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
 from app.services.inbox_service import InboxService
 from app.services.lead_follow_up_service import LeadFollowUpService
+from app.services.lead_response_draft_service import LeadResponseDraftService
 from app.services.lead_service import LeadService
+from app.services.tool_execution_service import ToolExecutionError
 from app.tools.base import Tool
 from app.tools.schema import ToolContext, ToolRiskLevel, ToolSideEffectLevel
 
@@ -82,6 +91,32 @@ class GetFollowUpsOutput(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class CreateResponseDraftInput(BaseModel):
+    """Matches LeadResponseDraftService.generate / LeadRespondRequest contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lead_id: str = Field(min_length=1, max_length=36)
+    enquiry: str = Field(min_length=1, max_length=8000)
+
+    @field_validator("enquiry")
+    @classmethod
+    def strip_enquiry(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Enquiry is required")
+        return stripped
+
+
+class CreateResponseDraftOutput(BaseModel):
+    draft_id: str
+    lead_id: str
+    status: str
+    review_status: str | None = None
+    revision: int
+    created_at: datetime
 
 
 class SearchLeadsTool(Tool):
@@ -201,4 +236,56 @@ class GetFollowUpsTool(Tool):
             total=result.total,
             limit=result.limit,
             offset=result.offset,
+        )
+
+
+class CreateResponseDraftTool(Tool):
+    """Controlled WRITE: create a LeadResponseDraft via existing draft service.
+
+    Does not approve, reject, or send. Human review remains in Approval Center.
+    DefaultToolPolicy ALLOWs WRITE + LOW risk for org members; it does not
+    REQUIRE_APPROVAL for this classification (send/approve remain separate).
+    """
+
+    name = "create_response_draft"
+    description = (
+        "Create a customer response draft for a lead in the current organization "
+        "using the existing draft generator. Persists a LeadResponseDraft for "
+        "human review in Approvals. Does not approve, reject, or send email."
+    )
+    risk_level = ToolRiskLevel.LOW
+    side_effect_level = ToolSideEffectLevel.WRITE
+    requires_human_approval = False
+    input_model = CreateResponseDraftInput
+    output_model = CreateResponseDraftOutput
+
+    def __init__(
+        self, session: Session, provider: AIProvider | None = None
+    ) -> None:
+        self._session = session
+        self._provider = provider
+
+    def execute(self, arguments: BaseModel, context: ToolContext) -> BaseModel:
+        payload = CreateResponseDraftInput.model_validate(arguments)
+        service = LeadResponseDraftService(self._session, self._provider)
+        try:
+            row = service.generate(
+                organization_id=context.organization_id,
+                lead_id=payload.lead_id,
+                enquiry=payload.enquiry,
+                initiated_by_user_id=context.user_id,
+            )
+        except NotFoundError:
+            raise
+        except (ProviderError, ProviderNotConfiguredError) as exc:
+            raise ToolExecutionError(exc.detail) from exc
+
+        review = row.review_status
+        return CreateResponseDraftOutput(
+            draft_id=row.id,
+            lead_id=row.lead_id,
+            status=str(row.status),
+            review_status=str(review) if review is not None else None,
+            revision=row.revision,
+            created_at=row.created_at,
         )

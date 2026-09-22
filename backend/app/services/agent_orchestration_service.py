@@ -112,7 +112,7 @@ class AgentOrchestrationService:
         self.session = session
         self.memberships = MembershipRepository(session)
         self.executions = AgentExecutionRepository(session)
-        self.registry = registry or build_default_tool_registry(session)
+        self.registry = registry or build_default_tool_registry(session, provider)
         resolved_policy = policy or DefaultToolPolicy()
         self.execution_service = execution_service or AgentExecutionService(
             session,
