@@ -1,31 +1,42 @@
 "use client";
 
-import { useState } from "react";
-
 import { FilterBar } from "@/components/forms/filter-bar";
 import { Label } from "@/components/forms/label";
 import { SearchInput } from "@/components/forms/search-input";
 import { Select } from "@/components/forms/select";
+import type { InboxConversationState, LeadSource } from "@/types/api";
 
-export function InboxToolbar() {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
-  const [handling, setHandling] = useState("all");
-  const [channel, setChannel] = useState("all");
+export type NeedsApprovalFilter = "" | "true" | "false";
 
+type InboxToolbarProps = {
+  query: string;
+  conversationState: InboxConversationState | "";
+  source: LeadSource | "";
+  needsApproval: NeedsApprovalFilter;
+  onQueryChange: (value: string) => void;
+  onConversationStateChange: (value: InboxConversationState | "") => void;
+  onSourceChange: (value: LeadSource | "") => void;
+  onNeedsApprovalChange: (value: NeedsApprovalFilter) => void;
+  onClearFilters: () => void;
+};
+
+export function InboxToolbar({
+  query,
+  conversationState,
+  source,
+  needsApproval,
+  onQueryChange,
+  onConversationStateChange,
+  onSourceChange,
+  onNeedsApprovalChange,
+  onClearFilters,
+}: InboxToolbarProps) {
   const activeFilterCount = [
     query.trim() !== "",
-    status !== "all",
-    handling !== "all",
-    channel !== "all",
+    conversationState !== "",
+    source !== "",
+    needsApproval !== "",
   ].filter(Boolean).length;
-
-  function clearFilters() {
-    setQuery("");
-    setStatus("all");
-    setHandling("all");
-    setChannel("all");
-  }
 
   return (
     <div className="grid gap-2">
@@ -36,15 +47,15 @@ export function InboxToolbar() {
           <SearchInput
             id="conversation-search"
             label="Search conversations"
-            placeholder="Search conversations"
+            placeholder="Search name, email, or company"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onClear={() => setQuery("")}
+            onChange={(event) => onQueryChange(event.target.value)}
+            onClear={() => onQueryChange("")}
             aria-describedby="inbox-filters-note"
           />
         }
         activeFilterCount={activeFilterCount}
-        onClearFilters={clearFilters}
+        onClearFilters={onClearFilters}
       >
         <div className="min-w-0">
           <Label htmlFor="conversation-status" className="sr-only">
@@ -52,51 +63,61 @@ export function InboxToolbar() {
           </Label>
           <Select
             id="conversation-status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
+            value={conversationState}
+            onChange={(event) =>
+              onConversationStateChange(
+                event.target.value as InboxConversationState | "",
+              )
+            }
             aria-describedby="inbox-filters-note"
           >
-            <option value="all">All statuses</option>
-            <option value="open">Open</option>
-            <option value="waiting">Waiting</option>
-            <option value="resolved">Resolved</option>
+            <option value="">All statuses</option>
+            <option value="OPEN">Open</option>
+            <option value="NEEDS_APPROVAL">Needs approval</option>
+            <option value="CLOSED">Closed</option>
           </Select>
         </div>
         <div className="min-w-0">
-          <Label htmlFor="conversation-handling" className="sr-only">
-            Conversation handling
+          <Label htmlFor="conversation-needs-approval" className="sr-only">
+            Needs approval
           </Label>
           <Select
-            id="conversation-handling"
-            value={handling}
-            onChange={(event) => setHandling(event.target.value)}
+            id="conversation-needs-approval"
+            value={needsApproval}
+            onChange={(event) =>
+              onNeedsApprovalChange(event.target.value as NeedsApprovalFilter)
+            }
             aria-describedby="inbox-filters-note"
           >
-            <option value="all">All handling</option>
-            <option value="ai">AI handled</option>
-            <option value="human">Human handled</option>
-            <option value="unassigned">Unassigned</option>
+            <option value="">All approval states</option>
+            <option value="true">Needs approval</option>
+            <option value="false">No approval needed</option>
           </Select>
         </div>
         <div className="col-span-2 min-w-0">
-          <Label htmlFor="conversation-channel" className="sr-only">
-            Conversation channel
+          <Label htmlFor="conversation-source" className="sr-only">
+            Lead source
           </Label>
           <Select
-            id="conversation-channel"
-            value={channel}
-            onChange={(event) => setChannel(event.target.value)}
+            id="conversation-source"
+            value={source}
+            onChange={(event) =>
+              onSourceChange(event.target.value as LeadSource | "")
+            }
             aria-describedby="inbox-filters-note"
           >
-            <option value="all">All channels</option>
-            <option value="inbox">Inbox</option>
-            <option value="chat">Web chat</option>
-            <option value="integration">Integration</option>
+            <option value="">All sources</option>
+            <option value="MANUAL">Manual</option>
+            <option value="WEBSITE">Website</option>
+            <option value="EMAIL">Email</option>
+            <option value="CHAT">Chat</option>
+            <option value="API">API</option>
+            <option value="IMPORT">Import</option>
           </Select>
         </div>
       </FilterBar>
       <p id="inbox-filters-note" className="text-muted-foreground text-xs">
-        Filters are ready for use when a conversation channel is connected.
+        Filters apply to sales conversation history for this organization.
       </p>
     </div>
   );

@@ -5,7 +5,6 @@ import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 
 export type ConversationStatus = "open" | "waiting" | "resolved";
-export type ConversationHandling = "ai" | "human" | "unassigned";
 
 export type ConversationListItem = {
   id: string;
@@ -14,13 +13,15 @@ export type ConversationListItem = {
   status: ConversationStatus;
   lastMessagePreview?: string;
   timeLabel?: string;
-  handling: ConversationHandling;
+  needsApproval: boolean;
 };
 
 type ConversationListProps = {
   conversations: ConversationListItem[];
   selectedId?: string;
   onSelect?: (conversation: ConversationListItem) => void;
+  emptyTitle?: string;
+  emptyDescription?: string;
 };
 
 const statusPresentation: Record<
@@ -28,23 +29,16 @@ const statusPresentation: Record<
   { status: StatusValue; label: string }
 > = {
   open: { status: "active", label: "Open" },
-  waiting: { status: "warning", label: "Waiting" },
-  resolved: { status: "success", label: "Resolved" },
-};
-
-const handlingPresentation: Record<
-  ConversationHandling,
-  { status: StatusValue; label: string }
-> = {
-  ai: { status: "pending", label: "AI handled" },
-  human: { status: "active", label: "Human handled" },
-  unassigned: { status: "draft", label: "Unassigned" },
+  waiting: { status: "warning", label: "Needs approval" },
+  resolved: { status: "success", label: "Closed" },
 };
 
 export function ConversationList({
   conversations,
   selectedId,
   onSelect,
+  emptyTitle = "No conversations yet",
+  emptyDescription = "Conversations appear here when website enquiries, drafts, email sends, Sales Runs, or follow-ups are recorded for your organization.",
 }: ConversationListProps) {
   if (conversations.length === 0) {
     return (
@@ -52,8 +46,8 @@ export function ConversationList({
         compact
         icon={<MessageSquareText />}
         className="max-w-none rounded-none border-x-0 border-b-0 shadow-none"
-        title="No conversations yet"
-        description="Conversations will appear here after customer communication channels are connected and begin sending messages to FlowPilot."
+        title={emptyTitle}
+        description={emptyDescription}
       />
     );
   }
@@ -66,7 +60,6 @@ export function ConversationList({
     >
       {conversations.map((conversation) => {
         const status = statusPresentation[conversation.status];
-        const handling = handlingPresentation[conversation.handling];
         const isSelected = selectedId === conversation.id;
 
         return (
@@ -104,7 +97,9 @@ export function ConversationList({
               ) : null}
               <span className="mt-3 flex flex-wrap gap-2">
                 <StatusBadge status={status.status} label={status.label} />
-                <StatusBadge status={handling.status} label={handling.label} />
+                {conversation.needsApproval ? (
+                  <StatusBadge status="warning" label="Needs review" />
+                ) : null}
               </span>
             </button>
           </li>

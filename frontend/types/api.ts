@@ -752,7 +752,123 @@ export type ActivityListParams = {
   type?: ActivityEventType;
   entity_type?: ActivityEntityType;
   entity_id?: string;
+  lead_id?: string;
   q?: string;
   limit?: number;
   offset?: number;
+};
+
+export type InboxConversationState = "OPEN" | "NEEDS_APPROVAL" | "CLOSED";
+
+export type InboxTimelineKind =
+  | "LEAD_CREATED"
+  | "WEBSITE_ENQUIRY"
+  | "LEAD_STATUS_CHANGED"
+  | "QUALIFICATION_COMPLETED"
+  | "DRAFT_GENERATED"
+  | "DRAFT_EDITED"
+  | "DRAFT_APPROVED"
+  | "DRAFT_REJECTED"
+  | "EMAIL_SENT"
+  | "EMAIL_FAILED"
+  | "FOLLOW_UP_SCHEDULED"
+  | "FOLLOW_UP_RESCHEDULED"
+  | "FOLLOW_UP_COMPLETED"
+  | "FOLLOW_UP_CANCELLED"
+  | "FOLLOW_UP_EXECUTION_SENT"
+  | "FOLLOW_UP_EXECUTION_FAILED"
+  | "SALES_RUN_STARTED"
+  | "SALES_RUN_WAITING_APPROVAL"
+  | "SALES_RUN_COMPLETED"
+  | "SALES_RUN_CANCELLED"
+  | "SALES_RUN_FAILED";
+
+export type InboxDirection = "inbound" | "outbound" | "internal";
+
+export type InboxItem = {
+  lead_id: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  source: LeadSource;
+  lead_status: LeadStatus;
+  conversation_state: InboxConversationState;
+  needs_approval: boolean;
+  last_activity_at: string;
+  last_activity_type: ActivityEventType | null;
+  last_activity_title: string | null;
+  preview: string | null;
+  latest_draft: LeadResponseDraftSummary | null;
+  latest_email_status: LeadEmailSendStatus | null;
+  latest_sales_run: LeadLatestSalesRunSummary | null;
+  latest_follow_up_status: LeadFollowUpStatus | null;
+  latest_follow_up_overdue: boolean | null;
+};
+
+export type InboxListResponse = {
+  items: InboxItem[];
+  limit: number;
+  offset: number;
+  total: number;
+  state_counts: Record<InboxConversationState, number>;
+  needs_approval_count: number;
+};
+
+export type InboxListParams = {
+  q?: string;
+  lead_status?: LeadStatus;
+  needs_approval?: boolean;
+  conversation_state?: InboxConversationState;
+  email_status?: LeadEmailSendStatus;
+  sales_run_status?: SalesRunStatus;
+  follow_up_status?: LeadFollowUpStatus;
+  source?: LeadSource;
+  limit?: number;
+  offset?: number;
+};
+
+export type InboxLeadContext = {
+  lead_id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  source: LeadSource;
+  lead_status: LeadStatus;
+  enquiry: string | null;
+  conversation_state: InboxConversationState;
+  needs_approval: boolean;
+  latest_draft: LeadResponseDraftSummary | null;
+  latest_sales_run: LeadLatestSalesRunSummary | null;
+};
+
+export type InboxTimelineItem = {
+  id: string;
+  kind: InboxTimelineKind;
+  direction: InboxDirection;
+  occurred_at: string;
+  title: string;
+  summary: string | null;
+  body: string | null;
+  status: string | null;
+  actor_type: ActivityActorType | null;
+  actor_user_id: string | null;
+  agent_id: string | null;
+  source_entity_type: ActivityEntityType;
+  source_entity_id: string;
+  activity_id: string | null;
+  is_draft: boolean;
+  is_sent_message: boolean;
+  draft_id?: string | null;
+  email_send_id?: string | null;
+  follow_up_id?: string | null;
+  follow_up_execution_id?: string | null;
+  sales_run_id?: string | null;
+  qualification_id?: string | null;
+};
+
+export type InboxConversationResponse = {
+  lead: InboxLeadContext;
+  items: InboxTimelineItem[];
+  total_items: number;
 };
