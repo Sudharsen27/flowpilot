@@ -12,6 +12,7 @@ import {
   listAgentExecutions,
   listToolInvocations,
   markAgentReady,
+  orchestrateAgent,
   pauseAgent,
   runAgentExecution,
   updateAgent,
@@ -539,5 +540,47 @@ describe("Agent API client", () => {
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain("organization_id");
+  });
+
+  it("posts orchestrate with instruction only", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec-orch-1",
+          outcome: "SUCCESS",
+          execution_status: "COMPLETED",
+          plan_id: "plan-1",
+          approval_required: false,
+          completed_step_count: 1,
+          total_step_count: 1,
+          stopped_at_step_id: null,
+          step_results: [],
+          failure_category: null,
+          error: null,
+          provider: "fake",
+          model: "fake-model",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    const result = await orchestrateAgent("agent/1", {
+      instruction: "Find website leads",
+    });
+    expect(result.outcome).toBe("SUCCESS");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/agents/agent%2F1/orchestrate",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ instruction: "Find website leads" }),
+      }),
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toEqual({ instruction: "Find website leads" });
+    expect(body).not.toHaveProperty("organization_id");
+    expect(body).not.toHaveProperty("user_id");
+    expect(body).not.toHaveProperty("role");
   });
 });

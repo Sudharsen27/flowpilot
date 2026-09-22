@@ -80,7 +80,29 @@ describe("AI Agents page", () => {
       within(grid).getByRole("link", { name: "Inbound qualifier" }),
     ).toHaveAttribute("href", "/agents/agent-real-1");
     expect(screen.getByText("Sep 9, 2026")).toBeVisible();
+    expect(screen.getByText("View agent →")).toBeVisible();
     expect(screen.queryByText(/execution count/i)).not.toBeInTheDocument();
+  });
+
+  it("navigates configured agent cards to their detail routes", async () => {
+    getAgentsMock.mockResolvedValue([
+      agent,
+      {
+        ...agent,
+        id: "sales-groq-verify-id",
+        name: "Sales Groq Verify",
+      },
+    ]);
+    render(<AgentsPage />);
+    const grid = await screen.findByRole("list", {
+      name: "Configured agents",
+    });
+    expect(
+      within(grid).getByRole("link", { name: "Inbound qualifier" }),
+    ).toHaveAttribute("href", "/agents/agent-real-1");
+    expect(
+      within(grid).getByRole("link", { name: "Sales Groq Verify" }),
+    ).toHaveAttribute("href", "/agents/sales-groq-verify-id");
   });
 
   it("sends status and type filters to the API", async () => {

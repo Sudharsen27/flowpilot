@@ -91,6 +91,69 @@ export type AgentExecutionRequest = {
   input: string;
 };
 
+export type AgentOrchestrateRequest = {
+  instruction: string;
+};
+
+export type OrchestrationOutcome =
+  | "SUCCESS"
+  | "PLANNING_FAILED"
+  | "PLAN_VALIDATION_FAILED"
+  | "TOOL_DENIED"
+  | "APPROVAL_REQUIRED"
+  | "TOOL_FAILED"
+  | "EXECUTION_FAILED";
+
+export type ToolOutcome =
+  | "SUCCESS"
+  | "FAILURE"
+  | "VALIDATION_FAILURE"
+  | "PERMISSION_DENIED"
+  | "APPROVAL_REQUIRED";
+
+export type ToolSideEffectLevel =
+  | "READ"
+  | "WRITE"
+  | "SENSITIVE_WRITE"
+  | "APPROVAL_REQUIRED";
+
+export type ToolResult = {
+  call_id: string;
+  tool_name: string;
+  success: boolean;
+  outcome: ToolOutcome;
+  decision: ToolPolicyDecision | null;
+  risk_level: ToolRiskLevel | null;
+  side_effect_level: ToolSideEffectLevel | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  executed: boolean;
+  failure_category: ExecutionFailureCategory | null;
+};
+
+export type PlanStepResult = {
+  step_id: string;
+  sequence: number;
+  tool_name: string;
+  result: ToolResult | null;
+};
+
+export type OrchestrationResult = {
+  execution_id: string | null;
+  outcome: OrchestrationOutcome;
+  execution_status: AgentExecutionStatus | null;
+  plan_id: string | null;
+  approval_required: boolean;
+  completed_step_count: number;
+  total_step_count: number;
+  stopped_at_step_id: string | null;
+  step_results: PlanStepResult[];
+  failure_category: ExecutionFailureCategory | null;
+  error: string | null;
+  provider: string | null;
+  model: string | null;
+};
+
 export type AgentExecutionCreated = {
   execution_id: string;
   status: AgentExecutionStatus;

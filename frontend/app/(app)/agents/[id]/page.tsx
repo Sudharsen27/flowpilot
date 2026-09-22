@@ -372,6 +372,12 @@ export default function AgentDetailPage() {
         }
         primaryAction={
           <>
+            <Link
+              href={`/agents/${agent.id}/workspace`}
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Open workspace
+            </Link>
             <Button
               type="button"
               disabled={

@@ -22,9 +22,20 @@ type AgentCardProps = {
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
+  const href = `/agents/${encodeURIComponent(agent.id)}`;
+
   return (
-    <Card as="article" className="h-full">
-      <CardContent className="flex h-full flex-col">
+    <Card
+      as="article"
+      variant="interactive"
+      className="group relative h-full cursor-pointer transition-shadow hover:shadow-md"
+    >
+      <Link
+        href={href}
+        className="focus-visible:ring-ring absolute inset-0 z-10 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        aria-label={agent.name}
+      />
+      <CardContent className="relative flex h-full flex-col">
         <div className="flex items-start justify-between gap-3">
           <div
             className="bg-ai/10 text-ai-text border-ai-border flex size-9 shrink-0 items-center justify-center rounded-lg border"
@@ -36,13 +47,8 @@ export function AgentCard({ agent }: AgentCardProps) {
         </div>
 
         <div className="mt-5">
-          <h3 className="text-base font-medium tracking-tight">
-            <Link
-              href={`/agents/${agent.id}`}
-              className="focus-visible:ring-ring rounded-sm outline-none hover:underline focus-visible:ring-2"
-            >
-              {agent.name}
-            </Link>
+          <h3 className="group-hover:text-foreground text-base font-medium tracking-tight transition-colors">
+            {agent.name}
           </h3>
           <p className="text-muted-foreground mt-1.5 text-sm leading-6">
             {agent.description || "No description provided."}
@@ -71,6 +77,13 @@ export function AgentCard({ agent }: AgentCardProps) {
             <dd className="text-right font-medium">{agent.updatedAt}</dd>
           </div>
         </dl>
+
+        <p
+          className="text-muted-foreground group-hover:text-foreground mt-auto pt-4 text-xs font-medium transition-colors"
+          aria-hidden="true"
+        >
+          View agent →
+        </p>
       </CardContent>
     </Card>
   );

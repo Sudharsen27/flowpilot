@@ -8,10 +8,12 @@ import type {
   AgentExecutionRequest,
   AgentExecutionResult,
   AgentListResponse,
+  AgentOrchestrateRequest,
   AgentStatus,
   AgentType,
   AgentUpdateRequest,
   ExecutionFailureCategory,
+  OrchestrationResult,
   ToolInvocationListResponse,
 } from "@/types/api";
 
@@ -162,6 +164,16 @@ export async function executeAgent(
     if (recovered) return recovered;
     throw cause;
   }
+}
+
+export function orchestrateAgent(
+  agentId: string,
+  input: AgentOrchestrateRequest,
+) {
+  return apiPost<OrchestrationResult>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/orchestrate`,
+    input,
+  );
 }
 
 export function createAgentExecution(
