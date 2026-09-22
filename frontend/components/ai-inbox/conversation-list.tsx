@@ -1,8 +1,12 @@
+import type { ReactNode } from "react";
 import { MessageSquareText } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { inboxSourceLabels } from "@/lib/inbox-labels";
 import { cn } from "@/lib/utils";
+import type { LeadSource } from "@/types/api";
 
 export type ConversationStatus = "open" | "waiting" | "resolved";
 
@@ -10,9 +14,10 @@ export type ConversationListItem = {
   id: string;
   contactName: string;
   company?: string;
+  source?: LeadSource;
   status: ConversationStatus;
   lastMessagePreview?: string;
-  timeLabel?: string;
+  occurredAt?: string;
   needsApproval: boolean;
 };
 
@@ -22,6 +27,7 @@ type ConversationListProps = {
   onSelect?: (conversation: ConversationListItem) => void;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyAction?: ReactNode;
 };
 
 const statusPresentation: Record<
@@ -29,7 +35,7 @@ const statusPresentation: Record<
   { status: StatusValue; label: string }
 > = {
   open: { status: "active", label: "Open" },
-  waiting: { status: "warning", label: "Needs approval" },
+  waiting: { status: "warning", label: "Needs your review" },
   resolved: { status: "success", label: "Closed" },
 };
 
@@ -37,8 +43,9 @@ export function ConversationList({
   conversations,
   selectedId,
   onSelect,
-  emptyTitle = "No conversations yet",
-  emptyDescription = "Conversations appear here when website enquiries, drafts, email sends, Sales Runs, or follow-ups are recorded for your organization.",
+  emptyTitle = "No customer conversations yet",
+  emptyDescription = "When website enquiries, AI-assisted sales activity, or customer communication appear, they'll show up here.",
+  emptyAction,
 }: ConversationListProps) {
   if (conversations.length === 0) {
     return (
@@ -48,6 +55,7 @@ export function ConversationList({
         className="max-w-none rounded-none border-x-0 border-b-0 shadow-none"
         title={emptyTitle}
         description={emptyDescription}
+        action={emptyAction}
       />
     );
   }
@@ -61,46 +69,66 @@ export function ConversationList({
       {conversations.map((conversation) => {
         const status = statusPresentation[conversation.status];
         const isSelected = selectedId === conversation.id;
+        const showStatusBadge =
+          conversation.needsApproval || conversation.status !== "open";
 
         return (
           <li key={conversation.id}>
             <button
               type="button"
               className={cn(
-                "hover:bg-surface-subtle focus-visible:ring-ring/40 w-full p-4 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset",
+                "hover:bg-surface-subtle focus-visible:ring-ring/40 motion-safe:transition-colors w-full p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset",
                 isSelected && "bg-surface-subtle",
+                conversation.needsApproval &&
+                  !isSelected &&
+                  "border-l-warning border-l-2",
+                isSelected && conversation.needsApproval && "border-l-warning border-l-2",
               )}
               aria-pressed={isSelected}
               onClick={() => onSelect?.(conversation)}
             >
               <span className="flex items-start justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">
+                  <span className="text-foreground block truncate text-sm font-semibold tracking-tight">
                     {conversation.contactName}
                   </span>
-                  {conversation.company ? (
-                    <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                      {conversation.company}
-                    </span>
-                  ) : null}
-                </span>
-                {conversation.timeLabel ? (
-                  <span className="text-muted-foreground shrink-0 text-xs">
-                    {conversation.timeLabel}
+                  <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+                    {conversation.company ? (
+                      <span className="truncate">{conversation.company}</span>
+                    ) : (
+                      <span className="truncate italic">No company</span>
+                    )}
+                    {conversation.source ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="shrink-0">
+                          {inboxSourceLabels[conversation.source]}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
+                </span>
+                {conversation.occurredAt ? (
+                  <RelativeTime
+                    value={conversation.occurredAt}
+                    className="shrink-0"
+                  />
                 ) : null}
               </span>
               {conversation.lastMessagePreview ? (
-                <span className="text-muted-foreground mt-3 block truncate text-sm">
+                <span className="text-muted-foreground mt-2.5 line-clamp-2 block text-sm leading-5">
                   {conversation.lastMessagePreview}
                 </span>
+              ) : (
+                <span className="text-muted-foreground mt-2.5 block text-sm italic">
+                  No preview yet
+                </span>
+              )}
+              {showStatusBadge ? (
+                <span className="mt-3 flex flex-wrap gap-2">
+                  <StatusBadge status={status.status} label={status.label} />
+                </span>
               ) : null}
-              <span className="mt-3 flex flex-wrap gap-2">
-                <StatusBadge status={status.status} label={status.label} />
-                {conversation.needsApproval ? (
-                  <StatusBadge status="warning" label="Needs review" />
-                ) : null}
-              </span>
             </button>
           </li>
         );

@@ -4,9 +4,8 @@ import { FilterBar } from "@/components/forms/filter-bar";
 import { Label } from "@/components/forms/label";
 import { SearchInput } from "@/components/forms/search-input";
 import { Select } from "@/components/forms/select";
+import type { NeedsApprovalFilter } from "@/lib/inbox-url";
 import type { InboxConversationState, LeadSource } from "@/types/api";
-
-export type NeedsApprovalFilter = "" | "true" | "false";
 
 type InboxToolbarProps = {
   query: string;
@@ -117,8 +116,11 @@ export function InboxToolbar({
         </div>
       </FilterBar>
       <p id="inbox-filters-note" className="text-muted-foreground text-xs">
-        Filters apply to sales conversation history for this organization.
+        Focus on customers who need attention — especially those waiting for
+        review.
       </p>
     </div>
   );
 }
+
+export type { NeedsApprovalFilter };

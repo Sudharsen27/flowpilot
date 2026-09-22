@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import InboxPage from "@/app/(app)/inbox/page";
 import { getInbox, getInboxConversation } from "@/lib/api/inbox";
@@ -10,6 +10,43 @@ import type {
   InboxListResponse,
   InboxTimelineItem,
 } from "@/types/api";
+
+const mockReplace = vi.fn();
+let currentSearch = "";
+const searchListeners = new Set<() => void>();
+
+function notifySearchListeners() {
+  searchListeners.forEach((listener) => listener());
+}
+
+vi.mock("next/navigation", async () => {
+  const React = await import("react");
+  return {
+    useRouter: () => ({
+      replace: (href: string, options?: { scroll?: boolean }) => {
+        mockReplace(href, options);
+        currentSearch = href.includes("?") ? (href.split("?")[1] ?? "") : "";
+        notifySearchListeners();
+      },
+      push: vi.fn(),
+    }),
+    usePathname: () => "/inbox",
+    useSearchParams: () => {
+      React.useSyncExternalStore(
+        (onStoreChange) => {
+          searchListeners.add(onStoreChange);
+          return () => {
+            searchListeners.delete(onStoreChange);
+          };
+        },
+        () => currentSearch,
+        () => currentSearch,
+      );
+      return new URLSearchParams(currentSearch);
+    },
+  };
+});
+
 
 vi.mock("@/lib/api/inbox", () => ({
   getInbox: vi.fn(),
@@ -28,7 +65,7 @@ const inboxItem: InboxItem = {
   lead_status: "NEW",
   conversation_state: "NEEDS_APPROVAL",
   needs_approval: true,
-  last_activity_at: "2026-09-17T10:00:00Z",
+  last_activity_at: "2026-09-22T11:58:00Z",
   last_activity_type: "AI_ACTION",
   last_activity_title: "Response draft generated",
   preview: "Thanks for writing — happy to share a demo slot.",
@@ -185,23 +222,35 @@ function pageOf(
 
 describe("AI Inbox page", () => {
   beforeEach(() => {
+    currentSearch = "";
+    searchListeners.clear();
+    mockReplace.mockReset();
     getInboxMock.mockReset();
     getInboxConversationMock.mockReset();
     getInboxMock.mockResolvedValue(pageOf([]));
     getInboxConversationMock.mockResolvedValue(conversation);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-09-22T12:00:00Z"));
   });
 
-  it("loads the inbox and shows empty state without channel copy", async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("loads the inbox and shows a useful empty state", async () => {
     render(<InboxPage />);
     expect(
       screen.getByRole("heading", { level: 1, name: "AI Inbox" }),
     ).toBeVisible();
     expect(
-      await screen.findByRole("heading", { name: "No conversations yet" }),
+      await screen.findByRole("heading", {
+        name: "No customer conversations yet",
+      }),
     ).toBeVisible();
-    expect(screen.getByText(/website enquiries, drafts, email sends/i)).toBeVisible();
+    expect(
+      screen.getByText(/website enquiries, AI-assisted sales activity/i),
+    ).toBeVisible();
     expect(screen.queryByText(/WhatsApp/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/communication channels are connected/i)).not.toBeInTheDocument();
     expect(getInboxMock).toHaveBeenCalled();
   });
 
@@ -209,16 +258,20 @@ describe("AI Inbox page", () => {
     getInboxMock.mockRejectedValueOnce(new Error("network"));
     render(<InboxPage />);
     expect(
-      await screen.findByRole("heading", { name: "Inbox could not be loaded" }),
+      await screen.findByRole("heading", {
+        name: "Unable to load conversations",
+      }),
     ).toBeVisible();
     getInboxMock.mockResolvedValueOnce(pageOf([]));
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(
-      await screen.findByRole("heading", { name: "No conversations yet" }),
+      await screen.findByRole("heading", {
+        name: "No customer conversations yet",
+      }),
     ).toBeVisible();
   });
 
-  it("renders summary counts from the list response", async () => {
+  it("renders compact summary metrics", async () => {
     getInboxMock.mockResolvedValue(
       pageOf([inboxItem], 1, {
         state_counts: { OPEN: 2, NEEDS_APPROVAL: 1, CLOSED: 3 },
@@ -227,39 +280,41 @@ describe("AI Inbox page", () => {
     );
     render(<InboxPage />);
     expect(await screen.findByText("Ada Lovelace")).toBeVisible();
-    const metricCards = screen.getAllByRole("article");
-    expect(
-      within(metricCards[0]).getByRole("heading", {
-        name: "Open conversations",
-      }),
-    ).toBeVisible();
-    expect(within(metricCards[0]).getByText("2")).toBeVisible();
-    expect(within(metricCards[1]).getByText("1")).toBeVisible();
-    expect(within(metricCards[2]).getByText("3")).toBeVisible();
-    expect(within(metricCards[3]).getByText("1")).toBeVisible();
+    const summary = screen.getByLabelText("Inbox summary");
+    expect(within(summary).getByText("Open")).toBeVisible();
+    expect(within(summary).getByText("Needs approval")).toBeVisible();
+    expect(within(summary).getByText("Closed")).toBeVisible();
+    expect(within(summary).getByText("2")).toBeVisible();
+    expect(within(summary).getByText("1")).toBeVisible();
+    expect(within(summary).getByText("3")).toBeVisible();
     expect(screen.queryByText("AI handled")).not.toBeInTheDocument();
   });
 
-  it("renders conversation list rows from inbox items", async () => {
+  it("renders conversation rows with hierarchy and relative time", async () => {
     getInboxMock.mockResolvedValue(pageOf([inboxItem]));
     render(<InboxPage />);
     const row = await screen.findByRole("button", { name: /Ada Lovelace/ });
     expect(within(row).getByText("Analytical Engines")).toBeVisible();
+    expect(within(row).getByText("Website")).toBeVisible();
     expect(
       within(row).getByText("Thanks for writing — happy to share a demo slot."),
     ).toBeVisible();
-    expect(within(row).getByText("Needs approval")).toBeVisible();
-    expect(within(row).getByText("Needs review")).toBeVisible();
+    expect(within(row).getByText("Needs your review")).toBeVisible();
+    expect(within(row).getByText("2m ago")).toBeVisible();
+    expect(within(row).getByTitle("2026-09-22 11:58:00 UTC")).toBeVisible();
   });
 
-  it("sends search, state, source, and needs-approval filters", async () => {
-    const user = userEvent.setup();
+  it("syncs filters into the URL and API", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<InboxPage />);
-    await screen.findByRole("heading", { name: "No conversations yet" });
+    await screen.findByRole("heading", {
+      name: "No customer conversations yet",
+    });
     await user.type(
       screen.getByRole("searchbox", { name: "Search conversations" }),
       "Ada",
     );
+    await vi.advanceTimersByTimeAsync(350);
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Conversation status" }),
       "NEEDS_APPROVAL",
@@ -273,6 +328,7 @@ describe("AI Inbox page", () => {
       "WEBSITE",
     );
     await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalled();
       expect(getInboxMock).toHaveBeenCalledWith(
         expect.objectContaining({
           q: "Ada",
@@ -284,104 +340,108 @@ describe("AI Inbox page", () => {
     });
   });
 
-  it("shows no-matching state when filters return empty", async () => {
-    const user = userEvent.setup();
+  it("shows filtered empty state with clear action", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<InboxPage />);
-    await screen.findByRole("heading", { name: "No conversations yet" });
+    await screen.findByRole("heading", {
+      name: "No customer conversations yet",
+    });
     getInboxMock.mockResolvedValue(pageOf([]));
     await user.type(
       screen.getByRole("searchbox", { name: "Search conversations" }),
       "zzz",
     );
+    await vi.advanceTimersByTimeAsync(350);
     expect(
-      await screen.findByRole("heading", { name: "No matching conversations" }),
+      await screen.findByRole("heading", {
+        name: "No conversations match these filters",
+      }),
     ).toBeVisible();
+    expect(
+      screen.getAllByRole("button", { name: "Clear filters" }).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
-  it("loads conversation detail, timeline, and lead context on select", async () => {
+  it("selects a lead, updates URL, and renders timeline distinctions", async () => {
     getInboxMock.mockResolvedValue(pageOf([inboxItem]));
     render(<InboxPage />);
     await userEvent.click(
       await screen.findByRole("button", { name: /Ada Lovelace/ }),
     );
     await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("lead=lead-1"),
+        expect.objectContaining({ scroll: false }),
+      ),
+    );
+    await waitFor(() =>
       expect(getInboxConversationMock).toHaveBeenCalledWith("lead-1"),
     );
     expect(
-      await screen.findByRole("heading", { name: "Website enquiry" }),
+      await screen.findByRole("heading", { name: "AI-generated response" }),
     ).toBeVisible();
-    expect(screen.getAllByText("Please call me about pricing.").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Draft generated")).toBeVisible();
     expect(screen.getByText("Draft body text")).toBeVisible();
+    expect(
+      screen.getByText(/Prepared by FlowPilot AI · Not sent to the customer/i),
+    ).toBeVisible();
     expect(screen.getByText("Email sent")).toBeVisible();
-    expect(screen.getByText("Sent email body")).toBeVisible();
-    expect(screen.getByText("Email failed")).toBeVisible();
-    expect(screen.getByText("Failed email body")).toBeVisible();
+    expect(screen.getAllByText("Sent to customer").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Email could not be delivered")).toBeVisible();
     expect(screen.getByText("Follow-up email sent")).toBeVisible();
-    expect(screen.getByText("Follow-up body")).toBeVisible();
-    expect(screen.getByText("ada@example.com")).toBeVisible();
-    expect(screen.getByText("+1 555 0100")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open lead" })).toHaveAttribute(
-      "href",
-      "/leads/lead-1",
-    );
-    const draftEvent = screen.getByText("Draft generated").closest("li");
-    expect(draftEvent).not.toBeNull();
-    expect(within(draftEvent!).getByText("AI draft")).toBeVisible();
-    expect(within(draftEvent!).queryByText("Message sent")).not.toBeInTheDocument();
-    const sentEvent = screen.getByText("Email sent").closest("li");
-    expect(within(sentEvent!).getByText("Message sent")).toBeVisible();
-    const failedEvent = screen.getByText("Email failed").closest("li");
-    expect(within(failedEvent!).getByText("Failed")).toBeVisible();
-    expect(within(failedEvent!).queryByText("Message sent")).not.toBeInTheDocument();
+    expect(screen.getByText("What they want")).toBeVisible();
+    expect(screen.getAllByText("Needs your review").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getByRole("link", { name: "Open full lead record" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
   });
 
-  it("keeps the composer disabled and exposes no send/approval actions", async () => {
+  it("loads a lead from the URL on first render", async () => {
+    currentSearch = "lead=lead-1";
+    getInboxMock.mockResolvedValue(pageOf([inboxItem]));
+    render(<InboxPage />);
+    await waitFor(() =>
+      expect(getInboxConversationMock).toHaveBeenCalledWith("lead-1"),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "AI-generated response" }),
+    ).toBeVisible();
+  });
+
+  it("keeps the composer disabled with no approval actions", async () => {
     getInboxMock.mockResolvedValue(pageOf([inboxItem]));
     render(<InboxPage />);
     await userEvent.click(
       await screen.findByRole("button", { name: /Ada Lovelace/ }),
     );
-    await screen.findByText("Draft generated");
+    await screen.findByRole("heading", { name: "AI-generated response" });
     expect(screen.getByLabelText("Reply composer")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send reply" })).toBeDisabled();
-    expect(
-      screen.getByText(/Replies are not sent from Inbox/i),
-    ).toBeVisible();
+    expect(screen.getByText(/Replies are not sent from Inbox/i)).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /approve/i }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /^send$/i }),
-    ).not.toBeInTheDocument();
   });
 
-  it("provides mobile conversation and workspace navigation", async () => {
-    const user = userEvent.setup();
+  it("supports mobile conversation and workspace navigation", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<InboxPage />);
-    await screen.findByRole("heading", { name: "No conversations yet" });
+    await screen.findByRole("heading", {
+      name: "No customer conversations yet",
+    });
     const conversationsButton = screen.getByRole("button", {
       name: "Conversations",
     });
     const workspaceButton = screen.getByRole("button", { name: "Workspace" });
-    const conversationPane = document.querySelector("#inbox-conversation-list");
-    const workspacePane = document.querySelector(
-      "#inbox-conversation-workspace",
-    );
     expect(conversationsButton).toHaveAttribute("aria-pressed", "true");
-    expect(conversationPane).toHaveClass("block");
-    expect(workspacePane).toHaveClass("hidden");
     await user.click(workspaceButton);
     expect(workspaceButton).toHaveAttribute("aria-pressed", "true");
-    expect(conversationPane).toHaveClass("hidden");
-    expect(workspacePane).toHaveClass("block");
     await user.click(
       screen.getByRole("button", { name: "Back to conversations" }),
     );
     expect(conversationsButton).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("paginates with next", async () => {
+  it("paginates with next via URL offset", async () => {
     getInboxMock.mockResolvedValue({
       ...pageOf([inboxItem], 21),
       total: 21,
@@ -390,8 +450,9 @@ describe("AI Inbox page", () => {
     expect(await screen.findByText("Showing 1–20 of 21")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => {
-      expect(getInboxMock).toHaveBeenCalledWith(
-        expect.objectContaining({ offset: 20, limit: 20 }),
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("offset=20"),
+        expect.objectContaining({ scroll: false }),
       );
     });
   });

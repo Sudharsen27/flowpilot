@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   ArrowLeft,
+  Bot,
   MessageSquareText,
   Send,
   UserRound,
@@ -8,7 +9,7 @@ import {
 } from "lucide-react";
 
 import { ConversationTimeline } from "@/components/ai-inbox/conversation-timeline";
-import { formatTimestamp } from "@/components/agents/execution-status";
+import { AiBadge } from "@/components/ai/ai-badge";
 import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { Label } from "@/components/forms/label";
@@ -16,8 +17,14 @@ import { Textarea } from "@/components/forms/textarea";
 import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  draftReviewLabels,
+  inboxSourceLabels,
+  inboxStateLabels,
+} from "@/lib/inbox-labels";
 import type { InboxConversationResponse } from "@/types/api";
 
 type ConversationWorkspaceProps = {
@@ -27,21 +34,6 @@ type ConversationWorkspaceProps = {
   onRetry?: () => void;
   onBack?: () => void;
 };
-
-const sourceLabels = {
-  MANUAL: "Manual",
-  WEBSITE: "Website",
-  EMAIL: "Email",
-  CHAT: "Chat",
-  API: "API",
-  IMPORT: "Import",
-} as const;
-
-const stateLabels = {
-  OPEN: "Open",
-  NEEDS_APPROVAL: "Needs approval",
-  CLOSED: "Closed",
-} as const;
 
 export function ConversationWorkspace({
   conversation,
@@ -55,7 +47,7 @@ export function ConversationWorkspace({
   return (
     <Card
       as="section"
-      className="flex min-h-[42rem] min-w-0 flex-col overflow-hidden"
+      className="flex min-h-[42rem] min-w-0 flex-col overflow-hidden motion-safe:transition-shadow"
       aria-labelledby="conversation-workspace-title"
     >
       <header className="border-border flex flex-wrap items-start justify-between gap-3 border-b px-4 py-4 sm:px-5">
@@ -75,20 +67,20 @@ export function ConversationWorkspace({
           <div className="min-w-0">
             <h3
               id="conversation-workspace-title"
-              className="text-base font-medium tracking-tight"
+              className="text-base font-semibold tracking-tight"
             >
               {lead?.name ?? "Conversation workspace"}
             </h3>
             <p className="text-muted-foreground mt-1 text-sm">
               {lead
                 ? [
-                    lead.email,
                     lead.company,
-                    stateLabels[lead.conversation_state],
+                    lead.email,
+                    inboxStateLabels[lead.conversation_state],
                   ]
                     .filter(Boolean)
                     .join(" · ")
-                : "Select a conversation to review its timeline and lead context."}
+                : "Select a customer to review enquiry history, AI activity, and decisions."}
             </p>
           </div>
         </div>
@@ -103,8 +95,8 @@ export function ConversationWorkspace({
             }
             label={
               lead.needs_approval
-                ? "Needs review"
-                : stateLabels[lead.conversation_state]
+                ? "Needs your review"
+                : inboxStateLabels[lead.conversation_state]
             }
           />
         ) : (
@@ -112,20 +104,31 @@ export function ConversationWorkspace({
         )}
       </header>
 
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,19rem)]">
         <div className="flex min-h-[30rem] min-w-0 flex-col">
           <section
             className="min-h-0 flex-1 overflow-y-auto"
             aria-labelledby="message-timeline-title"
           >
-            <h4 id="message-timeline-title" className="sr-only">
-              Conversation timeline
-            </h4>
+            <div className="border-border flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+              <h4
+                id="message-timeline-title"
+                className="text-sm font-medium tracking-tight"
+              >
+                Timeline
+              </h4>
+              {conversation ? (
+                <p className="text-muted-foreground text-xs">
+                  {conversation.total_items} event
+                  {conversation.total_items === 1 ? "" : "s"}
+                </p>
+              ) : null}
+            </div>
             {error ? (
               <div className="p-4">
                 <StatePanel
                   kind="error"
-                  title="Conversation could not be loaded"
+                  title="Unable to load conversation"
                   description={error}
                   action={
                     onRetry ? (
@@ -139,6 +142,7 @@ export function ConversationWorkspace({
             ) : loading ? (
               <div className="grid gap-3 p-4" role="status">
                 <Skeleton className="h-28" />
+                <Skeleton className="h-24" />
                 <Skeleton className="h-28" />
                 <span className="sr-only">Loading conversation</span>
               </div>
@@ -152,8 +156,8 @@ export function ConversationWorkspace({
                 </div>
                 <p className="mt-4 text-sm font-medium">No conversation selected</p>
                 <p className="text-muted-foreground mt-1.5 max-w-sm text-sm leading-6">
-                  Choose a lead from the conversation list to inspect its
-                  enquiry, drafts, emails, and follow-up history.
+                  Choose a customer from the list to see what they asked, what
+                  FlowPilot prepared, and what still needs a human decision.
                 </p>
               </div>
             ) : (
@@ -187,121 +191,166 @@ export function ConversationWorkspace({
         </div>
 
         <aside
-          className="border-border bg-surface-subtle/60 grid content-start gap-4 border-t p-4 xl:border-t-0 xl:border-l"
-          aria-label="Conversation context"
+          className="border-border bg-surface-subtle/60 grid content-start gap-3 border-t p-4 xl:border-t-0 xl:border-l"
+          aria-label="Customer context"
         >
           <section
             className="bg-card border-border rounded-lg border p-4"
-            aria-labelledby="customer-context-title"
+            aria-labelledby="customer-profile-title"
           >
             <div className="flex items-center gap-2">
               <UserRound
                 className="text-muted-foreground size-4"
                 aria-hidden="true"
               />
-              <h4 id="customer-context-title" className="text-sm font-medium">
-                Customer context
+              <h4 id="customer-profile-title" className="text-sm font-medium">
+                Customer
               </h4>
             </div>
             {loading && !lead ? (
               <div className="mt-3 grid gap-2" role="status">
+                <Skeleton className="h-5 w-2/3" />
                 <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-4/5" />
                 <span className="sr-only">Loading customer context</span>
               </div>
             ) : lead ? (
-              <dl className="mt-3 grid gap-3">
-                <DetailRow label="Name" value={lead.name} />
-                <DetailRow
-                  label="Email"
-                  value={lead.email ?? "—"}
-                  muted={!lead.email}
-                />
-                <DetailRow
-                  label="Phone"
-                  value={lead.phone ?? "—"}
-                  muted={!lead.phone}
-                />
-                <DetailRow
-                  label="Company"
-                  value={lead.company ?? "—"}
-                  muted={!lead.company}
-                />
-                <DetailRow
-                  label="Lead status"
-                  value={<LeadStatusBadge status={lead.lead_status} />}
-                />
-                <DetailRow label="Source" value={sourceLabels[lead.source]} />
-                <DetailRow
-                  label="Conversation"
-                  value={stateLabels[lead.conversation_state]}
-                />
-                <DetailRow
-                  label="Approval"
-                  value={
-                    lead.needs_approval ? (
-                      <StatusBadge status="warning" label="Required" />
-                    ) : (
-                      "Not required"
-                    )
-                  }
-                />
-                <DetailRow
-                  label="Enquiry"
-                  value={lead.enquiry ?? "—"}
-                  muted={!lead.enquiry}
-                />
-                {lead.latest_draft ? (
+              <div className="mt-3 grid gap-4">
+                <div>
+                  <p className="text-base font-semibold tracking-tight">
+                    {lead.name}
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    {lead.company ?? "No company on file"}
+                  </p>
+                </div>
+                <dl className="grid gap-2.5">
                   <DetailRow
-                    label="Latest draft"
-                    value={`${lead.latest_draft.review_status ?? lead.latest_draft.status} · ${formatTimestamp(lead.latest_draft.created_at) ?? ""}`}
+                    label="Email"
+                    value={lead.email ?? "—"}
+                    muted={!lead.email}
                   />
-                ) : null}
-                {lead.latest_sales_run ? (
                   <DetailRow
-                    label="Sales Run"
-                    value={`${lead.latest_sales_run.status} · ${lead.latest_sales_run.stage}`}
+                    label="Phone"
+                    value={lead.phone ?? "—"}
+                    muted={!lead.phone}
                   />
-                ) : null}
-                <DetailRow
-                  label="Lead record"
-                  value={
-                    <Link
-                      href={`/leads/${lead.lead_id}`}
-                      className="text-foreground underline-offset-4 hover:underline"
-                    >
-                      Open lead
-                    </Link>
-                  }
-                />
-              </dl>
+                  <DetailRow
+                    label="Lead status"
+                    value={<LeadStatusBadge status={lead.lead_status} />}
+                  />
+                  <DetailRow
+                    label="Source"
+                    value={inboxSourceLabels[lead.source]}
+                  />
+                  <DetailRow
+                    label="Conversation"
+                    value={inboxStateLabels[lead.conversation_state]}
+                  />
+                </dl>
+              </div>
             ) : (
               <p className="text-muted-foreground mt-2 text-xs leading-5">
-                Contact and company details appear when a conversation is
-                selected.
+                Contact details appear when a conversation is selected.
               </p>
             )}
           </section>
 
+          {lead?.enquiry ? (
+            <section
+              className="bg-card border-border rounded-lg border p-4"
+              aria-labelledby="enquiry-title"
+            >
+              <h4 id="enquiry-title" className="text-sm font-medium">
+                What they want
+              </h4>
+              <p className="text-muted-foreground mt-2 text-sm leading-6 whitespace-pre-wrap">
+                {lead.enquiry}
+              </p>
+            </section>
+          ) : null}
+
           <section
             className="bg-card border-border rounded-lg border p-4"
-            aria-labelledby="human-handoff-title"
+            aria-labelledby="attention-title"
           >
             <div className="flex items-center gap-2">
               <UserRoundCheck
                 className="text-muted-foreground size-4"
                 aria-hidden="true"
               />
-              <h4 id="human-handoff-title" className="text-sm font-medium">
-                Human review
+              <h4 id="attention-title" className="text-sm font-medium">
+                Attention
               </h4>
             </div>
-            <p className="text-muted-foreground mt-2 text-xs leading-5">
-              {lead?.needs_approval
-                ? "This conversation needs approval before an email can be sent. Review and approve from the Lead or Sales Agent workspace."
-                : "Inbox is read-only. Approve drafts and send email from the Lead or Sales Agent workspace."}
-            </p>
+            {lead?.needs_approval ? (
+              <div className="border-warning/30 bg-warning/10 mt-3 rounded-md border px-3 py-2.5">
+                <p className="text-warning-text text-sm font-medium">
+                  Needs your review
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs leading-5">
+                  An AI draft or Sales Run is waiting. Approve and send from the
+                  Lead or Sales Agent workspace — not from Inbox.
+                </p>
+              </div>
+            ) : (
+              <p className="text-muted-foreground mt-2 text-xs leading-5">
+                No approval required right now. Inbox stays read-only.
+              </p>
+            )}
           </section>
+
+          {(lead?.latest_draft || lead?.latest_sales_run) && (
+            <section
+              className="bg-card border-border rounded-lg border p-4"
+              aria-labelledby="flowpilot-activity-title"
+            >
+              <div className="flex items-center gap-2">
+                <Bot className="text-ai-text size-4" aria-hidden="true" />
+                <h4 id="flowpilot-activity-title" className="text-sm font-medium">
+                  FlowPilot activity
+                </h4>
+              </div>
+              <dl className="mt-3 grid gap-3">
+                {lead.latest_draft ? (
+                  <div className="border-ai-border bg-ai/5 rounded-md border px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <AiBadge label="Generated" />
+                      <span className="text-xs font-medium">
+                        {lead.latest_draft.review_status
+                          ? draftReviewLabels[lead.latest_draft.review_status]
+                          : lead.latest_draft.status}
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground mt-1.5 text-xs">
+                      AI draft · not automatically sent
+                    </p>
+                    <RelativeTime
+                      value={lead.latest_draft.created_at}
+                      className="mt-1 block"
+                    />
+                  </div>
+                ) : null}
+                {lead.latest_sales_run ? (
+                  <DetailRow
+                    label="Sales Run"
+                    value={`${lead.latest_sales_run.status.replaceAll("_", " ")} · ${lead.latest_sales_run.stage}`}
+                  />
+                ) : null}
+              </dl>
+            </section>
+          )}
+
+          {lead ? (
+            <div className="px-1">
+              <Link
+                href={`/leads/${lead.lead_id}`}
+                className="text-foreground text-sm font-medium underline-offset-4 hover:underline"
+              >
+                Open full lead record
+              </Link>
+            </div>
+          ) : null}
         </aside>
       </div>
     </Card>
