@@ -350,6 +350,50 @@ class SalesRunService:
         )
         return self._to_public(cancelled, include_enquiry=True)
 
+    def cancel_waiting_for_rejected_draft(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        draft_id: str,
+    ) -> SalesRun | None:
+        """Cancel a WAITING_APPROVAL SalesRun linked to a rejected draft.
+
+        Does not commit — intended to share the reject() transaction.
+        Standalone drafts (no waiting linked run) are a no-op.
+        """
+        now = datetime.now(UTC)
+        cancelled = self.sales_runs.cancel_waiting_for_draft(
+            organization_id,
+            lead_id=lead_id,
+            draft_id=draft_id,
+            now=now,
+        )
+        if cancelled is None:
+            return None
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            title="Sales Run cancelled",
+            summary="A Sales Agent run was cancelled.",
+            entity_type=ActivityEntityType.SALES_RUN,
+            entity_id=cancelled.id,
+            lead_id=cancelled.lead_id,
+            agent_id=cancelled.agent_id,
+            status=SalesRunStatus.CANCELLED,
+            dedupe_key=f"sales_run:{cancelled.id}:CANCELLED",
+        )
+        logger.info(
+            "sales_run_cancelled_on_draft_reject sales_run_id=%s agent_id=%s "
+            "lead_id=%s draft_id=%s",
+            cancelled.id,
+            cancelled.agent_id,
+            cancelled.lead_id,
+            draft_id,
+        )
+        return cancelled
+
     def send_approved_response(
         self,
         *,

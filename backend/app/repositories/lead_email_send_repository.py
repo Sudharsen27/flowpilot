@@ -48,6 +48,27 @@ class LeadEmailSendRepository:
             .order_by(LeadEmailSend.created_at.desc(), LeadEmailSend.id.desc())
         )
 
+    def latest_for_drafts(
+        self, organization_id: str, draft_ids: list[str]
+    ) -> dict[str, LeadEmailSend]:
+        if not draft_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(LeadEmailSend)
+                .where(
+                    LeadEmailSend.organization_id == organization_id,
+                    LeadEmailSend.response_draft_id.in_(draft_ids),
+                )
+                .order_by(LeadEmailSend.created_at.desc(), LeadEmailSend.id.desc())
+            )
+        )
+        latest: dict[str, LeadEmailSend] = {}
+        for row in rows:
+            if row.response_draft_id not in latest:
+                latest[row.response_draft_id] = row
+        return latest
+
     def latest_for_leads(
         self, organization_id: str, lead_ids: list[str]
     ) -> dict[str, LeadEmailSend]:

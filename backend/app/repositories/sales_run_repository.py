@@ -109,6 +109,70 @@ class SalesRunRepository:
                 latest[row.lead_id] = row
         return latest
 
+    def latest_for_drafts(
+        self, organization_id: str, draft_ids: list[str]
+    ) -> dict[str, SalesRun]:
+        """Most recent SalesRun per response_draft_id (created_at DESC, id DESC)."""
+        if not draft_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(SalesRun)
+                .where(
+                    SalesRun.organization_id == organization_id,
+                    SalesRun.response_draft_id.in_(draft_ids),
+                )
+                .order_by(SalesRun.created_at.desc(), SalesRun.id.desc())
+            )
+        )
+        latest: dict[str, SalesRun] = {}
+        for row in rows:
+            if row.response_draft_id and row.response_draft_id not in latest:
+                latest[row.response_draft_id] = row
+        return latest
+
+    def cancel_waiting_for_draft(
+        self,
+        organization_id: str,
+        *,
+        lead_id: str,
+        draft_id: str,
+        now: datetime,
+    ) -> SalesRun | None:
+        """CAS: WAITING_APPROVAL → CANCELLED for the draft's linked run.
+
+        Does not commit — caller owns the transaction.
+        """
+        self._expire_sales_runs()
+        self.session.flush()
+        result = self.session.execute(
+            update(SalesRun)
+            .where(
+                SalesRun.organization_id == organization_id,
+                SalesRun.lead_id == lead_id,
+                SalesRun.response_draft_id == draft_id,
+                SalesRun.status == SalesRunStatus.WAITING_APPROVAL,
+            )
+            .values(
+                status=SalesRunStatus.CANCELLED,
+                completed_at=now,
+                updated_at=now,
+                revision=SalesRun.revision + 1,
+            )
+        )
+        if int(getattr(result, "rowcount", 0) or 0) == 0:
+            return None
+        return self.session.scalar(
+            select(SalesRun)
+            .where(
+                SalesRun.organization_id == organization_id,
+                SalesRun.lead_id == lead_id,
+                SalesRun.response_draft_id == draft_id,
+                SalesRun.status == SalesRunStatus.CANCELLED,
+            )
+            .order_by(SalesRun.updated_at.desc(), SalesRun.id.desc())
+        )
+
     def list_for_lead(
         self,
         organization_id: str,

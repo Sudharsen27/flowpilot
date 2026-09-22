@@ -16,6 +16,21 @@ class AgentRepository:
             )
         )
 
+    def get_by_ids(
+        self, organization_id: str, agent_ids: list[str]
+    ) -> dict[str, Agent]:
+        if not agent_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(Agent).where(
+                    Agent.organization_id == organization_id,
+                    Agent.id.in_(agent_ids),
+                )
+            )
+        )
+        return {row.id: row for row in rows}
+
     def list_for_organization(
         self,
         organization_id: str,

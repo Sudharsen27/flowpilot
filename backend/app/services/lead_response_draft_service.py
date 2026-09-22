@@ -350,6 +350,14 @@ class LeadResponseDraftService:
             status=row.review_status,
             dedupe_key=f"draft:{row.id}:REJECTED:r{row.revision}",
         )
+        # Lazy import: SalesRunService imports this module at load time.
+        from app.services.sales_run_service import SalesRunService
+
+        SalesRunService(self.session).cancel_waiting_for_rejected_draft(
+            organization_id=organization_id,
+            lead_id=row.lead_id,
+            draft_id=row.id,
+        )
         self.session.commit()
         self.session.refresh(row)
         return row

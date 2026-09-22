@@ -761,8 +761,16 @@ def test_send_rejects_generated_edited_and_rejected_drafts(
         headers=_headers(token),
     )
     assert rejected.status_code == 200
+    cancelled = client.get(
+        f"/api/v1/agents/{agent.id}/sales-runs/{started['id']}",
+        headers=_headers(token),
+    ).json()
+    assert cancelled["status"] == SalesRunStatus.CANCELLED
     assert (
-        _send_run(client, token, agent.id, started["id"], started["revision"]).status_code == 409
+        _send_run(
+            client, token, agent.id, started["id"], cancelled["revision"]
+        ).status_code
+        == 409
     )
     assert db.scalar(select(func.count()).select_from(LeadEmailSend)) == 0
 
@@ -817,8 +825,154 @@ def test_approved_then_rejected_cannot_send(
         headers=_headers(token),
     )
     assert rejected.status_code == 200
+    assert rejected.json()["review_status"] == "REJECTED"
+    fetched = client.get(
+        f"/api/v1/agents/{run['agent_id']}/sales-runs/{run['id']}",
+        headers=_headers(token),
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == SalesRunStatus.CANCELLED
     assert _send_run(client, token, run["agent_id"], run["id"], run["revision"]).status_code == 409
+    assert (
+        _send_run(
+            client, token, run["agent_id"], run["id"], fetched.json()["revision"]
+        ).status_code
+        == 409
+    )
     assert db.scalar(select(func.count()).select_from(LeadEmailSend)) == 0
+
+
+def test_reject_waiting_draft_cancels_sales_run_and_allows_restart(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    org_id = created["organization"]["id"]
+    agent = _ready_sales_agent(db, org_id)
+    _override_provider(client, SalesPipelineProvider())
+    first = _start(client, token, agent.id, email="restart@example.com", name="Restart").json()
+    assert first["status"] == SalesRunStatus.WAITING_APPROVAL
+    draft = _get_draft(client, token, first["lead_id"], first["response_draft_id"])
+
+    rejected = client.post(
+        f"/api/v1/leads/{first['lead_id']}/response-drafts/{first['response_draft_id']}/reject",
+        json={"expected_revision": draft["revision"], "reason": "Wrong tone"},
+        headers=_headers(token),
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["review_status"] == "REJECTED"
+
+    cancelled = client.get(
+        f"/api/v1/agents/{agent.id}/sales-runs/{first['id']}",
+        headers=_headers(token),
+    ).json()
+    assert cancelled["status"] == SalesRunStatus.CANCELLED
+    assert cancelled["response_draft_id"] == first["response_draft_id"]
+
+    titles = [
+        item["title"]
+        for item in client.get(
+            "/api/v1/activity",
+            headers=_headers(token),
+            params={"lead_id": first["lead_id"], "limit": 50},
+        ).json()["items"]
+    ]
+    assert titles.count("Response draft rejected") == 1
+    assert titles.count("Sales Run cancelled") == 1
+
+    assert (
+        client.post(
+            f"/api/v1/leads/{first['lead_id']}/response-drafts/{first['response_draft_id']}/reject",
+            json={"expected_revision": rejected.json()["revision"]},
+            headers=_headers(token),
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            f"/api/v1/leads/{first['lead_id']}/response-drafts/{first['response_draft_id']}/reject",
+            json={"expected_revision": draft["revision"]},
+            headers=_headers(token),
+        ).status_code
+        == 409
+    )
+
+    second = _start(
+        client, token, agent.id, lead_id=first["lead_id"], enquiry=ENQUIRY
+    )
+    assert second.status_code == 200
+    assert second.json()["status"] == SalesRunStatus.WAITING_APPROVAL
+    assert second.json()["id"] != first["id"]
+
+
+def test_reject_after_completed_sales_run_does_not_change_run(
+    client: TestClient, db: Session, monkeypatch: object
+) -> None:
+    _email_settings(monkeypatch)
+    created = _auth(client)
+    token = created["access_token"]
+    run, approved = _waiting_approved(
+        client, db, token, created["organization"]["id"], email="done@example.com"
+    )
+    _override_email(client, FakeEmailProvider())
+    sent = _send_run(client, token, run["agent_id"], run["id"], run["revision"])
+    assert sent.status_code == 200
+    assert sent.json()["status"] == SalesRunStatus.COMPLETED
+    completed_revision = sent.json()["revision"]
+
+    rejected = client.post(
+        f"/api/v1/leads/{run['lead_id']}/response-drafts/{run['response_draft_id']}/reject",
+        json={"expected_revision": approved["revision"]},
+        headers=_headers(token),
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["review_status"] == "REJECTED"
+    fetched = client.get(
+        f"/api/v1/agents/{run['agent_id']}/sales-runs/{run['id']}",
+        headers=_headers(token),
+    ).json()
+    assert fetched["status"] == SalesRunStatus.COMPLETED
+    assert fetched["revision"] == completed_revision
+
+
+def test_reject_after_sales_run_already_cancelled_leaves_run_cancelled(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    agent = _ready_sales_agent(db, created["organization"]["id"])
+    _override_provider(client, SalesPipelineProvider())
+    started = _start(client, token, agent.id, email="already@example.com").json()
+    cancelled = client.post(
+        f"/api/v1/agents/{agent.id}/sales-runs/{started['id']}/cancel",
+        json={"expected_revision": started["revision"]},
+        headers=_headers(token),
+    )
+    assert cancelled.status_code == 200
+    draft = _get_draft(client, token, started["lead_id"], started["response_draft_id"])
+    rejected = client.post(
+        f"/api/v1/leads/{started['lead_id']}/response-drafts/{started['response_draft_id']}/reject",
+        json={"expected_revision": draft["revision"]},
+        headers=_headers(token),
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["review_status"] == "REJECTED"
+    fetched = client.get(
+        f"/api/v1/agents/{agent.id}/sales-runs/{started['id']}",
+        headers=_headers(token),
+    ).json()
+    assert fetched["status"] == SalesRunStatus.CANCELLED
+    assert fetched["revision"] == cancelled.json()["revision"]
+    titles = [
+        item["title"]
+        for item in client.get(
+            "/api/v1/activity",
+            headers=_headers(token),
+            params={"lead_id": started["lead_id"], "limit": 50},
+        ).json()["items"]
+    ]
+    assert titles.count("Sales Run cancelled") == 1
+    assert titles.count("Response draft rejected") == 1
 
 
 def test_missing_recipient_is_422_and_leaves_waiting(

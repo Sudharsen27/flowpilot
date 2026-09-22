@@ -140,6 +140,14 @@ def test_approve_and_reject_persist_reviewer(client: TestClient, db: Session) ->
         headers=_headers(token),
     ).json()
     assert fetched["review_status"] == "REJECTED"
+    activity = client.get(
+        "/api/v1/activity",
+        headers=_headers(token),
+        params={"lead_id": lead["id"], "limit": 50},
+    ).json()
+    titles = [item["title"] for item in activity["items"]]
+    assert "Response draft rejected" in titles
+    assert "Sales Run cancelled" not in titles
 
 
 def test_editing_approved_draft_requires_reapproval(client: TestClient) -> None:
