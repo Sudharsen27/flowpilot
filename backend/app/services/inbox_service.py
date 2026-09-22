@@ -232,6 +232,7 @@ class InboxService:
         runs = self.sales_runs.latest_for_leads(organization_id, [lead.id])
         sends = self.sends.latest_for_leads(organization_id, [lead.id])
         follow_ups = self.follow_ups.latest_for_leads(organization_id, [lead.id])
+        pending_follow_ups = self.follow_ups.pending_lead_ids(organization_id, [lead.id])
         draft = drafts.get(lead.id)
         run = runs.get(lead.id)
         send = sends.get(lead.id)
@@ -252,16 +253,18 @@ class InboxService:
             needs_approval=needs,
             sales_run=run,
             latest_email=send,
-            latest_follow_up=follow_up,
+            has_pending_follow_up=lead.id in pending_follow_ups,
         )
 
+        # Soft cap: keep the newest N events, then present ascending for the UI.
         events, _total = self.events.list_for_organization(
             organization_id,
             limit=INBOX_TIMELINE_MAX_ITEMS,
             offset=0,
             lead_id=lead.id,
-            oldest_first=True,
+            oldest_first=False,
         )
+        events = list(reversed(events))
         timeline = self._build_timeline(organization_id, lead, events)
 
         return InboxConversationResponse(
@@ -351,6 +354,7 @@ class InboxService:
         runs = self.sales_runs.latest_for_leads(organization_id, lead_ids)
         sends = self.sends.latest_for_leads(organization_id, lead_ids)
         follow_ups = self.follow_ups.latest_for_leads(organization_id, lead_ids)
+        pending_follow_ups = self.follow_ups.pending_lead_ids(organization_id, lead_ids)
         activities = self.events.latest_for_leads(organization_id, lead_ids)
 
         run_send_ids = [row.email_send_id for row in runs.values() if row.email_send_id]
@@ -377,7 +381,7 @@ class InboxService:
                 needs_approval=needs,
                 sales_run=run,
                 latest_email=send,
-                latest_follow_up=follow_up,
+                has_pending_follow_up=lead.id in pending_follow_ups,
             )
             last_at = activity.occurred_at if activity is not None else lead.updated_at
             follow_status = LeadFollowUpStatus(follow_up.status) if follow_up else None
@@ -440,22 +444,18 @@ class InboxService:
         needs_approval: bool,
         sales_run: SalesRun | None,
         latest_email: LeadEmailSend | None,
-        latest_follow_up: LeadFollowUp | None,
+        has_pending_follow_up: bool,
     ) -> InboxConversationState:
         if needs_approval:
             return InboxConversationState.NEEDS_APPROVAL
         if lead.status in {LeadStatus.CONVERTED, LeadStatus.UNQUALIFIED}:
             return InboxConversationState.CLOSED
-        pending_follow_up = (
-            latest_follow_up is not None
-            and latest_follow_up.status == LeadFollowUpStatus.PENDING
-        )
         if (
             sales_run is not None
             and sales_run.status == SalesRunStatus.COMPLETED
             and latest_email is not None
             and latest_email.status == LeadEmailSendStatus.SENT
-            and not pending_follow_up
+            and not has_pending_follow_up
         ):
             return InboxConversationState.CLOSED
         return InboxConversationState.OPEN

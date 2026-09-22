@@ -505,3 +505,338 @@ def test_inbox_actor_and_source_entity_ids(client: TestClient) -> None:
     assert created_item["source_entity_type"] == "LEAD"
     assert created_item["source_entity_id"] == lead["id"]
     assert created_item["activity_id"] == created_item["id"]
+
+
+def _edit_draft(
+    client: TestClient, token: str, lead_id: str, draft_id: str, revision: int, response: str
+) -> dict[str, Any]:
+    patched = client.patch(
+        f"/api/v1/leads/{lead_id}/response-drafts/{draft_id}",
+        json={"response": response, "expected_revision": revision},
+        headers=_headers(token),
+    )
+    assert patched.status_code == 200
+    return patched.json()
+
+
+def _reject_draft(
+    client: TestClient, token: str, lead_id: str, draft_id: str, revision: int
+) -> dict[str, Any]:
+    rejected = client.post(
+        f"/api/v1/leads/{lead_id}/response-drafts/{draft_id}/reject",
+        json={"expected_revision": revision, "reason": "Not a fit"},
+        headers=_headers(token),
+    )
+    assert rejected.status_code == 200
+    return rejected.json()
+
+
+def test_inbox_needs_approval_draft_review_states(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    generated_lead = _create(client, token, name="Gen Draft").json()
+    _generate(client, token, generated_lead["id"])
+    edited_lead = _create(client, token, name="Edit Draft").json()
+    edited = _generate(client, token, edited_lead["id"])
+    _edit_draft(
+        client,
+        token,
+        edited_lead["id"],
+        str(edited["id"]),
+        int(edited["revision"]),
+        "Edited preview body for approval.",
+    )
+    approved_lead = _create(client, token, name="Approved Draft").json()
+    approved = _generate(client, token, approved_lead["id"])
+    _approve(client, token, approved_lead["id"], str(approved["id"]), int(approved["revision"]))
+    rejected_lead = _create(client, token, name="Rejected Draft").json()
+    rejected = _generate(client, token, rejected_lead["id"])
+    _reject_draft(
+        client, token, rejected_lead["id"], str(rejected["id"]), int(rejected["revision"])
+    )
+    failed_lead = _create(client, token, name="Failed Draft", enquiry=ENQUIRY).json()
+    from tests.test_lead_response_draft import FakeStructuredProvider, _override_provider
+
+    _override_provider(client, FakeStructuredProvider(fail=ProviderError("model down")))
+    failed = client.post(
+        f"/api/v1/leads/{failed_lead['id']}/respond",
+        json={"enquiry": ENQUIRY},
+        headers=_headers(token),
+    )
+    assert failed.status_code == 502
+
+    listed = {item["lead_id"]: item for item in _inbox(client, token).json()["items"]}
+    assert listed[generated_lead["id"]]["needs_approval"] is True
+    assert listed[generated_lead["id"]]["conversation_state"] == "NEEDS_APPROVAL"
+    assert listed[edited_lead["id"]]["needs_approval"] is True
+    assert listed[edited_lead["id"]]["latest_draft"]["review_status"] == "EDITED"
+    assert listed[approved_lead["id"]]["needs_approval"] is False
+    assert listed[approved_lead["id"]]["conversation_state"] == "OPEN"
+    assert listed[rejected_lead["id"]]["needs_approval"] is False
+    assert listed[rejected_lead["id"]]["conversation_state"] == "OPEN"
+    assert listed[failed_lead["id"]]["needs_approval"] is False
+    assert listed[failed_lead["id"]]["latest_draft"] is None
+
+
+def test_inbox_latest_draft_email_and_sales_run_selection(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _email_settings(monkeypatch)
+    created = _auth(client)
+    token = created["access_token"]
+    org_id = created["organization"]["id"]
+
+    draft_lead = _create(client, token, name="Multi Draft").json()
+    first_draft = _generate(client, token, draft_lead["id"])
+    _approve(client, token, draft_lead["id"], str(first_draft["id"]), int(first_draft["revision"]))
+    second_draft = _generate(client, token, draft_lead["id"])
+    listed = _inbox(client, token).json()
+    draft_item = next(item for item in listed["items"] if item["lead_id"] == draft_lead["id"])
+    assert draft_item["latest_draft"]["id"] == second_draft["id"]
+    assert draft_item["latest_draft"]["review_status"] == "GENERATED"
+    assert draft_item["needs_approval"] is True
+
+    email_lead = _create(
+        client, token, email="multi-send@example.com", name="Multi Send"
+    ).json()
+    first_send = _approve_and_send(client, token, email_lead)
+    second_draft_row = _generate(client, token, email_lead["id"])
+    _approve(
+        client,
+        token,
+        email_lead["id"],
+        str(second_draft_row["id"]),
+        int(second_draft_row["revision"]),
+    )
+    _override_email(client, FakeEmailProvider(fail=ProviderError("second failed")))
+    second_send = client.post(
+        _send_path(email_lead["id"], str(second_draft_row["id"])),
+        json={},
+        headers=_headers(token),
+    )
+    assert second_send.json()["status"] == "FAILED"
+    email_listed = _inbox(client, token).json()["items"]
+    email_item = next(item for item in email_listed if item["lead_id"] == email_lead["id"])
+    assert email_item["latest_email_status"] == "FAILED"
+    assert first_send["status"] == "SENT"
+
+    agent = _ready_sales_agent(db, org_id)
+    run_lead = _create(
+        client, token, email="multi-run@example.com", enquiry=ENQUIRY, name="Multi Run"
+    ).json()
+    _override_sales(client, SalesPipelineProvider())
+    first_run = _start_from_lead(client, token, run_lead["id"], agent.id)
+    assert first_run.status_code == 200
+    first_body = first_run.json()
+    draft = client.get(
+        f"/api/v1/leads/{run_lead['id']}/response-drafts/{first_body['response_draft_id']}",
+        headers=_headers(token),
+    ).json()
+    _approve(
+        client,
+        token,
+        run_lead["id"],
+        first_body["response_draft_id"],
+        int(draft["revision"]),
+    )
+    _override_email(client, FakeEmailProvider())
+    completed = client.post(
+        f"/api/v1/agents/{agent.id}/sales-runs/{first_body['id']}/send",
+        json={"expected_revision": first_body["revision"]},
+        headers=_headers(token),
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "COMPLETED"
+    _override_sales(client, SalesPipelineProvider())
+    second_run = _start_from_lead(client, token, run_lead["id"], agent.id)
+    assert second_run.status_code == 200
+    run_item = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == run_lead["id"]
+    )
+    assert run_item["latest_sales_run"]["id"] == second_run.json()["id"]
+    assert run_item["latest_sales_run"]["status"] == "WAITING_APPROVAL"
+    assert run_item["needs_approval"] is True
+
+
+def test_inbox_closed_via_completed_sales_run_and_pending_follow_up_blocks(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _email_settings(monkeypatch)
+    created = _auth(client)
+    token = created["access_token"]
+    org_id = created["organization"]["id"]
+    agent = _ready_sales_agent(db, org_id)
+    lead = _create(
+        client, token, email="closed-run@example.com", enquiry=ENQUIRY, name="Closed Run"
+    ).json()
+    _override_sales(client, SalesPipelineProvider())
+    started = _start_from_lead(client, token, lead["id"], agent.id).json()
+    draft = client.get(
+        f"/api/v1/leads/{lead['id']}/response-drafts/{started['response_draft_id']}",
+        headers=_headers(token),
+    ).json()
+    _approve(client, token, lead["id"], started["response_draft_id"], int(draft["revision"]))
+    _override_email(client, FakeEmailProvider())
+    sent = client.post(
+        f"/api/v1/agents/{agent.id}/sales-runs/{started['id']}/send",
+        json={"expected_revision": started["revision"]},
+        headers=_headers(token),
+    )
+    assert sent.status_code == 200
+    assert sent.json()["status"] == "COMPLETED"
+
+    closed = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert closed["needs_approval"] is False
+    assert closed["conversation_state"] == "CLOSED"
+    assert closed["latest_email_status"] == "SENT"
+
+    older = _create_follow_up(client, token, lead["id"], notes="older pending")
+    newer = _create_follow_up(client, token, lead["id"], notes="newer pending")
+    client.post(
+        f"/api/v1/leads/{lead['id']}/follow-ups/{newer['id']}/complete",
+        json={"expected_revision": newer["revision"]},
+        headers=_headers(token),
+    )
+    blocked = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert blocked["latest_follow_up_status"] == "COMPLETED"
+    assert blocked["conversation_state"] == "OPEN"
+    assert older["status"] == "PENDING"
+
+    unqualified = _create(client, token, name="Unqualified Lead", enquiry="bye").json()
+    client.patch(
+        f"/api/v1/leads/{unqualified['id']}",
+        json={"status": "UNQUALIFIED"},
+        headers=_headers(token),
+    )
+    unqualified_item = next(
+        item
+        for item in _inbox(client, token).json()["items"]
+        if item["lead_id"] == unqualified["id"]
+    )
+    assert unqualified_item["conversation_state"] == "CLOSED"
+
+
+def test_inbox_preview_priority_and_truncation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _email_settings(monkeypatch)
+    token = _auth(client)["access_token"]
+    long_enquiry = "ENQUIRY_" + ("x" * 200)
+    lead = _create(
+        client,
+        token,
+        email="preview@example.com",
+        name="Preview Lead",
+        enquiry=long_enquiry,
+    ).json()
+    before_draft = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert before_draft["preview"] is not None
+    assert before_draft["preview"].startswith("ENQUIRY_")
+    assert len(before_draft["preview"]) <= 160
+    assert "…" in before_draft["preview"]
+
+    draft = _generate(client, token, lead["id"])
+    with_draft = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert with_draft["preview"] is not None
+    assert with_draft["preview"].startswith("Thank you for reaching out")
+    assert len(with_draft["preview"]) <= 160
+    assert with_draft["preview"].endswith("…")
+
+    _approve(client, token, lead["id"], str(draft["id"]), int(draft["revision"]))
+    _override_email(client, FakeEmailProvider())
+    sent = client.post(
+        _send_path(lead["id"], str(draft["id"])),
+        json={},
+        headers=_headers(token),
+    )
+    assert sent.status_code == 200
+    with_send = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert with_send["preview"] == with_draft["preview"]
+    assert "sk-" not in (with_send["preview"] or "")
+    assert "ProviderError" not in (with_send["preview"] or "")
+
+
+def test_inbox_counts_respect_search_filter(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    _create(client, token, name="Alpha Open", enquiry="alpha open").json()
+    needs = _create(client, token, name="Alpha Needs").json()
+    _generate(client, token, needs["id"])
+    _create(client, token, name="Beta Needs").json()
+    beta = _create(client, token, name="Beta Other").json()
+    _generate(client, token, beta["id"])
+
+    filtered = _inbox(client, token, q="Alpha").json()
+    assert filtered["total"] == 2
+    assert sum(filtered["state_counts"].values()) == filtered["total"]
+    assert filtered["state_counts"]["OPEN"] == 1
+    assert filtered["state_counts"]["NEEDS_APPROVAL"] == 1
+    assert filtered["needs_approval_count"] == 1
+    assert all("Alpha" in item["name"] for item in filtered["items"])
+
+
+def test_inbox_pagination_after_derived_filtering(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    for index in range(4):
+        lead = _create(client, token, name=f"Needs Page {index}").json()
+        _generate(client, token, lead["id"])
+    _create(client, token, name="Open Skip", enquiry="not needs").json()
+
+    page = _inbox(client, token, needs_approval="true", limit=2, offset=0).json()
+    assert page["limit"] == 2
+    assert page["offset"] == 0
+    assert page["total"] >= 4
+    assert len(page["items"]) == 2
+    assert all(item["needs_approval"] is True for item in page["items"])
+    assert page["needs_approval_count"] == page["total"]
+    assert page["state_counts"]["NEEDS_APPROVAL"] == page["total"]
+    assert page["state_counts"]["OPEN"] == 0
+
+    page_two = _inbox(client, token, needs_approval="true", limit=2, offset=2).json()
+    assert len(page_two["items"]) >= 2
+    assert all(item["needs_approval"] is True for item in page_two["items"])
+    first_ids = {item["lead_id"] for item in page["items"]}
+    second_ids = {item["lead_id"] for item in page_two["items"]}
+    assert first_ids.isdisjoint(second_ids)
+
+
+def test_inbox_timeline_soft_cap_keeps_newest_events(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.services.inbox_service.INBOX_TIMELINE_MAX_ITEMS", 3)
+    created = _auth(client)
+    token = created["access_token"]
+    org_id = created["organization"]["id"]
+    lead = _create(client, token, name="Cap Lead", enquiry="cap").json()
+    service = ActivityService(db)
+    base = datetime(2031, 1, 1, 12, 0, tzinfo=UTC)
+    for index in range(5):
+        service.record(
+            organization_id=org_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            title="Lead status changed",
+            summary=f"cap-{index}",
+            entity_type=ActivityEntityType.LEAD,
+            entity_id=lead["id"],
+            lead_id=lead["id"],
+            dedupe_key=f"inbox-cap:{lead['id']}:{index}",
+            occurred_at=base + timedelta(minutes=index),
+        )
+    db.commit()
+
+    detail = _detail(client, token, lead["id"]).json()
+    summaries = [item["summary"] for item in detail["items"]]
+    assert summaries == ["cap-2", "cap-3", "cap-4"]
+    assert all(
+        left["occurred_at"] <= right["occurred_at"]
+        for left, right in zip(detail["items"], detail["items"][1:], strict=False)
+    )

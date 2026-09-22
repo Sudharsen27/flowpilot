@@ -240,6 +240,23 @@ class LeadFollowUpRepository:
                 latest[row.lead_id] = row
         return latest
 
+    def pending_lead_ids(
+        self, organization_id: str, lead_ids: list[str]
+    ) -> set[str]:
+        """Return lead ids that have at least one PENDING follow-up (org-scoped)."""
+        if not lead_ids:
+            return set()
+        rows = self.session.scalars(
+            select(LeadFollowUp.lead_id)
+            .where(
+                LeadFollowUp.organization_id == organization_id,
+                LeadFollowUp.lead_id.in_(lead_ids),
+                LeadFollowUp.status == LeadFollowUpStatus.PENDING,
+            )
+            .distinct()
+        )
+        return set(rows)
+
     def get_by_ids(
         self, organization_id: str, follow_up_ids: list[str]
     ) -> dict[str, LeadFollowUp]:
