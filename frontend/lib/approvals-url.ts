@@ -57,3 +57,22 @@ export function approvalsUrlEquals(
     a.approvalId === b.approvalId
   );
 }
+
+/**
+ * Build an Approval Center href using the existing URL contract.
+ * `approvalId` is the draft_id used by ApprovalsWorkspace selection.
+ * When omitted, opens the pending Approvals queue (no invented selection).
+ */
+export function buildApprovalsHref(options?: {
+  approvalId?: string | null;
+  status?: ApprovalQueueStatus;
+}): string {
+  const approvalId = options?.approvalId?.trim() || null;
+  const query = serializeApprovalsSearchParams({
+    q: "",
+    status: options?.status ?? "pending",
+    offset: 0,
+    approvalId,
+  });
+  return query ? `/approvals?${query}` : "/approvals";
+}

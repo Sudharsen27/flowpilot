@@ -1,8 +1,10 @@
-"use client";
-
+import Link from "next/link";
 import { CheckCircle2, CircleAlert, ShieldAlert, XCircle } from "lucide-react";
 
 import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
+import { buttonVariants } from "@/components/ui/button";
+import { buildApprovalsHref } from "@/lib/approvals-url";
+import { cn } from "@/lib/utils";
 import type { OrchestrationOutcome, OrchestrationResult } from "@/types/api";
 
 const OUTCOME_COPY: Record<
@@ -63,6 +65,27 @@ function stepStatusLabel(result: OrchestrationResult["step_results"][number]) {
   return "Failed";
 }
 
+function stoppedAtLabel(result: OrchestrationResult): string | null {
+  if (!result.stopped_at_step_id) return null;
+  const step = result.step_results.find(
+    (item) => item.step_id === result.stopped_at_step_id,
+  );
+  if (step) return formatToolName(step.tool_name);
+  return result.stopped_at_step_id;
+}
+
+/**
+ * Resolve Approval Center href from orchestration payload only.
+ * Never invents a draft/approval id. Specific selection requires an explicit
+ * server-provided draft id (not available on current OrchestrationResult).
+ */
+export function approvalHandoffHref(
+  result: Pick<OrchestrationResult, "approval_required">,
+): string | null {
+  if (!result.approval_required) return null;
+  return buildApprovalsHref();
+}
+
 type AgentWorkspaceResultProps = {
   result: OrchestrationResult;
 };
@@ -80,6 +103,8 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
               result.outcome === "PLAN_VALIDATION_FAILED"
             ? CircleAlert
             : XCircle;
+  const stoppedAt = stoppedAtLabel(result);
+  const approvalsHref = approvalHandoffHref(result);
 
   return (
     <section
@@ -119,7 +144,12 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
             {result.completed_step_count} / {result.total_step_count} completed
           </dd>
         </div>
-        {result.execution_status ? (
+        {result.approval_required ? (
+          <div>
+            <dt className="text-muted-foreground text-xs font-medium">Status</dt>
+            <dd className="mt-1 font-medium">Approval required</dd>
+          </div>
+        ) : result.execution_status ? (
           <div>
             <dt className="text-muted-foreground text-xs font-medium">
               Execution status
@@ -127,12 +157,12 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
             <dd className="mt-1 font-medium">{result.execution_status}</dd>
           </div>
         ) : null}
-        {result.stopped_at_step_id ? (
+        {stoppedAt ? (
           <div>
             <dt className="text-muted-foreground text-xs font-medium">
               Stopped at
             </dt>
-            <dd className="mt-1 font-medium">{result.stopped_at_step_id}</dd>
+            <dd className="mt-1 font-medium capitalize">{stoppedAt}</dd>
           </div>
         ) : null}
       </dl>
@@ -143,15 +173,21 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
         </p>
       ) : null}
 
-      {result.approval_required ? (
-        <p
-          className="border-warning/30 bg-warning/10 text-warning-text mt-4 rounded-md border px-3 py-2 text-sm"
+      {approvalsHref ? (
+        <div
+          className="border-warning/30 bg-warning/10 mt-4 rounded-md border px-3 py-3"
           role="status"
         >
-          Human approval is required before any protected action can continue.
-          Use the Approvals workspace when that workflow is available — this
-          screen does not approve automatically.
-        </p>
+          <Link
+            href={approvalsHref}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "border-warning/40 bg-background text-foreground hover:bg-background/90",
+            )}
+          >
+            Review in Approvals
+          </Link>
+        </div>
       ) : null}
 
       {result.step_results.length > 0 ? (

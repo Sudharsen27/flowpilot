@@ -140,6 +140,9 @@ describe("Agent Workspace page", () => {
     expect(screen.getByText("search leads")).toBeVisible();
     expect(screen.getByText("get lead")).toBeVisible();
     expect(screen.getByText("exec-1")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "Review in Approvals" }),
+    ).toBeNull();
     expect(orchestrateAgentMock).toHaveBeenCalledWith("agent-real-1", {
       instruction: "Find new website leads from today and qualify them.",
     });
@@ -210,14 +213,24 @@ describe("Agent Workspace page", () => {
     expect(
       screen.getByText(/No approval was performed automatically/i),
     ).toBeVisible();
+    expect(screen.getAllByText("draft note").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Approval required").length).toBeGreaterThan(0);
+    const reviewLink = screen.getByRole("link", {
+      name: "Review in Approvals",
+    });
+    expect(reviewLink).toHaveAttribute("href", "/approvals");
     expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^send$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^approve$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^send$/i })).toBeNull();
   });
 
-  it("shows tool denied state", async () => {
+  it("shows tool denied state without approval handoff", async () => {
     const user = userEvent.setup();
     orchestrateAgentMock.mockResolvedValue(
       successResult({
         outcome: "TOOL_DENIED",
+        approval_required: false,
         execution_status: "FAILED",
         completed_step_count: 0,
         total_step_count: 1,
@@ -237,13 +250,17 @@ describe("Agent Workspace page", () => {
       await screen.findByRole("heading", { name: "Tool denied by policy" }),
     ).toBeVisible();
     expect(screen.getByText("Tool 'echo' is denied by policy")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "Review in Approvals" }),
+    ).toBeNull();
   });
 
-  it("shows tool failed state", async () => {
+  it("shows tool failed state without approval handoff", async () => {
     const user = userEvent.setup();
     orchestrateAgentMock.mockResolvedValue(
       successResult({
         outcome: "TOOL_FAILED",
+        approval_required: false,
         execution_status: "FAILED",
         completed_step_count: 0,
         total_step_count: 1,
@@ -263,13 +280,17 @@ describe("Agent Workspace page", () => {
       await screen.findByRole("heading", { name: "A tool step failed" }),
     ).toBeVisible();
     expect(screen.getByText("boom")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "Review in Approvals" }),
+    ).toBeNull();
   });
 
-  it("shows planner failure state", async () => {
+  it("shows planner failure state without approval handoff", async () => {
     const user = userEvent.setup();
     orchestrateAgentMock.mockResolvedValue(
       successResult({
         outcome: "PLANNING_FAILED",
+        approval_required: false,
         execution_status: "FAILED",
         completed_step_count: 0,
         total_step_count: 0,
@@ -289,6 +310,9 @@ describe("Agent Workspace page", () => {
       await screen.findByRole("heading", { name: "Agent planning failed" }),
     ).toBeVisible();
     expect(screen.getByText("AI provider request failed")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "Review in Approvals" }),
+    ).toBeNull();
   });
 
   it("shows network error and allows another submission", async () => {
