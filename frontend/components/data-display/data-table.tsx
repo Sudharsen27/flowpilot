@@ -52,61 +52,77 @@ export function DataTable<T>({
       )}
       aria-busy={loading || undefined}
     >
-      <table className="hidden w-full border-collapse text-left text-sm md:table">
-        <thead className="bg-surface-subtle text-muted-foreground">
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                scope="col"
-                className={cn(
-                  "px-4 py-3 text-xs font-medium",
-                  column.className,
-                )}
-              >
-                {column.header}
-              </th>
-            ))}
-            {rowActions ? (
-              <th scope="col" className="w-12 px-4 py-3">
-                <span className="sr-only">Actions</span>
-              </th>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody className="divide-border divide-y">
-          {loading
-            ? Array.from({ length: 3 }, (_, rowIndex) => (
-                <tr key={`loading-${rowIndex}`}>
-                  {columns.map((column) => (
-                    <td key={column.key} className="px-4 py-4">
-                      <Skeleton className="h-4 w-4/5" />
-                    </td>
-                  ))}
-                  {rowActions ? (
-                    <td className="px-4 py-4">
-                      <Skeleton className="size-7" />
-                    </td>
-                  ) : null}
-                </tr>
-              ))
-            : rows.map((row) => (
-                <tr key={getRowKey(row)} className="hover:bg-surface-subtle/70">
-                  {columns.map((column) => (
-                    <td
-                      key={column.key}
-                      className={cn("px-4 py-4 align-middle", column.className)}
-                    >
-                      {column.cell(row)}
-                    </td>
-                  ))}
-                  {rowActions ? (
-                    <td className="px-4 py-4 text-right">{rowActions(row)}</td>
-                  ) : null}
-                </tr>
+      <div className="overflow-x-auto">
+        <table className="hidden w-full min-w-[56rem] border-collapse text-left text-sm md:table">
+          <thead className="bg-surface-subtle text-muted-foreground">
+            <tr>
+              {columns.map((column) => (
+                <th
+                  key={column.key}
+                  scope="col"
+                  className={cn(
+                    "px-4 py-3 text-xs font-medium",
+                    column.className,
+                  )}
+                >
+                  {column.header}
+                </th>
               ))}
-        </tbody>
-      </table>
+              {rowActions ? (
+                <th
+                  scope="col"
+                  className="sticky right-0 bg-surface-subtle w-14 px-3 py-3 text-right"
+                >
+                  <span className="sr-only">Actions</span>
+                </th>
+              ) : null}
+            </tr>
+          </thead>
+          <tbody className="divide-border divide-y">
+            {loading
+              ? Array.from({ length: 3 }, (_, rowIndex) => (
+                  <tr key={`loading-${rowIndex}`}>
+                    {columns.map((column) => (
+                      <td
+                        key={column.key}
+                        className={cn("px-4 py-4", column.className)}
+                      >
+                        <Skeleton className="h-4 w-4/5" />
+                      </td>
+                    ))}
+                    {rowActions ? (
+                      <td className="sticky right-0 bg-card px-3 py-4 text-right">
+                        <Skeleton className="ml-auto size-7" />
+                      </td>
+                    ) : null}
+                  </tr>
+                ))
+              : rows.map((row) => (
+                  <tr
+                    key={getRowKey(row)}
+                    className="hover:bg-surface-subtle/70 group"
+                  >
+                    {columns.map((column) => (
+                      <td
+                        key={column.key}
+                        className={cn(
+                          "px-4 py-4 align-middle",
+                          column.className,
+                        )}
+                      >
+                        {column.cell(row)}
+                      </td>
+                    ))}
+                    {rowActions ? (
+                      <td className="bg-card sticky right-0 px-3 py-4 text-right whitespace-nowrap group-hover:bg-surface-subtle/70">
+                        {rowActions(row)}
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="md:hidden">
         {loading ? (

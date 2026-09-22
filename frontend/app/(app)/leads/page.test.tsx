@@ -1,5 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import LeadsPage from "@/app/(app)/leads/page";
@@ -27,6 +27,19 @@ import {
 } from "@/lib/api/leads";
 import { getSalesRun, listLeadSalesRuns } from "@/lib/api/sales-runs";
 import type { Lead, LeadEmailSendResult, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
+
+async function chooseLeadAction(
+  user: UserEvent,
+  action: string | RegExp,
+  leadName = "Ada Prospect",
+) {
+  await user.click(
+    screen.getAllByRole("button", {
+      name: `Open actions for ${leadName}`,
+    })[0]!,
+  );
+  await user.click(await screen.findByRole("menuitem", { name: action }));
+}
 
 vi.mock("@/lib/api/leads", () => ({
   getLeads: vi.fn(),
@@ -390,7 +403,7 @@ describe("Leads page", () => {
     getLeadsMock.mockResolvedValue(listResponse([lead]));
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Sales Agent history" })[0]!);
+    await chooseLeadAction(user, "Sales Agent history");
     expect(
       await screen.findByRole("heading", { name: "Sales Agent history" }),
     ).toBeVisible();
@@ -565,7 +578,7 @@ describe("Leads page", () => {
     updateLeadMock.mockResolvedValue({ ...lead, status: "CONTACTED" });
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    await chooseLeadAction(user, "Edit");
     expect(screen.getByRole("heading", { name: "Edit lead" })).toBeVisible();
     await user.selectOptions(
       screen.getByRole("combobox", { name: /^Status/ }),
@@ -635,7 +648,7 @@ describe("Leads page", () => {
     });
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Analyze with AI" })[0]);
+    await chooseLeadAction(user, "Analyze with AI");
     expect(
       screen.getByText(/does not change the lead's CRM status/i),
     ).toBeVisible();
@@ -667,7 +680,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Analyze with AI" })[0]);
+    await chooseLeadAction(user, "Analyze with AI");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "Need a demo");
@@ -713,7 +726,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Analyze with AI" })[0]);
+    await chooseLeadAction(user, "Analyze with AI");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "Need a demo");
@@ -735,7 +748,7 @@ describe("Leads page", () => {
     generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     expect(screen.getAllByText(/Nothing has been sent/).length).toBeGreaterThan(
       0,
     );
@@ -768,7 +781,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "Need a demo");
@@ -806,7 +819,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "Need a demo");
@@ -828,7 +841,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "Need a demo");
@@ -863,7 +876,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -904,7 +917,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -936,7 +949,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -969,7 +982,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Review draft" })[0]);
+    await chooseLeadAction(user, "Review draft");
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "You do not have permission to review this draft.",
     );
@@ -995,7 +1008,7 @@ describe("Leads page", () => {
     );
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Review draft" })[0]);
+    await chooseLeadAction(user, "Review draft");
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "This draft could not be found.",
     );
@@ -1037,7 +1050,7 @@ describe("Leads page", () => {
     generateLeadResponseDraftMock.mockResolvedValue(approvedDraft());
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -1051,7 +1064,7 @@ describe("Leads page", () => {
     generateLeadResponseDraftMock.mockResolvedValue(completedDraft());
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -1145,7 +1158,7 @@ describe("Leads page", () => {
     generateLeadResponseDraftMock.mockResolvedValue(approvedDraft());
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Draft response" })[0]);
+    await chooseLeadAction(user, "Draft response");
     const enquiry = screen.getByRole("textbox", { name: /^Customer enquiry/ });
     await user.clear(enquiry);
     await user.type(enquiry, "We want a demo next week");
@@ -1159,7 +1172,7 @@ describe("Leads page", () => {
     getLeadsMock.mockResolvedValue(listResponse([lead]));
     render(<LeadsPage />);
     await screen.findByRole("table");
-    await user.click(screen.getAllByRole("button", { name: "Follow-ups" })[0]);
+    await chooseLeadAction(user, "Follow-ups");
     expect(await screen.findByText("No follow-ups yet.")).toBeVisible();
     expect(getLeadFollowUpsMock).toHaveBeenCalledWith("lead-1");
   });
