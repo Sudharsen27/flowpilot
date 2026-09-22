@@ -15,6 +15,7 @@ from app.models.user import User
 from app.repositories.membership_repository import MembershipRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.user_repository import UserRepository
+from app.services.agent_orchestration_service import AgentOrchestrationService
 from app.tools import build_default_tool_registry
 from app.tools.registry import ToolRegistry
 
@@ -115,3 +116,11 @@ def get_email_provider() -> EmailProvider:
 
 def get_tool_registry(db: Session = Depends(get_db)) -> ToolRegistry:
     return build_default_tool_registry(db)
+
+
+def get_agent_orchestration_service(
+    db: Session = Depends(get_db),
+    provider: AIProvider = Depends(get_ai_provider),
+    registry: ToolRegistry = Depends(get_tool_registry),
+) -> AgentOrchestrationService:
+    return AgentOrchestrationService(db, provider, registry=registry)

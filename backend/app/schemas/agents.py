@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.ai.provider import TokenUsage
 from app.models.agent import AgentStatus, AgentType
@@ -42,6 +42,22 @@ class AgentPublic(BaseModel):
 
 class AgentExecutionRequest(BaseModel):
     input: str = Field(min_length=1, max_length=8000)
+
+
+class AgentOrchestrateRequest(BaseModel):
+    """Natural-language instruction only. Auth/tenant fields are server-side."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: str = Field(min_length=1, max_length=8000)
+
+    @field_validator("instruction")
+    @classmethod
+    def strip_instruction(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Instruction is required")
+        return stripped
 
 
 class AgentExecutionCreated(BaseModel):

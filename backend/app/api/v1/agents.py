@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.provider import AIProvider
 from app.api.deps import (
+    get_agent_orchestration_service,
     get_ai_provider,
     get_current_membership,
     get_current_organization,
@@ -27,11 +28,16 @@ from app.schemas.agents import (
     AgentExecutionListResponse,
     AgentExecutionRequest,
     AgentExecutionResult,
+    AgentOrchestrateRequest,
     AgentPublic,
     AgentUpdate,
     ToolInvocationListResponse,
 )
 from app.services.agent_execution_service import AgentExecutionService
+from app.services.agent_orchestration_service import (
+    AgentOrchestrationService,
+    OrchestrationResult,
+)
 from app.services.agent_service import AgentService
 from app.tools.registry import ToolRegistry
 
@@ -161,6 +167,26 @@ def execute_agent(
         agent_id=agent_id,
         user_input=payload.input,
         initiated_by_user_id=membership.user_id,
+    )
+
+
+@router.post("/{agent_id}/orchestrate", response_model=OrchestrationResult)
+def orchestrate_agent(
+    agent_id: str,
+    payload: AgentOrchestrateRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+    orchestration: AgentOrchestrationService = Depends(get_agent_orchestration_service),
+) -> OrchestrationResult:
+    """Authenticated single-shot orchestration. Thin API over AgentOrchestrationService."""
+    # Tenant-scoped agent lookup before planning/execution.
+    AgentService(db).get_or_raise(organization.id, agent_id)
+    return orchestration.orchestrate(
+        organization_id=organization.id,
+        agent_id=agent_id,
+        initiated_by_user_id=membership.user_id,
+        user_input=payload.instruction,
     )
 
 
