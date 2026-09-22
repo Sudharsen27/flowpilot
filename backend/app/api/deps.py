@@ -21,6 +21,9 @@ from app.tools.registry import ToolRegistry
 _bearer = HTTPBearer(auto_error=False)
 
 
+# Tool registry is request-scoped so business tools share the same DB session.
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
@@ -110,5 +113,5 @@ def get_email_provider() -> EmailProvider:
     return ResendEmailProvider()
 
 
-def get_tool_registry() -> ToolRegistry:
-    return build_default_tool_registry()
+def get_tool_registry(db: Session = Depends(get_db)) -> ToolRegistry:
+    return build_default_tool_registry(db)

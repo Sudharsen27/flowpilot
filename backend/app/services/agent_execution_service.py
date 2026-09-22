@@ -52,6 +52,7 @@ from app.schemas.agents import (
 from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 from app.services.tool_execution_service import ToolExecutionService
+from app.tools import build_default_tool_registry
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
 from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLevel
@@ -95,7 +96,7 @@ class AgentExecutionService:
         self.agents = AgentRepository(session)
         self.executions = AgentExecutionRepository(session)
         self.invocations = ToolInvocationRepository(session)
-        self.registry = registry or ToolRegistry()
+        self.registry = registry or build_default_tool_registry(session)
         self.tool_executor = tool_executor or ToolExecutionService(
             session,
             self.registry,
@@ -443,6 +444,8 @@ class AgentExecutionService:
                 organization_id=organization_id,
                 agent_id=agent_id,
                 execution_id=execution.id,
+                user_id=execution.initiated_by_user_id,
+                correlation_id=execution.id,
             )
             for call in generated.tool_calls:
                 self._ensure_not_cancelled(execution)

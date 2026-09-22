@@ -13,7 +13,7 @@ from app.tools.base import Tool
 from app.tools.echo import EchoTool
 from app.tools.policy import StaticToolPolicy
 from app.tools.registry import ToolRegistry
-from app.tools.schema import PolicyDecision, ToolCall, ToolContext, ToolRiskLevel
+from app.tools.schema import PolicyDecision, ToolCall, ToolContext, ToolOutcome, ToolRiskLevel
 from tests.conftest import register_payload
 from tests.test_agent_runtime import _create_agent
 
@@ -75,6 +75,14 @@ def _running_execution(db: Session, client: object, **kwargs: str) -> tuple[str,
     return org_id, agent.id, execution.id
 
 
+def test_registry_has_and_list_names() -> None:
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    assert registry.has("echo") is True
+    assert registry.has("missing") is False
+    assert registry.list_names() == ["echo"]
+
+
 def test_registry_register_lookup_and_list() -> None:
     registry = ToolRegistry()
     tool = EchoTool()
@@ -108,6 +116,7 @@ def test_valid_echo_arguments_execute(db: Session, client: object) -> None:
     )
     assert result.success is True
     assert result.executed is True
+    assert result.outcome == ToolOutcome.SUCCESS
     assert result.output == {"message": "hello"}
     assert result.decision == PolicyDecision.ALLOW
     assert tool.executed is True
@@ -130,6 +139,7 @@ def test_missing_required_field_never_executes(db: Session, client: object) -> N
     )
     assert result.success is False
     assert result.executed is False
+    assert result.outcome == ToolOutcome.VALIDATION_FAILURE
     assert tool.executed is False
     assert "Invalid tool arguments" in (result.error or "")
 
@@ -213,6 +223,7 @@ def test_approval_required_tool_not_executed(db: Session, client: object) -> Non
         _context(org_id, agent_id, execution_id),
     )
     assert result.decision == PolicyDecision.REQUIRE_APPROVAL
+    assert result.outcome == ToolOutcome.APPROVAL_REQUIRED
     assert result.executed is False
     assert db.query(ToolInvocation).one().status == "AWAITING_APPROVAL"
 

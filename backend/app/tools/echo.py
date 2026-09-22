@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.tools.base import Tool
-from app.tools.schema import ToolContext, ToolRiskLevel
+from app.tools.schema import ToolContext, ToolRiskLevel, ToolSideEffectLevel
 
 
 class EchoInput(BaseModel):
@@ -20,6 +20,8 @@ class EchoTool(Tool):
     name = "echo"
     description = "Return the provided message unchanged. Test and runtime-foundation use only."
     risk_level = ToolRiskLevel.LOW
+    side_effect_level = ToolSideEffectLevel.READ
+    requires_human_approval = False
     input_model = EchoInput
     output_model = EchoOutput
 

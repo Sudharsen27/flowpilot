@@ -12,6 +12,15 @@ class ToolRiskLevel(StrEnum):
     HIGH = "HIGH"
 
 
+class ToolSideEffectLevel(StrEnum):
+    """Future policy hook. Phase 6D.2 registers READ tools only."""
+
+    READ = "READ"
+    WRITE = "WRITE"
+    SENSITIVE_WRITE = "SENSITIVE_WRITE"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+
+
 class PolicyDecision(StrEnum):
     ALLOW = "ALLOW"
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
@@ -25,12 +34,24 @@ class ToolInvocationStatus(StrEnum):
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
 
 
+class ToolOutcome(StrEnum):
+    """Orchestrator-facing result classification."""
+
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+    VALIDATION_FAILURE = "VALIDATION_FAILURE"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+
+
 class ToolDefinition(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1, max_length=2000)
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
     risk_level: ToolRiskLevel
+    side_effect_level: ToolSideEffectLevel = ToolSideEffectLevel.READ
+    requires_human_approval: bool = False
 
 
 class ToolCall(BaseModel):
@@ -41,19 +62,26 @@ class ToolCall(BaseModel):
 
 
 class ToolContext(BaseModel):
+    """Server-built execution context. Never trust LLM/tool args for tenant identity."""
+
     model_config = ConfigDict(frozen=True)
 
     organization_id: str
     agent_id: str
     execution_id: str
+    user_id: str | None = None
+    role: str | None = None
+    correlation_id: str | None = None
 
 
 class ToolResult(BaseModel):
     call_id: str
     tool_name: str
     success: bool
+    outcome: ToolOutcome = ToolOutcome.FAILURE
     decision: PolicyDecision | None = None
     risk_level: ToolRiskLevel | None = None
+    side_effect_level: ToolSideEffectLevel | None = None
     output: dict[str, Any] | None = None
     error: str | None = None
     executed: bool = False

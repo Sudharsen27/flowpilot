@@ -4,6 +4,8 @@ from app.tools.schema import ToolDefinition
 
 
 class ToolRegistry:
+    """Allowlist of approved tools. No dynamic import or arbitrary execution."""
+
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
 
@@ -21,5 +23,11 @@ class ToolRegistry:
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 
+    def has(self, name: str) -> bool:
+        return name in self._tools
+
     def list_available(self) -> list[ToolDefinition]:
         return [tool.definition() for tool in self._tools.values()]
+
+    def list_names(self) -> list[str]:
+        return sorted(self._tools.keys())

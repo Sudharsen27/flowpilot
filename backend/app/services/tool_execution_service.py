@@ -5,14 +5,20 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.tool_invocation import ToolInvocation, ToolInvocationRecordStatus
 from app.repositories.agent_execution_repository import AgentExecutionRepository
 from app.repositories.tool_invocation_repository import ToolInvocationRepository
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
 from app.tools.registry import ToolRegistry
-from app.tools.schema import PolicyDecision, ToolCall, ToolContext, ToolResult
+from app.tools.schema import (
+    PolicyDecision,
+    ToolCall,
+    ToolContext,
+    ToolOutcome,
+    ToolResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +59,7 @@ class ToolExecutionService:
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.VALIDATION_FAILURE,
                 executed=False,
                 error=call.parse_error,
                 failure_category=ExecutionFailureCategory.VALIDATION_ERROR,
@@ -73,6 +80,7 @@ class ToolExecutionService:
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.VALIDATION_FAILURE,
                 executed=False,
                 decision=PolicyDecision.DENY,
                 error=f"Unknown tool '{call.name}'",
@@ -95,8 +103,10 @@ class ToolExecutionService:
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.VALIDATION_FAILURE,
                 executed=False,
                 risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
                 decision=PolicyDecision.DENY,
                 error="Invalid tool arguments",
                 failure_category=ExecutionFailureCategory.VALIDATION_ERROR,
@@ -117,8 +127,10 @@ class ToolExecutionService:
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.PERMISSION_DENIED,
                 executed=False,
                 risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
                 decision=decision,
                 error=f"Tool '{tool.name}' is denied by policy",
                 failure_category=ExecutionFailureCategory.POLICY_ERROR,
@@ -138,8 +150,10 @@ class ToolExecutionService:
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.APPROVAL_REQUIRED,
                 executed=False,
                 risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
                 decision=decision,
                 error=f"Tool '{tool.name}' requires human approval",
                 failure_category=ExecutionFailureCategory.POLICY_ERROR,
@@ -156,13 +170,81 @@ class ToolExecutionService:
 
         try:
             output_model = tool.execute(parsed, context)
+        except ForbiddenError as exc:
+            result = ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                success=False,
+                outcome=ToolOutcome.PERMISSION_DENIED,
+                executed=False,
+                risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
+                decision=decision,
+                error=exc.detail,
+                failure_category=ExecutionFailureCategory.POLICY_ERROR,
+            )
+            self._record(
+                context,
+                call,
+                result,
+                argument_keys,
+                started,
+                ToolInvocationRecordStatus.REJECTED,
+            )
+            return result
+        except NotFoundError as exc:
+            result = ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                success=False,
+                outcome=ToolOutcome.FAILURE,
+                executed=True,
+                risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
+                decision=decision,
+                error=exc.detail,
+                failure_category=ExecutionFailureCategory.TOOL_ERROR,
+            )
+            self._record(
+                context,
+                call,
+                result,
+                argument_keys,
+                started,
+                ToolInvocationRecordStatus.FAILED,
+            )
+            return result
+        except ValidationError as exc:
+            result = ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                success=False,
+                outcome=ToolOutcome.VALIDATION_FAILURE,
+                executed=False,
+                risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
+                decision=decision,
+                error=exc.detail,
+                failure_category=ExecutionFailureCategory.VALIDATION_ERROR,
+            )
+            self._record(
+                context,
+                call,
+                result,
+                argument_keys,
+                started,
+                ToolInvocationRecordStatus.REJECTED,
+            )
+            return result
         except ToolExecutionError as exc:
             result = ToolResult(
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.FAILURE,
                 executed=True,
                 risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
                 decision=decision,
                 error=exc.detail,
                 failure_category=ExecutionFailureCategory.TOOL_ERROR,
@@ -182,8 +264,10 @@ class ToolExecutionService:
                 call_id=call.id,
                 tool_name=call.name,
                 success=False,
+                outcome=ToolOutcome.FAILURE,
                 executed=True,
                 risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
                 decision=decision,
                 error="Tool execution failed",
                 failure_category=ExecutionFailureCategory.TOOL_ERROR,
@@ -203,8 +287,10 @@ class ToolExecutionService:
             call_id=call.id,
             tool_name=call.name,
             success=True,
+            outcome=ToolOutcome.SUCCESS,
             executed=True,
             risk_level=tool.risk_level,
+            side_effect_level=tool.side_effect_level,
             decision=decision,
             output=output,
         )
