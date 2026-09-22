@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     email_from_name: str | None = None
     email_request_timeout_seconds: float = 30
     agent_max_tool_iterations: int = 3
+    # Phase 6D.4: conservative bounds for untrusted AgentPlan artifacts.
+    agent_plan_max_steps: int = Field(default=5, ge=1, le=20)
+    agent_plan_max_argument_bytes: int = Field(default=4096, ge=256, le=65536)
     # RUNNING rows older than this (and the provider-loop floor) may be recovered
     # as FAILED. Must stay large enough that a legitimate in-process run is not
     # treated as abandoned. There is no per-execution heartbeat.
