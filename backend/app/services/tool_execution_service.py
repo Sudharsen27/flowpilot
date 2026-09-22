@@ -10,7 +10,7 @@ from app.models.agent_execution import ExecutionFailureCategory
 from app.models.tool_invocation import ToolInvocation, ToolInvocationRecordStatus
 from app.repositories.agent_execution_repository import AgentExecutionRepository
 from app.repositories.tool_invocation_repository import ToolInvocationRepository
-from app.tools.policy import DefaultToolPolicy, ToolPolicy
+from app.tools.policy import DefaultToolPolicy, ToolPolicy, ToolPolicyRequest
 from app.tools.registry import ToolRegistry
 from app.tools.schema import (
     PolicyDecision,
@@ -121,7 +121,41 @@ class ToolExecutionService:
             )
             return result
 
-        decision = self.policy.decide(tool.name, tool.risk_level)
+        # Fail closed before policy when auth context is incomplete.
+        if not context.organization_id or not context.user_id or not context.role:
+            result = ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                success=False,
+                outcome=ToolOutcome.PERMISSION_DENIED,
+                executed=False,
+                risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
+                decision=PolicyDecision.DENY,
+                error="Authenticated membership is required to execute tools",
+                failure_category=ExecutionFailureCategory.POLICY_ERROR,
+            )
+            self._record(
+                context,
+                call,
+                result,
+                argument_keys,
+                started,
+                ToolInvocationRecordStatus.REJECTED,
+            )
+            return result
+
+        decision = self.policy.decide(
+            ToolPolicyRequest(
+                tool_name=tool.name,
+                risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
+                requires_human_approval=tool.requires_human_approval,
+                organization_id=context.organization_id,
+                user_id=context.user_id,
+                role=context.role,
+            )
+        )
         if decision == PolicyDecision.DENY:
             result = ToolResult(
                 call_id=call.id,

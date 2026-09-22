@@ -34,6 +34,7 @@ from app.repositories.agent_execution_repository import (
     AgentExecutionRepository,
 )
 from app.repositories.agent_repository import AgentRepository
+from app.repositories.membership_repository import MembershipRepository
 from app.repositories.tool_invocation_repository import (
     INVOCATION_LIST_DEFAULT_LIMIT,
     INVOCATION_LIST_MAX_LIMIT,
@@ -96,6 +97,7 @@ class AgentExecutionService:
         self.agents = AgentRepository(session)
         self.executions = AgentExecutionRepository(session)
         self.invocations = ToolInvocationRepository(session)
+        self.memberships = MembershipRepository(session)
         self.registry = registry or build_default_tool_registry(session)
         self.tool_executor = tool_executor or ToolExecutionService(
             session,
@@ -370,6 +372,31 @@ class AgentExecutionService:
             return self._stale_timeout_seconds
         return settings.agent_execution_stale_timeout_effective_seconds()
 
+    def _tool_context(
+        self,
+        *,
+        organization_id: str,
+        agent_id: str,
+        execution: AgentExecution,
+    ) -> ToolContext:
+        """Build ToolContext from the execution row + org membership (fail-closed if absent)."""
+        user_id = execution.initiated_by_user_id
+        role: str | None = None
+        if user_id:
+            membership = self.memberships.get_for_user_in_organization(
+                organization_id, user_id
+            )
+            if membership is not None:
+                role = membership.role
+        return ToolContext(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            execution_id=execution.id,
+            user_id=user_id,
+            role=role,
+            correlation_id=execution.id,
+        )
+
     def _ensure_not_cancelled(self, execution: AgentExecution) -> None:
         status = self.executions.probe_status(
             execution.organization_id,
@@ -440,12 +467,10 @@ class AgentExecutionService:
                     tool_calls=generated.tool_calls,
                 )
             )
-            context = ToolContext(
+            context = self._tool_context(
                 organization_id=organization_id,
                 agent_id=agent_id,
-                execution_id=execution.id,
-                user_id=execution.initiated_by_user_id,
-                correlation_id=execution.id,
+                execution=execution,
             )
             for call in generated.tool_calls:
                 self._ensure_not_cancelled(execution)

@@ -46,25 +46,39 @@ class MediumRiskTool(EchoTool):
     risk_level = ToolRiskLevel.MEDIUM
 
 
-def _context(organization_id: str, agent_id: str, execution_id: str) -> ToolContext:
+def _context(
+    organization_id: str,
+    agent_id: str,
+    execution_id: str,
+    *,
+    user_id: str | None = "user-test",
+    role: str | None = "OWNER",
+) -> ToolContext:
     return ToolContext(
         organization_id=organization_id,
         agent_id=agent_id,
         execution_id=execution_id,
+        user_id=user_id,
+        role=role,
+        correlation_id=execution_id,
     )
 
 
-def _running_execution(db: Session, client: object, **kwargs: str) -> tuple[str, str, str]:
+def _running_execution(
+    db: Session, client: object, **kwargs: str
+) -> tuple[str, str, str, str]:
     assert isinstance(client, TestClient)
     created = client.post(
         "/api/v1/auth/register",
         json=register_payload(**kwargs) if kwargs else register_payload(),
     ).json()
     org_id = created["organization"]["id"]
+    user_id = created["user"]["id"]
     agent = _create_agent(db, org_id)
     execution = AgentExecution(
         organization_id=org_id,
         agent_id=agent.id,
+        initiated_by_user_id=user_id,
         status=AgentExecutionStatus.RUNNING,
         input={"text": "hi"},
         started_at=datetime.now(UTC),
@@ -72,7 +86,7 @@ def _running_execution(db: Session, client: object, **kwargs: str) -> tuple[str,
     db.add(execution)
     db.commit()
     db.refresh(execution)
-    return org_id, agent.id, execution.id
+    return org_id, agent.id, execution.id, user_id
 
 
 def test_registry_has_and_list_names() -> None:
@@ -106,7 +120,7 @@ def test_registry_unknown_tool_rejected() -> None:
 
 
 def test_valid_echo_arguments_execute(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     tool = RecordingEchoTool()
     registry = ToolRegistry()
     registry.register(tool)
@@ -129,7 +143,7 @@ def test_valid_echo_arguments_execute(db: Session, client: object) -> None:
 
 
 def test_missing_required_field_never_executes(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     tool = RecordingEchoTool()
     registry = ToolRegistry()
     registry.register(tool)
@@ -145,7 +159,7 @@ def test_missing_required_field_never_executes(db: Session, client: object) -> N
 
 
 def test_wrong_type_never_executes(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     tool = RecordingEchoTool()
     registry = ToolRegistry()
     registry.register(tool)
@@ -158,7 +172,7 @@ def test_wrong_type_never_executes(db: Session, client: object) -> None:
 
 
 def test_unexpected_field_never_executes(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     tool = RecordingEchoTool()
     registry = ToolRegistry()
     registry.register(tool)
@@ -175,7 +189,7 @@ def test_unexpected_field_never_executes(db: Session, client: object) -> None:
 
 
 def test_unknown_tool_rejected(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     result = ToolExecutionService(db, ToolRegistry()).execute(
         ToolCall(id="call-1", name="crm_update", arguments={"message": "x"}),
         _context(org_id, agent_id, execution_id),
@@ -186,7 +200,7 @@ def test_unknown_tool_rejected(db: Session, client: object) -> None:
 
 
 def test_tool_failure_is_structured(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     registry = ToolRegistry()
     registry.register(FailingTool())
     result = ToolExecutionService(db, registry).execute(
@@ -199,7 +213,7 @@ def test_tool_failure_is_structured(db: Session, client: object) -> None:
 
 
 def test_denied_tool_not_executed(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     tool = RecordingEchoTool()
     registry = ToolRegistry()
     registry.register(tool)
@@ -215,7 +229,7 @@ def test_denied_tool_not_executed(db: Session, client: object) -> None:
 
 
 def test_approval_required_tool_not_executed(db: Session, client: object) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     registry = ToolRegistry()
     registry.register(MediumRiskTool())
     result = ToolExecutionService(db, registry).execute(
@@ -229,10 +243,10 @@ def test_approval_required_tool_not_executed(db: Session, client: object) -> Non
 
 
 def test_cross_tenant_tool_execution_rejected(db: Session, client: object) -> None:
-    org_a, agent_a, execution_a = _running_execution(
+    org_a, agent_a, execution_a, _ = _running_execution(
         db, client, email="a@example.com", organization_name="Alpha"
     )
-    org_b, _agent_b, _execution_b = _running_execution(
+    org_b, _agent_b, _execution_b, _ = _running_execution(
         db, client, email="b@example.com", organization_name="Beta"
     )
     registry = ToolRegistry()
@@ -247,7 +261,7 @@ def test_cross_tenant_tool_execution_rejected(db: Session, client: object) -> No
 def test_tenant_context_comes_from_execution_not_arguments(
     db: Session, client: object
 ) -> None:
-    org_id, agent_id, execution_id = _running_execution(db, client)
+    org_id, agent_id, execution_id, _user_id = _running_execution(db, client)
     tool = RecordingEchoTool()
     registry = ToolRegistry()
     registry.register(tool)

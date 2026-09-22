@@ -35,8 +35,8 @@ def _context(
     agent_id: str,
     execution_id: str,
     *,
-    user_id: str | None = None,
-    role: str | None = None,
+    user_id: str | None = "user-test",
+    role: str | None = "OWNER",
 ) -> ToolContext:
     return ToolContext(
         organization_id=organization_id,

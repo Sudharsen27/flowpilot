@@ -413,6 +413,7 @@ def test_runtime_max_tool_iterations_enforced(db: Session, client: TestClient) -
             organization_id=created["organization"]["id"],
             agent_id=agent.id,
             user_input="Loop",
+            initiated_by_user_id=created["user"]["id"],
         )
     execution = db.query(AgentExecution).one()
     assert execution.status == AgentExecutionStatus.FAILED
@@ -485,6 +486,7 @@ def test_tool_failure_fails_parent_and_finalizes_invocation(
             organization_id=created["organization"]["id"],
             agent_id=agent.id,
             user_input="Use fail_tool",
+            initiated_by_user_id=created["user"]["id"],
         )
     assert db.query(AgentExecution).count() == 1
     execution = db.query(AgentExecution).one()
@@ -1045,7 +1047,10 @@ def test_cancel_between_tool_iterations(db: Session, client: TestClient) -> None
     started = AgentExecutionService(
         db, FakeAIProvider(), registry=registry
     ).start_execution(
-        organization_id=org_id, agent_id=agent.id, user_input="Use echo"
+        organization_id=org_id,
+        agent_id=agent.id,
+        user_input="Use echo",
+        initiated_by_user_id=created["user"]["id"],
     )
     entered = threading.Event()
     release = threading.Event()
