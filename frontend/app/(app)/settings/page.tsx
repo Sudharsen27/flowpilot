@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowRight, BrainCircuit } from "lucide-react";
 
 import {
   DataTable,
@@ -99,95 +101,98 @@ export default function SettingsPage() {
         </div>
       ) : session ? (
         <>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card as="section">
-              <CardHeader>
-                <CardTitle>User profile</CardTitle>
-                <CardDescription>
-                  Identity associated with your current session.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <dl className="grid gap-5 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Full name
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium">
-                      {session.user.name}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Email
-                    </dt>
-                    <dd className="mt-1 text-sm break-all">
-                      {session.user.email}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Membership role
-                    </dt>
-                    <dd className="mt-1 text-sm">
-                      {roleLabels[session.membership.role]}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Organization
-                    </dt>
-                    <dd className="mt-1 text-sm">
-                      {session.organization.name}
-                    </dd>
-                  </div>
-                </dl>
-              </CardContent>
-            </Card>
+          <section className="grid gap-5" aria-label="General settings">
+            <SectionHeader
+              title="General"
+              description="Identity and organization details for your current workspace."
+            />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card as="section">
+                <CardHeader>
+                  <CardTitle>User profile</CardTitle>
+                  <CardDescription>
+                    Identity associated with your current session.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid gap-5 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Full name
+                      </dt>
+                      <dd className="mt-1 text-sm font-medium">
+                        {session.user.name}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Email
+                      </dt>
+                      <dd className="mt-1 text-sm break-all">
+                        {session.user.email}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Membership role
+                      </dt>
+                      <dd className="mt-1 text-sm">
+                        {roleLabels[session.membership.role]}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Organization
+                      </dt>
+                      <dd className="mt-1 text-sm">
+                        {session.organization.name}
+                      </dd>
+                    </div>
+                  </dl>
+                </CardContent>
+              </Card>
 
-            <Card as="section">
-              <CardHeader>
-                <CardTitle>Organization</CardTitle>
-                <CardDescription>
-                  Current workspace context for this session.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <dl className="grid gap-5">
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Organization name
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium">
-                      {session.organization.name}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Organization slug
-                    </dt>
-                    <dd className="mt-1 font-mono text-sm">
-                      {session.organization.slug}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground text-xs font-medium">
-                      Your role
-                    </dt>
-                    <dd className="mt-1 text-sm">
-                      {roleLabels[session.membership.role]}
-                    </dd>
-                  </div>
-                </dl>
-              </CardContent>
-            </Card>
-          </div>
+              <Card as="section">
+                <CardHeader>
+                  <CardTitle>Organization</CardTitle>
+                  <CardDescription>
+                    Current workspace context for this session.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid gap-5">
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Organization name
+                      </dt>
+                      <dd className="mt-1 text-sm font-medium">
+                        {session.organization.name}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Organization slug
+                      </dt>
+                      <dd className="mt-1 font-mono text-sm">
+                        {session.organization.slug}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground text-xs font-medium">
+                        Your role
+                      </dt>
+                      <dd className="mt-1 text-sm">
+                        {roleLabels[session.membership.role]}
+                      </dd>
+                    </div>
+                  </dl>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
 
           <section className="grid gap-5">
-            <SectionHeader
-              title="Members"
-              description="People who currently belong to this organization."
-            />
+            <SectionHeader title="Team" description="People who currently belong to this organization." />
             {membersError ? (
               <StatePanel
                 kind="error"
@@ -209,13 +214,59 @@ export default function SettingsPage() {
 
           <section className="grid gap-5">
             <SectionHeader
-              title="Website enquiries"
-              description="Hosted form for website visitors. Email is not sent until a person approves a response."
+              title="Automation"
+              description="Configure the automated experiences that work across your organization."
             />
-            <WebsiteEnquirySettings
-              slug={session.organization.slug}
-              role={session.membership.role}
-            />
+            <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+              <div className="grid gap-5">
+                <SectionHeader
+                  title="Website enquiries"
+                  description="Hosted form for website visitors. Email is not sent until a person approves a response."
+                />
+                <WebsiteEnquirySettings
+                  slug={session.organization.slug}
+                  role={session.membership.role}
+                />
+              </div>
+              <Link
+                href="/settings/ai"
+                aria-label="AI & Automation settings"
+                className="group block rounded-lg outline-none focus-visible:ring-ring focus-visible:ring-2"
+              >
+                <Card
+                  as="article"
+                  variant="interactive"
+                  className="h-full transition-shadow group-hover:shadow-md"
+                >
+                  <CardHeader className="flex-row items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="bg-ai/10 text-ai-text flex size-10 shrink-0 items-center justify-center rounded-lg">
+                        <BrainCircuit className="size-5" aria-hidden="true" />
+                      </div>
+                      <div>
+                        <CardTitle>AI &amp; Automation</CardTitle>
+                        <CardDescription className="mt-1">
+                          Configure how FlowPilot uses AI across your organization&apos;s workflows.
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <ArrowRight
+                      className="text-muted-foreground mt-1 size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <p className="text-muted-foreground text-xs leading-5">
+                      Open AI providers, task configuration, model strategy, and future enterprise controls.
+                    </p>
+                    <span className="text-primary mt-4 inline-flex items-center text-sm font-medium">
+                      Open AI settings
+                      <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+                    </span>
+                  </CardContent>
+                </Card>
+              </Link>
+            </div>
           </section>
 
           <section className="grid gap-5">

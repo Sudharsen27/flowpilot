@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "@/app/(app)/settings/page";
+import AiSettingsPage from "@/app/(app)/settings/ai/page";
+import { isNavigationItemActive } from "@/lib/navigation";
 
 const {
   apiGet,
@@ -112,6 +114,31 @@ describe("identity-backed settings", () => {
     expect(
       await screen.findByRole("switch", { name: "Start Sales Agent automatically" }),
     ).toBeVisible();
+  });
+
+  it("provides the AI settings entry without removing existing settings areas", async () => {
+    apiGet.mockResolvedValue([]);
+
+    render(<SettingsPage />);
+
+    const aiSettingsLink = screen.getByRole("link", {
+      name: "AI & Automation settings",
+    });
+    expect(aiSettingsLink).toHaveAttribute("href", "/settings/ai");
+    expect(screen.getByRole("heading", { name: "Website enquiries" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Account" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
+  });
+
+  it("keeps the Settings navigation active for the AI settings route", () => {
+    expect(isNavigationItemActive("/settings/ai", "/settings")).toBe(true);
+  });
+
+  it("keeps the AI settings page rendering independently", () => {
+    render(<AiSettingsPage />);
+
+    expect(screen.getByRole("heading", { name: "AI & Automation" })).toBeVisible();
+    expect(screen.getByText("AI Providers")).toBeVisible();
   });
 
   it("shows a member loading state while the request is pending", () => {
