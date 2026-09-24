@@ -1,6 +1,6 @@
 "use client";
 
-import { Play } from "lucide-react";
+import { Lightbulb, Play, RotateCcw, X } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { AgentWorkspaceResult } from "@/components/agents/agent-workspace-result";
@@ -18,6 +18,13 @@ import { ApiError } from "@/lib/api/client";
 import type { AgentStatus, OrchestrationResult } from "@/types/api";
 
 export const INSTRUCTION_MAX_LENGTH = 8000;
+
+export const INSTRUCTION_EXAMPLES = [
+  "Find new website leads from today.",
+  "Show me the leads that need attention.",
+  "Find leads matching a company or status.",
+  "Show the recent follow-ups for a lead.",
+] as const;
 
 const unavailableCopy: Partial<Record<AgentStatus, string>> = {
   DRAFT: "Draft agents cannot run the workspace. Mark the agent ready first.",
@@ -64,12 +71,26 @@ export function AgentWorkspacePanel({
 }: AgentWorkspacePanelProps) {
   const [instruction, setInstruction] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const submitGuardRef = useRef(false);
   const canRun = agentStatus === "READY" || agentStatus === "ACTIVE";
   const unavailable = unavailableCopy[agentStatus];
   const trimmed = instruction.trim();
   const tooLong = instruction.length > INSTRUCTION_MAX_LENGTH;
   const controlsLocked = isRunning || !canRun;
+
+  function runAgain() {
+    if (controlsLocked || submitGuardRef.current || !trimmed || tooLong) return;
+    setInputError(null);
+    submitGuardRef.current = true;
+    onRun(trimmed);
+  }
+
+  function clearInstruction() {
+    if (controlsLocked) return;
+    setInstruction("");
+    setInputError(null);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -94,6 +115,12 @@ export function AgentWorkspacePanel({
       submitGuardRef.current = false;
     }
   }, [isRunning]);
+
+  useEffect(() => {
+    if (requestError) {
+      errorRef.current?.focus();
+    }
+  }, [requestError]);
 
   return (
     <div className="grid gap-6">
@@ -133,10 +160,52 @@ export function AgentWorkspacePanel({
                   className="min-h-32"
                 />
               </FormField>
+              <div className="grid gap-2" aria-label="Instruction examples">
+                <div className="flex items-center gap-2">
+                  <Lightbulb
+                    className="text-muted-foreground size-4"
+                    aria-hidden="true"
+                  />
+                  <p className="text-muted-foreground text-xs font-medium">
+                    Try an example
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {INSTRUCTION_EXAMPLES.map((example) => (
+                    <Button
+                      key={example}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={controlsLocked}
+                      onClick={() => {
+                        setInstruction(example);
+                        setInputError(null);
+                      }}
+                    >
+                      {example}
+                    </Button>
+                  ))}
+                </div>
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-muted-foreground text-xs">
-                  {instruction.length} / {INSTRUCTION_MAX_LENGTH}
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-muted-foreground text-xs" aria-live="polite">
+                    {instruction.length} / {INSTRUCTION_MAX_LENGTH}
+                  </p>
+                  {instruction ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={controlsLocked}
+                      onClick={clearInstruction}
+                    >
+                      <X aria-hidden="true" />
+                      Clear
+                    </Button>
+                  ) : null}
+                </div>
                 <Button
                   type="submit"
                   disabled={controlsLocked || !trimmed || tooLong}
@@ -165,12 +234,36 @@ export function AgentWorkspacePanel({
       ) : null}
 
       {requestError ? (
-        <p className="text-danger-text text-sm" role="alert">
-          {requestError}
-        </p>
+        <div className="flex flex-wrap items-center gap-3" role="alert">
+          <p
+            ref={errorRef}
+            tabIndex={-1}
+            className="text-danger-text text-sm outline-none"
+          >
+            {requestError}
+          </p>
+          {!controlsLocked && trimmed && !tooLong ? (
+            <Button type="button" variant="outline" size="sm" onClick={runAgain}>
+              <RotateCcw aria-hidden="true" />
+              Run again
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
-      {result && !isRunning ? <AgentWorkspaceResult result={result} /> : null}
+      {result && !isRunning ? (
+        <AgentWorkspaceResult result={result} onRunAgain={runAgain} />
+      ) : !isRunning && !requestError ? (
+        <section
+          aria-label="Results"
+          className="border-border bg-surface-subtle rounded-xl border border-dashed p-5 sm:p-6"
+        >
+          <p className="text-sm font-medium">Results will appear here</p>
+          <p className="text-muted-foreground mt-1 text-sm leading-6">
+            Run an instruction to see the agent&apos;s outcome and controlled steps.
+          </p>
+        </section>
+      ) : null}
     </div>
   );
 }

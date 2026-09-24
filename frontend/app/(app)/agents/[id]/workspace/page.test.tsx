@@ -106,6 +106,29 @@ describe("Agent Workspace page", () => {
       screen.getByRole("textbox", { name: /What would you like me to do/i }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Run Agent" })).toBeVisible();
+    expect(screen.getByText("SALES")).toBeVisible();
+    expect(screen.getByText("Qualifies new inbound leads.")).toBeVisible();
+    expect(screen.getByText("0 / 8000")).toBeVisible();
+  });
+
+  it("populates examples without executing and clears locally", async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkspacePage />);
+    await screen.findByRole("button", { name: "Run Agent" });
+
+    const example = screen.getByRole("button", {
+      name: "Show me the leads that need attention.",
+    });
+    await user.click(example);
+    const input = screen.getByRole("textbox", {
+      name: /What would you like me to do/i,
+    });
+    expect(input).toHaveValue("Show me the leads that need attention.");
+    expect(orchestrateAgentMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
   it("rejects empty instruction without calling the API", async () => {
@@ -392,6 +415,27 @@ describe("Agent Workspace page", () => {
     expect(
       await screen.findByRole("heading", { name: "Execution completed" }),
     ).toBeVisible();
+  });
+
+  it("moves focus to an orchestration error and can run again", async () => {
+    const user = userEvent.setup();
+    orchestrateAgentMock.mockRejectedValueOnce(new Error("network"));
+    orchestrateAgentMock.mockResolvedValueOnce(successResult());
+    render(<AgentWorkspacePage />);
+    const input = await screen.findByRole("textbox", {
+      name: /What would you like me to do/i,
+    });
+    await user.type(input, "Try this again");
+    await user.click(screen.getByRole("button", { name: "Run Agent" }));
+    const error = await screen.findByText(
+      "Something went wrong while running the agent.",
+    );
+    expect(document.activeElement).toBe(error);
+    await user.click(screen.getByRole("button", { name: "Run again" }));
+    expect(
+      await screen.findByRole("heading", { name: "Execution completed" }),
+    ).toBeVisible();
+    expect(orchestrateAgentMock).toHaveBeenCalledTimes(2);
   });
 
   it("disables submit while running", async () => {

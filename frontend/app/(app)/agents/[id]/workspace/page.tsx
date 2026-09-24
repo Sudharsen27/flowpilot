@@ -148,10 +148,20 @@ export default function AgentWorkspacePage() {
       />
 
       <div className="border-border bg-surface-subtle rounded-lg border px-4 py-3">
-        <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-          Running as
-        </p>
-        <p className="mt-1 text-sm font-medium">{agent.name}</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Running as
+            </p>
+            <p className="mt-1 text-sm font-medium">{agent.name}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Agent type
+            </p>
+            <p className="mt-1 text-sm font-medium">{agent.agent_type}</p>
+          </div>
+        </div>
       </div>
 
       {loadError ? null : (

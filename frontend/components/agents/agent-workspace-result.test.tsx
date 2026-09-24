@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   AgentWorkspaceResult,
@@ -79,6 +80,16 @@ function draftStep(
 }
 
 describe("AgentWorkspaceResult draft handoff", () => {
+  let writeText: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+  });
+
   it("does not show approval handoff on plain success", () => {
     render(<AgentWorkspaceResult result={result()} />);
     expect(
@@ -104,6 +115,7 @@ describe("AgentWorkspaceResult draft handoff", () => {
     expect(screen.getByText("draft-real-99")).toBeVisible();
     expect(screen.getByText("lead-1")).toBeVisible();
     expect(screen.getByText("GENERATED")).toBeVisible();
+    expect(screen.getByText("Revision").parentElement).toHaveTextContent("1");
 
     const link = screen.getByRole("link", { name: "Review draft" });
     expect(link).toHaveAttribute(
@@ -119,6 +131,132 @@ describe("AgentWorkspaceResult draft handoff", () => {
     expect(getApprovals).not.toHaveBeenCalled();
     expect(approveLeadResponseDraft).not.toHaveBeenCalled();
     expect(sendLeadResponseDraft).not.toHaveBeenCalled();
+  });
+
+  it("copies real execution and draft IDs with temporary confirmation", async () => {
+    const user = userEvent.setup();
+    writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const payload = result({ step_results: [draftStep("draft-copy-1")] });
+    render(<AgentWorkspaceResult result={payload} />);
+
+    await user.click(screen.getByRole("button", { name: "Copy execution ID" }));
+    expect(writeText).toHaveBeenCalledWith("exec-1");
+    expect(
+      await screen.findByRole("button", { name: "execution ID copied" }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Copy draft ID" }));
+    expect(writeText).toHaveBeenCalledWith("draft-copy-1");
+    expect(
+      await screen.findByRole("button", { name: "draft ID copied" }),
+    ).toBeVisible();
+  });
+
+  it("shows optional provider and model only when returned", () => {
+    const { rerender } = render(
+      <AgentWorkspaceResult
+        result={result({ provider: "Groq", model: "GPT-OSS 20B" })}
+      />,
+    );
+    expect(screen.getByText("Groq")).toBeVisible();
+    expect(screen.getByText("GPT-OSS 20B")).toBeVisible();
+
+    rerender(<AgentWorkspaceResult result={result({ provider: null, model: null })} />);
+    expect(screen.queryByText("Provider")).toBeNull();
+    expect(screen.queryByText("Model")).toBeNull();
+  });
+
+  it("shows returned step metadata and safely expandable output", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentWorkspaceResult
+        result={
+          result({
+            step_results: [
+              {
+                step_id: "step-read",
+                sequence: 2,
+                tool_name: "search_leads",
+                result: {
+                  call_id: "step-read",
+                  tool_name: "search_leads",
+                  success: true,
+                  outcome: "SUCCESS",
+                  decision: "ALLOW",
+                  risk_level: "LOW",
+                  side_effect_level: "READ",
+                  output: {
+                    total: 3,
+                    organization_id: "internal-org",
+                  },
+                  error: null,
+                  executed: true,
+                  failure_category: null,
+                },
+              },
+              {
+                step_id: "step-approval",
+                sequence: 3,
+                tool_name: "protected_action",
+                result: {
+                  call_id: "step-approval",
+                  tool_name: "protected_action",
+                  success: false,
+                  outcome: "APPROVAL_REQUIRED",
+                  decision: "REQUIRE_APPROVAL",
+                  risk_level: "HIGH",
+                  side_effect_level: "SENSITIVE_WRITE",
+                  output: null,
+                  error: "requires human approval",
+                  executed: false,
+                  failure_category: "POLICY_ERROR",
+                },
+              },
+            ],
+          })
+        }
+      />,
+    );
+
+    expect(screen.getByText("READ")).toBeVisible();
+    expect(screen.getByText("Risk LOW")).toBeVisible();
+    expect(screen.getByText("ALLOW")).toBeVisible();
+    expect(screen.getAllByText("Approval required").length).toBeGreaterThan(1);
+    expect(screen.getByText("Risk HIGH")).toBeVisible();
+    expect(screen.getByText("SENSITIVE_WRITE")).toBeVisible();
+    expect(screen.getByText("Not executed")).toBeVisible();
+
+    await user.click(screen.getByText("View output"));
+    expect(screen.getByText(/"total": 3/)).toBeVisible();
+    expect(screen.queryByText("internal-org")).toBeNull();
+  });
+
+  it("focuses the result heading and offers retry without approval controls", async () => {
+    const onRunAgain = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AgentWorkspaceResult
+        result={
+          result({
+            outcome: "TOOL_FAILED",
+            execution_status: "FAILED",
+            error: "Tool failed safely",
+          })
+        }
+        onRunAgain={onRunAgain}
+      />,
+    );
+    const heading = screen.getByRole("heading", { name: "A tool step failed" });
+    expect(document.activeElement).toBe(heading);
+    await user.click(screen.getByRole("button", { name: "Run again" }));
+    expect(onRunAgain).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: /^Approve$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Send response$/i })).toBeNull();
   });
 
   it("never treats execution_id as draft_id", () => {

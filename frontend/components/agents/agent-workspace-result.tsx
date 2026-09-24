@@ -1,8 +1,19 @@
+"use client";
+
 import Link from "next/link";
-import { CheckCircle2, CircleAlert, ShieldAlert, XCircle } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  Clipboard,
+  ShieldAlert,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { buildApprovalsHref } from "@/lib/approvals-url";
 import { cn } from "@/lib/utils";
 import type { OrchestrationOutcome, OrchestrationResult } from "@/types/api";
@@ -68,6 +79,13 @@ function formatToolName(name: string) {
   return name.replaceAll("_", " ");
 }
 
+function formatLabel(value: string) {
+  return value
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/(^|\s)\S/g, (character) => character.toUpperCase());
+}
+
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -76,6 +94,78 @@ function asNonEmptyString(value: unknown): string | null {
 
 function asOptionalNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+const PRIVATE_OUTPUT_KEYS = new Set([
+  "api_key",
+  "authorization",
+  "password",
+  "permissions",
+  "role",
+  "secret",
+  "token",
+  "user_id",
+  "organization_id",
+]);
+
+function safeOutput(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(safeOutput);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !PRIVATE_OUTPUT_KEYS.has(key.toLowerCase()))
+      .map(([key, entry]) => [key, safeOutput(entry)]),
+  );
+}
+
+function outputText(value: Record<string, unknown> | null): string | null {
+  if (!value) return null;
+  const sanitized = safeOutput(value);
+  if (
+    sanitized &&
+    typeof sanitized === "object" &&
+    !Array.isArray(sanitized) &&
+    Object.keys(sanitized).length === 0
+  ) {
+    return null;
+  }
+  return JSON.stringify(sanitized, null, 2) ?? null;
+}
+
+function CopyIdButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    },
+    [],
+  );
+
+  async function copyId() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      aria-label={copied ? `${label} copied` : `Copy ${label}`}
+      onClick={() => void copyId()}
+    >
+      {copied ? <Check aria-hidden="true" /> : <Clipboard aria-hidden="true" />}
+      {copied ? "Copied" : "Copy"}
+    </Button>
+  );
 }
 
 /**
@@ -111,7 +201,7 @@ export function extractCreatedDraft(
 export function resolveApprovalHandoff(
   result: Pick<
     OrchestrationResult,
-    "approval_required" | "step_results" | "execution_id"
+    "approval_required" | "step_results" | "execution_id" | "outcome"
   >,
 ): ApprovalHandoff | null {
   const draft = extractCreatedDraft(result);
@@ -122,7 +212,7 @@ export function resolveApprovalHandoff(
       draft,
     };
   }
-  if (result.approval_required) {
+  if (result.approval_required || result.outcome === "APPROVAL_REQUIRED") {
     return {
       href: buildApprovalsHref(),
       label: "Review in Approvals",
@@ -136,7 +226,7 @@ export function resolveApprovalHandoff(
 export function approvalHandoffHref(
   result: Pick<
     OrchestrationResult,
-    "approval_required" | "step_results" | "execution_id"
+    "approval_required" | "step_results" | "execution_id" | "outcome"
   >,
 ): string | null {
   return resolveApprovalHandoff(result)?.href ?? null;
@@ -158,6 +248,19 @@ function stepStatusLabel(result: OrchestrationResult["step_results"][number]) {
   return "Failed";
 }
 
+function stepOutcomeLabel(
+  result: OrchestrationResult["step_results"][number]["result"],
+) {
+  if (!result) return "Not executed";
+  if (result.outcome === "APPROVAL_REQUIRED") return "Approval required";
+  if (result.outcome === "PERMISSION_DENIED") return "Denied";
+  return formatLabel(result.outcome);
+}
+
+function isRetryableOutcome(outcome: OrchestrationOutcome) {
+  return outcome !== "SUCCESS" && outcome !== "APPROVAL_REQUIRED";
+}
+
 function stoppedAtLabel(result: OrchestrationResult): string | null {
   if (!result.stopped_at_step_id) return null;
   const step = result.step_results.find(
@@ -169,9 +272,14 @@ function stoppedAtLabel(result: OrchestrationResult): string | null {
 
 type AgentWorkspaceResultProps = {
   result: OrchestrationResult;
+  onRunAgain?: () => void;
 };
 
-export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
+export function AgentWorkspaceResult({
+  result,
+  onRunAgain,
+}: AgentWorkspaceResultProps) {
+  const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const copy = OUTCOME_COPY[result.outcome];
   const Icon =
     result.outcome === "SUCCESS"
@@ -187,6 +295,11 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
   const stoppedAt = stoppedAtLabel(result);
   const handoff = resolveApprovalHandoff(result);
   const createdDraft = handoff?.draft ?? null;
+  const canRunAgain = Boolean(onRunAgain && isRetryableOutcome(result.outcome));
+
+  useEffect(() => {
+    resultHeadingRef.current?.focus();
+  }, [result]);
 
   return (
     <section
@@ -201,6 +314,8 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
           </p>
           <h2
             id="agent-workspace-result-title"
+            ref={resultHeadingRef}
+            tabIndex={-1}
             className="mt-1 flex items-center gap-2 text-base font-semibold tracking-tight"
           >
             <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -210,33 +325,49 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
             {copy.description}
           </p>
         </div>
-        <StatusBadge status={copy.status} label={result.outcome.replaceAll("_", " ")} />
+        <StatusBadge status={copy.status} label={formatLabel(result.outcome)} />
       </div>
 
       <dl className="border-border mt-5 grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-muted-foreground text-xs font-medium">Execution</dt>
-          <dd className="mt-1 font-mono text-xs break-all">
-            {result.execution_id ?? "—"}
-          </dd>
+          <dt className="text-muted-foreground text-xs font-medium">Status</dt>
+          <dd className="mt-1 font-medium">{formatLabel(result.outcome)}</dd>
         </div>
+        {result.execution_status ? (
+          <div>
+            <dt className="text-muted-foreground text-xs font-medium">
+              Execution status
+            </dt>
+            <dd className="mt-1 font-medium">{formatLabel(result.execution_status)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt className="text-muted-foreground text-xs font-medium">Steps</dt>
           <dd className="mt-1 font-medium">
             {result.completed_step_count} / {result.total_step_count} completed
           </dd>
         </div>
-        {result.approval_required && !createdDraft ? (
+        {result.provider ? (
           <div>
-            <dt className="text-muted-foreground text-xs font-medium">Status</dt>
-            <dd className="mt-1 font-medium">Approval required</dd>
+            <dt className="text-muted-foreground text-xs font-medium">Provider</dt>
+            <dd className="mt-1 font-medium">{result.provider}</dd>
           </div>
-        ) : result.execution_status ? (
+        ) : null}
+        {result.model ? (
           <div>
+            <dt className="text-muted-foreground text-xs font-medium">Model</dt>
+            <dd className="mt-1 font-medium">{result.model}</dd>
+          </div>
+        ) : null}
+        {result.execution_id ? (
+          <div className="min-w-0">
             <dt className="text-muted-foreground text-xs font-medium">
-              Execution status
+              Execution ID
             </dt>
-            <dd className="mt-1 font-medium">{result.execution_status}</dd>
+            <dd className="mt-1 flex min-w-0 flex-wrap items-center gap-1 font-mono text-xs">
+              <span className="min-w-0 break-all">{result.execution_id}</span>
+              <CopyIdButton label="execution ID" value={result.execution_id} />
+            </dd>
           </div>
         ) : null}
         {stoppedAt ? (
@@ -275,8 +406,9 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
               <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">Draft ID</dt>
-                  <dd className="mt-0.5 font-mono break-all">
-                    {createdDraft.draftId}
+                  <dd className="mt-0.5 flex flex-wrap items-center gap-1 font-mono break-all">
+                    <span>{createdDraft.draftId}</span>
+                    <CopyIdButton label="draft ID" value={createdDraft.draftId} />
                   </dd>
                 </div>
                 {createdDraft.leadId ? (
@@ -295,9 +427,22 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
                     </dd>
                   </div>
                 ) : null}
+                {createdDraft.revision !== null ? (
+                  <div>
+                    <dt className="text-muted-foreground">Revision</dt>
+                    <dd className="mt-0.5 font-medium">{createdDraft.revision}</dd>
+                  </div>
+                ) : null}
               </dl>
             </>
-          ) : null}
+          ) : (
+            <>
+              <p className="text-sm font-medium">Human approval required</p>
+              <p className="text-muted-foreground mt-1 text-sm leading-6">
+                FlowPilot paused before the next controlled action.
+              </p>
+            </>
+          )}
           <div className={createdDraft ? "mt-3" : undefined}>
             <Link
               href={handoff.href}
@@ -313,13 +458,17 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
       ) : null}
 
       {result.step_results.length > 0 ? (
-        <ol className="border-border mt-5 space-y-3 border-t pt-4">
+        <ol
+          className="border-border mt-5 space-y-3 border-t pt-4"
+          aria-label="Execution steps"
+        >
           {result.step_results.map((step, index) => {
             const ok = Boolean(step.result?.success);
+            const output = outputText(step.result?.output ?? null);
             return (
               <li
                 key={step.step_id}
-                className="flex items-start gap-3 text-sm"
+                className="border-border bg-surface-subtle grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)]"
               >
                 <span
                   className={
@@ -329,21 +478,81 @@ export function AgentWorkspaceResult({ result }: AgentWorkspaceResultProps) {
                   }
                   aria-hidden="true"
                 >
-                  {ok ? "✓" : `${index + 1}.`}
+                  {step.sequence + 1 || index + 1}
                 </span>
                 <div className="min-w-0">
-                  <p className="font-medium capitalize">
-                    {formatToolName(step.tool_name)}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium capitalize">
+                      {formatToolName(step.tool_name)}
+                    </p>
+                    <span className="text-muted-foreground text-xs">
+                      {stepOutcomeLabel(step.result)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[0.6875rem]">
+                    <span className="rounded-full border px-2 py-0.5">
+                      {step.result?.executed ? "Executed" : "Not executed"}
+                    </span>
+                    {step.result?.side_effect_level ? (
+                      <span className="rounded-full border px-2 py-0.5">
+                        {step.result.side_effect_level}
+                      </span>
+                    ) : null}
+                    {step.result?.risk_level ? (
+                      <span className="rounded-full border px-2 py-0.5">
+                        Risk {step.result.risk_level}
+                      </span>
+                    ) : null}
+                    {step.result?.decision ? (
+                      <span className="rounded-full border px-2 py-0.5">
+                        {step.result.decision === "REQUIRE_APPROVAL"
+                          ? "Approval required"
+                          : step.result.decision}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="text-muted-foreground mt-0.5 text-xs">
                     {stepStatusLabel(step)}
                     {step.result?.error ? ` — ${step.result.error}` : null}
                   </p>
+                  {output ? (
+                    <details className="group mt-2 rounded-md border bg-background px-3 py-2">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
+                        <ChevronDown
+                          className="size-3 transition-transform group-open:rotate-180"
+                          aria-hidden="true"
+                        />
+                        View output
+                      </summary>
+                      <pre className="text-muted-foreground mt-2 max-h-64 overflow-auto break-words text-xs leading-5 whitespace-pre-wrap">
+                        {output}
+                      </pre>
+                    </details>
+                  ) : (
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      No additional output.
+                    </p>
+                  )}
                 </div>
               </li>
             );
           })}
         </ol>
+      ) : null}
+
+      {result.step_results.length === 0 ? (
+        <p className="text-muted-foreground border-border mt-5 border-t pt-4 text-sm">
+          No step results were returned.
+        </p>
+      ) : null}
+
+      {canRunAgain ? (
+        <div className="mt-5 border-t pt-4">
+          <Button type="button" variant="outline" onClick={onRunAgain}>
+            <XCircle aria-hidden="true" />
+            Run again
+          </Button>
+        </div>
       ) : null}
     </section>
   );
