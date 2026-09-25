@@ -1,4 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import WorkflowsPage from "@/app/(app)/workflows/page";
@@ -53,7 +54,7 @@ describe("Workflows page", () => {
     });
     expect(createButton).toBeDisabled();
     expect(createButton).toHaveAccessibleDescription(
-      "Workflow creation is not available yet.",
+      "Workflow creation is planned and is not available yet.",
     );
   });
 
@@ -64,10 +65,11 @@ describe("Workflows page", () => {
       screen.getByRole("heading", { name: "No workflows configured" }),
     ).toBeVisible();
     expect(
-      screen.getByText(
-        /connect triggers, AI agents, conditions, approvals, and actions/,
-      ),
-    ).toBeVisible();
+      screen.getAllByText(/Workflow creation is planned and is not available yet/),
+    ).not.toHaveLength(0);
+    expect(
+      screen.getByRole("link", { name: /Review AI Agents/ }),
+    ).toHaveAttribute("href", "/agents");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText("Test workflow")).not.toBeInTheDocument();
   });
@@ -87,7 +89,7 @@ describe("Workflows page", () => {
       "Action",
       "Outcome",
     ]) {
-      expect(within(steps).getByRole("heading", { name: step })).toBeVisible();
+      expect(within(steps).getByRole("button", { name: new RegExp(step) })).toBeVisible();
     }
     expect(screen.getByText("Blueprint only")).toBeVisible();
     expect(
@@ -110,7 +112,7 @@ describe("Workflows page", () => {
     expect(within(triggers).getByText("External webhook")).toBeVisible();
     expect(within(actions).getByText("Qualify lead")).toBeVisible();
     expect(within(actions).getByText("Request human approval")).toBeVisible();
-    expect(screen.getByText("None connected")).toBeVisible();
+    expect(screen.getAllByText("Planned")).toHaveLength(13);
     expect(screen.getByText("Execution unavailable")).toBeVisible();
   });
 
@@ -127,6 +129,47 @@ describe("Workflows page", () => {
     for (const label of ["Draft", "Active", "Paused", "Needs attention"]) {
       expect(screen.getByText(label)).toBeVisible();
     }
+  });
+
+  it("selects blueprint steps and reveals related workspaces", async () => {
+    const user = userEvent.setup();
+    render(<WorkflowsPage />);
+
+    const steps = screen.getByRole("list", {
+      name: "Conceptual workflow steps",
+    });
+    const trigger = within(steps).getByRole("button", { name: /Trigger/ });
+    const approval = within(steps).getByRole("button", { name: /Approval/ });
+
+    expect(trigger).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "Trigger" })).toBeVisible();
+
+    await user.click(approval);
+    expect(approval).toHaveAttribute("aria-pressed", "true");
+    expect(trigger).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("heading", { name: "Approval" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Approvals" })).toHaveAttribute(
+      "href",
+      "/approvals",
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Approval" })).toHaveFocus(),
+    );
+  });
+
+  it("supports keyboard selection and keeps the detail region focused", async () => {
+    const user = userEvent.setup();
+    render(<WorkflowsPage />);
+
+    const condition = screen.getByRole("button", { name: /Condition/ });
+    condition.focus();
+    await user.keyboard("{Enter}");
+
+    expect(condition).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "Condition" })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Condition" })).toHaveFocus(),
+    );
   });
 
   it("supports desktop table and mobile list representations for real rows", () => {

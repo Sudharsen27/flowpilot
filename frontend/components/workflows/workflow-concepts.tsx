@@ -81,7 +81,7 @@ export function WorkflowConcepts() {
           <ConceptList
             items={triggerConcepts}
             label="Available trigger concepts"
-            stateLabel="Concept"
+            stateLabel="Planned"
           />
         </CardContent>
       </Card>
@@ -113,7 +113,7 @@ export function WorkflowConcepts() {
           <ConceptList
             items={actionConcepts}
             label="Available action concepts"
-            stateLabel="Concept"
+            stateLabel="Planned"
           />
         </CardContent>
       </Card>

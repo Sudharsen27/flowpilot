@@ -5,22 +5,22 @@ import { MetricCard } from "@/components/data-display/metric-card";
 const workflowMetrics = [
   {
     label: "Total workflows",
-    unavailableLabel: "No workflow data",
+    unavailableLabel: "Unavailable until workflows are configured",
     icon: Workflow,
   },
   {
     label: "Active",
-    unavailableLabel: "No active workflows",
+    unavailableLabel: "Unavailable until workflows are configured",
     icon: CircleCheck,
   },
   {
     label: "Draft",
-    unavailableLabel: "No workflow drafts",
+    unavailableLabel: "Unavailable until workflows are configured",
     icon: FilePenLine,
   },
   {
     label: "Needs attention",
-    unavailableLabel: "No workflow health data",
+    unavailableLabel: "Unavailable until workflow execution exists",
     icon: CircleAlert,
   },
 ] as const;

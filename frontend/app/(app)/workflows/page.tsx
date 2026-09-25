@@ -13,7 +13,7 @@ export default function WorkflowsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Workflows"
-        description="Connect business events, AI agents, conditions, approvals, and actions into controlled operating processes."
+        description="Workflows are a planned way to connect business events, AI agents, approvals, and actions into controlled operating processes."
         primaryAction={
           <>
             <Button
@@ -25,7 +25,7 @@ export default function WorkflowsPage() {
               Create workflow
             </Button>
             <span id="create-workflow-unavailable" className="sr-only">
-              Workflow creation is not available yet.
+              Workflow creation is planned and is not available yet.
             </span>
           </>
         }
@@ -34,7 +34,7 @@ export default function WorkflowsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Workflow overview"
-          description="Workflow totals, operating status, and health will appear after persistence and execution are implemented."
+          description="Workflow metrics are unavailable until workflows can be configured and executed."
         />
         <WorkflowOverview />
       </section>
@@ -42,7 +42,7 @@ export default function WorkflowsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Configured workflows"
-          description="Review workflow triggers, status, connected agents, and execution history."
+          description="No workflows are configured. The list will support workflow records when persistence is available."
         />
         <WorkflowList workflows={[]} />
       </section>
@@ -50,7 +50,7 @@ export default function WorkflowsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Workflow blueprint"
-          description="A product model for how future workflows can move from an event to a controlled outcome."
+          description="Explore the planned model for moving from an event to a controlled outcome."
         />
         <WorkflowBlueprint />
       </section>
@@ -58,7 +58,7 @@ export default function WorkflowsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Configuration concepts"
-          description="Potential trigger and action categories for future workflow configuration."
+          description="Planned trigger and action categories. None are live configuration controls."
         />
         <WorkflowConcepts />
       </section>
