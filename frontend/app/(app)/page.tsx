@@ -58,14 +58,15 @@ export default function CommandCenterPage() {
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
-        title="Good morning"
-        description="Keep your sales pipeline moving. FlowPilot has organized the leads, drafts, and decisions that need your attention."
+        title="Command Center"
+        description="An operational overview of your sales pipeline, AI workforce, and work that needs attention."
       />
 
-      <section className="grid gap-5">
+      <section className="grid gap-5" aria-labelledby="pipeline-at-a-glance-heading">
         <SectionHeader
+          id="pipeline-at-a-glance-heading"
           title="Pipeline at a glance"
-          description="A live view of the work moving through your AI-assisted sales process."
+          description="What is happening across your AI-assisted sales process."
         />
         <BusinessOverview
           loading={loading}
@@ -91,10 +92,11 @@ export default function CommandCenterPage() {
 
       <RecentActivity />
 
-      <section className="grid gap-5">
+      <section className="grid gap-5" aria-labelledby="quick-actions-heading">
         <SectionHeader
+          id="quick-actions-heading"
           title="Quick actions"
-          description="Move directly to an existing FlowPilot workspace."
+          description="Choose the next workspace for your team."
         />
         <QuickActions />
       </section>

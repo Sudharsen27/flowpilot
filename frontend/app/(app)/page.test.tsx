@@ -126,7 +126,7 @@ describe("Command Center", () => {
   it("renders the sales workspace and its major sections", async () => {
     render(<CommandCenterPage />);
     expect(
-      screen.getByRole("heading", { level: 1, name: "Good morning" }),
+      screen.getByRole("heading", { level: 1, name: "Command Center" }),
     ).toBeVisible();
     for (const heading of [
       "Pipeline at a glance",
@@ -189,8 +189,8 @@ describe("Command Center", () => {
       },
     });
     render(<CommandCenterPage />);
-    expect(await screen.findByText("1 agent")).toBeVisible();
-    expect(screen.getByText(/1 agent in this organization, 1 ready/)).toBeVisible();
+    expect(await screen.findByText(/1 configured agent/)).toBeVisible();
+    expect(screen.getByText(/1 configured agent in this organization.*1 ready/)).toBeVisible();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
     expect(
       screen.queryByText(/No live agent runtime is connected yet/),

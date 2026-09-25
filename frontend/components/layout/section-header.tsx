@@ -7,6 +7,7 @@ type SectionHeaderProps = {
   description?: string;
   action?: ReactNode;
   className?: string;
+  id?: string;
 };
 
 export function SectionHeader({
@@ -14,6 +15,7 @@ export function SectionHeader({
   description,
   action,
   className,
+  id,
 }: SectionHeaderProps) {
   return (
     <header
@@ -24,7 +26,7 @@ export function SectionHeader({
       )}
     >
       <div className="min-w-0">
-        <h2 className="text-section-title font-semibold tracking-tight">
+        <h2 id={id} className="text-section-title font-semibold tracking-tight">
           {title}
         </h2>
         {description ? (

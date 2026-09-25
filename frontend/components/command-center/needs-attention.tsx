@@ -454,7 +454,10 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
         </p>
       ) : null}
 
-      <section className="grid gap-4" aria-labelledby="waiting-review-heading">
+      <section
+        className="border-warning/40 grid gap-4 border-l-2 pl-4 sm:pl-5"
+        aria-labelledby="waiting-review-heading"
+      >
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h3 id="waiting-review-heading" className="text-sm font-medium">
             Waiting for review
@@ -541,7 +544,10 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
         )}
       </section>
 
-      <section className="grid gap-4" aria-labelledby="failed-sends-heading">
+      <section
+        className="border-destructive/40 grid gap-4 border-l-2 pl-4 sm:pl-5"
+        aria-labelledby="failed-sends-heading"
+      >
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h3 id="failed-sends-heading" className="text-sm font-medium">
             Failed sends
@@ -614,7 +620,10 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
         )}
       </section>
 
-      <section className="grid gap-4" aria-labelledby="overdue-follow-ups-heading">
+      <section
+        className="border-warning/40 grid gap-4 border-l-2 pl-4 sm:pl-5"
+        aria-labelledby="overdue-follow-ups-heading"
+      >
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h3 id="overdue-follow-ups-heading" className="text-sm font-medium">
             Overdue follow-ups

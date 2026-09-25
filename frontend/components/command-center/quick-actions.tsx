@@ -52,10 +52,11 @@ export function QuickActions() {
           <Link
             key={action.href}
             href={action.href}
-            className="focus-visible:ring-ring rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+            aria-label={`${action.label}: ${action.description}`}
+            className="focus-visible:ring-ring rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            <Card variant="interactive" className="h-full transition-colors">
-              <CardContent className="flex h-full min-h-32 flex-col justify-between gap-4">
+            <Card variant="interactive" className="h-full transition-colors hover:bg-surface-subtle">
+              <CardContent className="flex h-full min-h-32 flex-col justify-between gap-5 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <span
                     className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-md"

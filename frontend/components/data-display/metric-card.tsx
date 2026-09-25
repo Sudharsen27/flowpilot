@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 
 type MetricTrend = {
@@ -19,6 +20,7 @@ type MetricCardProps = {
   trend?: MetricTrend;
   loading?: boolean;
   unavailableLabel?: string;
+  unavailableStatusLabel?: string;
   headingLevel?: 2 | 3;
   className?: string;
 };
@@ -37,6 +39,7 @@ export function MetricCard({
   trend,
   loading = false,
   unavailableLabel = "No data yet",
+  unavailableStatusLabel,
   headingLevel = 2,
   className,
 }: MetricCardProps) {
@@ -85,9 +88,20 @@ export function MetricCard({
                 </span>
               ) : null}
             </div>
-            <p className="text-muted-foreground mt-1 text-xs leading-5">
-              {hasValue ? description : unavailableLabel}
-            </p>
+            {hasValue ? (
+              <p className="text-muted-foreground mt-1 text-xs leading-5">
+                {description}
+              </p>
+            ) : (
+              <div className="mt-2 grid gap-2">
+                {unavailableStatusLabel ? (
+                  <StatusBadge status="draft" label={unavailableStatusLabel} />
+                ) : null}
+                <p className="text-muted-foreground text-xs leading-5">
+                  {unavailableLabel}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </CardContent>

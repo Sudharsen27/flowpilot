@@ -28,7 +28,14 @@ export function AiWorkforceStatus({
   const ready = agents.filter((agent) => agent.status === "READY").length;
   const configured = agents.length > 0;
   const badge = configured
-    ? statusPresentation("ACTIVE", `${agents.length} agent${agents.length === 1 ? "" : "s"}`)
+    ? statusPresentation(
+        active > 0 ? "ACTIVE" : ready > 0 ? "READY" : "DRAFT",
+        active > 0
+          ? `${active} active`
+          : ready > 0
+            ? `${ready} ready`
+            : "Configured",
+      )
     : statusPresentation("DRAFT", "No agents yet");
 
   return (
@@ -50,7 +57,7 @@ export function AiWorkforceStatus({
               </CardDescription>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2" aria-label="AI workforce status">
             <AiBadge label="Agent" />
             <StatusBadge status={badge.status} label={loading ? "Loading" : badge.label} />
           </div>
@@ -63,9 +70,8 @@ export function AiWorkforceStatus({
           </p>
         ) : configured ? (
           <p className="text-muted-foreground max-w-2xl text-sm leading-6">
-            {agents.length} agent{agents.length === 1 ? "" : "s"} in this
-            organization
-            {active ? `, ${active} active` : ""}
+            {agents.length} configured agent{agents.length === 1 ? "" : "s"} in
+            this organization. {active ? `${active} active` : "No active agents"}
             {ready ? `, ${ready} ready` : ""}. Per-agent execution history is
             available on each agent detail page.
           </p>

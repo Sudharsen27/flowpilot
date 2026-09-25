@@ -36,12 +36,14 @@ export function BusinessOverview({
       />
       <MetricCard
         label="Conversations"
+        unavailableStatusLabel="Not available yet"
         unavailableLabel="Conversation history is not available yet."
         headingLevel={3}
         icon={<MessageSquareText />}
       />
       <MetricCard
         label="Appointments"
+        unavailableStatusLabel="Not available yet"
         unavailableLabel="Appointment scheduling is not available yet."
         headingLevel={3}
         icon={<CalendarCheck />}

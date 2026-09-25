@@ -95,13 +95,23 @@ export function RecentActivity() {
           <CardContent className="p-0">
             <ul aria-label="Recent activity" className="divide-border divide-y">
               {items.map((event) => (
-                <li key={event.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
+                <li key={event.id} className="flex items-start gap-3 px-4 py-4 sm:px-5">
                   <ActivityTypeBadge type={event.type} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{event.title}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {formatTimestamp(event.occurred_at) ?? "—"}
-                    </p>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                      <p className="text-sm font-medium">{event.title}</p>
+                      <time
+                        dateTime={event.occurred_at}
+                        className="text-muted-foreground shrink-0 text-xs"
+                      >
+                        {formatTimestamp(event.occurred_at) ?? "—"}
+                      </time>
+                    </div>
+                    {event.summary ? (
+                      <p className="text-muted-foreground mt-1 text-sm leading-5">
+                        {event.summary}
+                      </p>
+                    ) : null}
                   </div>
                 </li>
               ))}
