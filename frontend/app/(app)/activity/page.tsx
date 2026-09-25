@@ -26,7 +26,7 @@ export default function ActivityPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Activity summary"
-          description="Counts come from recorded organization events."
+          description="Counts reflect the current activity search and filters."
         />
         <ActivitySummary
           loading={loading && summary === null}

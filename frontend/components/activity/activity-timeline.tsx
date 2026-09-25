@@ -1,9 +1,10 @@
 import { History } from "lucide-react";
 
+import { humanizeActivityStatus } from "@/components/activity/activity-status-badge";
 import { ActivityTypeBadge } from "@/components/activity/activity-type-badge";
-import { formatTimestamp } from "@/components/agents/execution-status";
 import { AiBadge } from "@/components/ai/ai-badge";
 import { EmptyState } from "@/components/empty-state";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import { statusPresentation } from "@/lib/status";
@@ -59,7 +60,10 @@ export function ActivityTimeline({
       {events.map((event) => {
         const isSelected = selectedId === event.id;
         const status = event.status
-          ? statusPresentation(event.status, event.status)
+          ? statusPresentation(
+              event.status,
+              humanizeActivityStatus(event.status),
+            )
           : null;
         return (
           <li key={event.id}>
@@ -79,13 +83,16 @@ export function ActivityTimeline({
                     <AiBadge label="Agent" />
                   ) : null}
                 </span>
-                <span className="text-muted-foreground text-xs">
-                  {formatTimestamp(event.occurred_at) ?? "—"}
-                </span>
+                <RelativeTime value={event.occurred_at} />
               </span>
               <span className="mt-3 block text-sm font-medium leading-6">
                 {event.title}
               </span>
+              {event.summary ? (
+                <span className="text-muted-foreground mt-1 line-clamp-2 block text-xs leading-5">
+                  {event.summary}
+                </span>
+              ) : null}
               <span className="text-muted-foreground mt-1 block text-xs">
                 {actorLabels[event.actor_type]}
               </span>

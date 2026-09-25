@@ -70,3 +70,8 @@ export function isNavigationItemActive(
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
+
+export function getNavigationItemLabel(pathname: string): string {
+  const items = [...NAV_GROUPS.flatMap((group) => group.items), SETTINGS_ITEM];
+  return items.find((item) => isNavigationItemActive(pathname, item.href))?.label ?? "FlowPilot";
+}

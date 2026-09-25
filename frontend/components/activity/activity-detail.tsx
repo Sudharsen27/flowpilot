@@ -1,18 +1,19 @@
 import { ArrowLeft, FileClock } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import {
   actorLabels,
   entityLabels,
 } from "@/components/activity/activity-timeline";
+import { humanizeActivityStatus } from "@/components/activity/activity-status-badge";
 import { ActivityTypeBadge } from "@/components/activity/activity-type-badge";
-import { formatTimestamp } from "@/components/agents/execution-status";
 import { AiBadge } from "@/components/ai/ai-badge";
 import { DetailRow } from "@/components/data-display/detail-row";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import { statusPresentation } from "@/lib/status";
@@ -21,7 +22,10 @@ import type { ActivityEvent } from "@/types/api";
 type ActivityDetailProps = {
   event?: ActivityEvent | null;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onBack?: () => void;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 };
 
 function DetailField({
@@ -39,9 +43,16 @@ function DetailField({
   );
 }
 
-export function ActivityDetail({ event, loading = false, onBack }: ActivityDetailProps) {
+export function ActivityDetail({
+  event,
+  loading = false,
+  error = null,
+  onRetry,
+  onBack,
+  headingRef,
+}: ActivityDetailProps) {
   const status = event?.status
-    ? statusPresentation(event.status, event.status)
+    ? statusPresentation(event.status, humanizeActivityStatus(event.status))
     : null;
 
   return (
@@ -67,6 +78,8 @@ export function ActivityDetail({ event, loading = false, onBack }: ActivityDetai
           <div className="min-w-0">
             <h3
               id="activity-detail-title"
+              tabIndex={-1}
+              ref={headingRef}
               className="text-base font-medium tracking-tight"
             >
               Event detail
@@ -116,6 +129,26 @@ export function ActivityDetail({ event, loading = false, onBack }: ActivityDetai
         </div>
       ) : (
         <div className="grid flex-1 content-start gap-6 p-5 sm:p-6">
+          {error ? (
+            <div
+              className="border-destructive/25 bg-destructive/5 grid gap-3 rounded-lg border p-4"
+              role="alert"
+            >
+              <div>
+                <p className="text-danger-text text-sm font-medium">
+                  Event details could not be loaded
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm leading-5">
+                  {error}
+                </p>
+              </div>
+              {onRetry ? (
+                <Button type="button" variant="outline" onClick={onRetry}>
+                  Retry detail
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <ActivityTypeBadge type={event.type} />
             {event.type === "AI_ACTION" ? <AiBadge label="Agent" /> : null}
@@ -126,7 +159,7 @@ export function ActivityDetail({ event, loading = false, onBack }: ActivityDetai
           <dl className="grid gap-5 sm:grid-cols-2">
             <DetailField
               label="When"
-              value={formatTimestamp(event.occurred_at) ?? "—"}
+              value={<RelativeTime value={event.occurred_at} />}
             />
             <DetailField label="Actor" value={actorLabels[event.actor_type]} />
             <DetailField

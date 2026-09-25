@@ -111,6 +111,9 @@ describe("identity-backed settings", () => {
     expect(screen.getAllByText("Member")).not.toHaveLength(0);
     expect(screen.getByRole("heading", { name: "Website enquiries" })).toBeVisible();
     expect(screen.getByText(/Hosted form for website visitors/)).toBeVisible();
+    expect(screen.getByRole("region", { name: "Team settings" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Automation settings" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Account settings" })).toBeVisible();
     expect(
       await screen.findByRole("switch", { name: "Start Sales Agent automatically" }),
     ).toBeVisible();

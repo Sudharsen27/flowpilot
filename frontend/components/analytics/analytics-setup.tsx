@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 const dataSources = [
   { href: "/leads", label: "Leads" },
-  { href: "/inbox", label: "Conversations" },
+  { href: "/inbox", label: "AI Inbox" },
   { href: "/agents", label: "Agents" },
   { href: "/workflows", label: "Workflows" },
   { href: "/approvals", label: "Approvals" },
@@ -20,7 +20,7 @@ export function AnalyticsSetup() {
         icon={<BarChart3 />}
         className="max-w-none"
         title="Analytics will become available as FlowPilot starts processing real business activity"
-        description="Measurements will eventually come from leads, conversations, agents, workflows, approvals, and integrations. None of those systems are producing analytics yet."
+        description="Measurements will eventually come from leads, AI Inbox, agents, workflows, approvals, and integrations. None of those systems are producing analytics yet."
         action={
           <nav aria-label="Explore related workspaces">
             <ul className="flex flex-wrap gap-2">

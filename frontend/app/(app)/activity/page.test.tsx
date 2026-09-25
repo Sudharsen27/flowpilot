@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -85,10 +85,86 @@ describe("Activity page", () => {
     expect(screen.getByText("AI actions")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: /Lead qualified/ }));
     await waitFor(() => expect(getActivityMock).toHaveBeenCalledWith("event-1"));
-    expect(await screen.findByText(event.summary!)).toBeVisible();
+    const detail = screen.getByRole("region", { name: "Event detail" });
+    expect(within(detail).getByText(event.summary!)).toBeVisible();
     expect(screen.getByRole("link", { name: "Open lead" })).toHaveAttribute(
       "href",
       "/leads/lead-1",
+    );
+    expect(within(detail).getByText("Completed")).toBeVisible();
+    expect(screen.getByRole("list", { name: "Activity timeline" }).querySelector("time"))
+      .toHaveAttribute("datetime", event.occurred_at);
+  });
+
+  it("clears selected detail when filters replace the result set", async () => {
+    const user = userEvent.setup();
+    listActivityMock
+      .mockResolvedValueOnce(pageOf([event]))
+      .mockResolvedValue(pageOf([]));
+    render(<ActivityPage />);
+
+    await user.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    expect(await screen.findByRole("link", { name: "Open lead" })).toBeVisible();
+    await user.type(screen.getByRole("searchbox", { name: "Search activity" }), "missing");
+
+    await waitFor(() =>
+      expect(listActivityMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: "missing" }),
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "Open lead" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No matching activity" })).toBeVisible();
+  });
+
+  it("clears selected detail when moving to another page", async () => {
+    listActivityMock
+      .mockResolvedValueOnce(pageOf([event], 21))
+      .mockResolvedValueOnce(pageOf([], 21));
+    render(<ActivityPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    expect(await screen.findByRole("link", { name: "Open lead" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() =>
+      expect(listActivityMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 20, limit: 20 }),
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "Open lead" })).not.toBeInTheDocument();
+  });
+
+  it("shows detail errors and retries the detail request", async () => {
+    const user = userEvent.setup();
+    getActivityMock.mockRejectedValueOnce(new Error("detail failure"));
+    listActivityMock.mockResolvedValue(pageOf([event]));
+    render(<ActivityPage />);
+
+    await user.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Event details could not be loaded",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry detail" }));
+    expect(await within(screen.getByRole("region", { name: "Event detail" })).findByText(event.summary!)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps timeline rows concise when an event has no summary", async () => {
+    const eventWithoutSummary = { ...event, id: "event-2", summary: null };
+    listActivityMock.mockResolvedValue(pageOf([eventWithoutSummary]));
+    render(<ActivityPage />);
+
+    await screen.findByRole("button", { name: /Lead qualified/ });
+    expect(screen.queryByText(event.summary!)).not.toBeInTheDocument();
+  });
+
+  it("moves focus to event detail after selecting an event", async () => {
+    listActivityMock.mockResolvedValue(pageOf([event]));
+    render(<ActivityPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Event detail" })).toHaveFocus(),
     );
   });
 

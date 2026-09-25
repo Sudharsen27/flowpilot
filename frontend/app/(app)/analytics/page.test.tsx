@@ -134,7 +134,7 @@ describe("Analytics page", () => {
     });
     for (const [label, href] of [
       ["Leads", "/leads"],
-      ["Conversations", "/inbox"],
+      ["AI Inbox", "/inbox"],
       ["Agents", "/agents"],
       ["Workflows", "/workflows"],
       ["Approvals", "/approvals"],

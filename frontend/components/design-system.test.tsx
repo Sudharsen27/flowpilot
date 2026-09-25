@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,14 @@ describe("design system foundations", () => {
     expect(
       screen.getByRole("navigation", { name: "Breadcrumb" }),
     ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Settings" }),
+    ).toHaveAttribute("href", "/settings");
+    const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(breadcrumb).getByText("Workspace")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     expect(screen.getByRole("button", { name: "Save changes" })).toBeVisible();
   });
 

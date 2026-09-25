@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -43,12 +44,12 @@ export function PageHeader({
                 >
                   {index > 0 ? <span aria-hidden="true">/</span> : null}
                   {item.href && index < breadcrumbs.length - 1 ? (
-                    <a
+                    <Link
                       href={item.href}
-                      className="hover:text-foreground rounded-sm underline-offset-4 hover:underline"
+                      className="hover:text-foreground focus-visible:ring-ring rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-offset-2"
                     >
                       {item.label}
-                    </a>
+                    </Link>
                   ) : (
                     <span
                       aria-current={

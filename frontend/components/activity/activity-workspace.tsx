@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ActivityDetail } from "@/components/activity/activity-detail";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
@@ -39,6 +39,10 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
   const [page, setPage] = useState<ActivityListResponse | null>(null);
   const [selected, setSelected] = useState<ActivityEvent | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const detailRequestRef = useRef(0);
+  const selectedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +55,17 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
     })
       .then((data) => {
         if (cancelled) return;
+        if (
+          selectedIdRef.current &&
+          !data.items.some((item) => item.id === selectedIdRef.current)
+        ) {
+          detailRequestRef.current += 1;
+          selectedIdRef.current = null;
+          setSelected(null);
+          setDetailLoading(false);
+          setDetailError(null);
+          setMobileView("timeline");
+        }
         setPage(data);
         onSummary?.(data);
       })
@@ -72,9 +87,48 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
     };
   }, [entityType, eventType, offset, onSummary, query, retryKey]);
 
+  const selectedId = selected?.id;
+
+  useEffect(() => {
+    if (mobileView === "detail" && selectedId) {
+      detailHeadingRef.current?.focus();
+    }
+  }, [mobileView, selectedId]);
+
   function beginFetch() {
     setLoading(true);
     setError(null);
+  }
+
+  function clearSelection() {
+    detailRequestRef.current += 1;
+    selectedIdRef.current = null;
+    setSelected(null);
+    setDetailLoading(false);
+    setDetailError(null);
+    setMobileView("timeline");
+  }
+
+  function loadDetail(event: ActivityEvent) {
+    const requestId = ++detailRequestRef.current;
+    setDetailLoading(true);
+    setDetailError(null);
+    void getActivity(event.id)
+      .then((detail) => {
+        if (requestId === detailRequestRef.current) {
+          selectedIdRef.current = detail.id;
+          setSelected(detail);
+        }
+      })
+      .catch(() => {
+        if (requestId !== detailRequestRef.current) return;
+        selectedIdRef.current = event.id;
+        setSelected(event);
+        setDetailError("Retry to load the complete recorded event.");
+      })
+      .finally(() => {
+        if (requestId === detailRequestRef.current) setDetailLoading(false);
+      });
   }
 
   const total = page?.total ?? 0;
@@ -136,21 +190,25 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
               eventType={eventType}
               entityType={entityType}
               onQueryChange={(value) => {
+                clearSelection();
                 beginFetch();
                 setQuery(value);
                 setOffset(0);
               }}
               onEventTypeChange={(value) => {
+                clearSelection();
                 beginFetch();
                 setEventType(value);
                 setOffset(0);
               }}
               onEntityTypeChange={(value) => {
+                clearSelection();
                 beginFetch();
                 setEntityType(value);
                 setOffset(0);
               }}
               onClearFilters={() => {
+                clearSelection();
                 beginFetch();
                 setQuery("");
                 setEventType("");
@@ -197,13 +255,10 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
               events={page?.items ?? []}
               selectedId={selected?.id}
               onSelect={(event) => {
+                selectedIdRef.current = event.id;
                 setSelected(event);
                 setMobileView("detail");
-                setDetailLoading(true);
-                void getActivity(event.id)
-                  .then((detail) => setSelected(detail))
-                  .catch(() => setSelected(event))
-                  .finally(() => setDetailLoading(false));
+                loadDetail(event);
               }}
             />
           )}
@@ -218,6 +273,7 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
                   variant="outline"
                   disabled={offset === 0 || loading}
                   onClick={() => {
+                    clearSelection();
                     beginFetch();
                     setOffset(Math.max(0, offset - PAGE_SIZE));
                   }}
@@ -229,6 +285,7 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
                   variant="outline"
                   disabled={offset + PAGE_SIZE >= total || loading}
                   onClick={() => {
+                    clearSelection();
                     beginFetch();
                     setOffset(offset + PAGE_SIZE);
                   }}
@@ -251,7 +308,10 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
           <ActivityDetail
             event={selected}
             loading={detailLoading}
+            error={detailError}
+            onRetry={selected ? () => loadDetail(selected) : undefined}
             onBack={() => setMobileView("timeline")}
+            headingRef={detailHeadingRef}
           />
         </div>
       </div>

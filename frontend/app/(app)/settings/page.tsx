@@ -91,7 +91,7 @@ export default function SettingsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Settings"
-        description="Review your account, organization, and current workspace membership."
+        description="Manage General, Team, Automation, and Account settings for your current workspace."
       />
       {isLoading ? (
         <div className="grid gap-6 lg:grid-cols-2" role="status">
@@ -191,7 +191,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="grid gap-5">
+          <section className="grid gap-5" aria-label="Team settings">
             <SectionHeader title="Team" description="People who currently belong to this organization." />
             {membersError ? (
               <StatePanel
@@ -212,7 +212,7 @@ export default function SettingsPage() {
             )}
           </section>
 
-          <section className="grid gap-5">
+          <section className="grid gap-5" aria-label="Automation settings">
             <SectionHeader
               title="Automation"
               description="Configure the automated experiences that work across your organization."
@@ -269,7 +269,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="grid gap-5">
+          <section className="grid gap-5" aria-label="Account settings">
             <SectionHeader
               title="Account"
               description="Manage this browser session."
