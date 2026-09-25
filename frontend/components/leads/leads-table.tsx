@@ -51,16 +51,18 @@ const leadColumns: DataTableColumn<Lead>[] = [
     className: "min-w-[10rem]",
     cell: (lead) => (
       <div className="min-w-0">
-        <p className="font-medium">
+        <p className="font-medium tracking-tight">
           <Link
             href={`/leads/${lead.id}`}
-            className="hover:text-foreground rounded-sm underline-offset-4 hover:underline"
+            aria-label={lead.name}
+            title={`Open ${lead.name}`}
+            className="text-foreground hover:text-foreground rounded-sm font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {lead.name}
           </Link>
         </p>
         {lead.email ? (
-          <p className="text-muted-foreground mt-0.5 truncate text-xs">
+          <p className="text-muted-foreground mt-1 truncate text-[11px] leading-5">
             {lead.email}
           </p>
         ) : null}
@@ -71,7 +73,11 @@ const leadColumns: DataTableColumn<Lead>[] = [
     key: "company",
     header: "Company",
     className: "min-w-[7rem]",
-    cell: (lead) => lead.company ?? "—",
+    cell: (lead) => (
+      <span className="text-muted-foreground truncate text-sm">
+        {lead.company ?? "—"}
+      </span>
+    ),
   },
   {
     key: "status",
@@ -83,13 +89,21 @@ const leadColumns: DataTableColumn<Lead>[] = [
     key: "qualification",
     header: "AI qualification",
     className: "min-w-[9rem]",
-    cell: (lead) => <QualificationStatus status={qualificationState(lead)} />,
+    cell: (lead) => (
+      <div className="flex items-start justify-start">
+        <QualificationStatus status={qualificationState(lead)} />
+      </div>
+    ),
   },
   {
     key: "sales-agent",
     header: "Sales Agent",
     className: "whitespace-nowrap",
-    cell: (lead) => <SalesAgentStatus summary={lead.latest_sales_run} />,
+    cell: (lead) => (
+      <div className="flex items-start justify-start">
+        <SalesAgentStatus summary={lead.latest_sales_run} />
+      </div>
+    ),
   },
   {
     key: "source",

@@ -48,6 +48,7 @@ export function Customer360Profile({
     <section
       className="bg-card border-border grid content-start gap-5 rounded-lg border p-4 sm:p-5"
       aria-labelledby="customer-360-profile-title"
+      aria-live="polite"
     >
       <div className="flex items-start gap-3">
         <span

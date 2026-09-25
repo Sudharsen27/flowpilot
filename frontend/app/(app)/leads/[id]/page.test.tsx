@@ -235,7 +235,9 @@ describe("Lead workspace", () => {
 
   it("shows loading then the Customer 360 workspace", async () => {
     render(<LeadWorkspacePage />);
-    expect(screen.getByText("Loading lead")).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Selected lead" }),
+    ).toHaveTextContent("Loading lead");
     expect(
       await screen.findByRole("heading", { level: 1, name: "Ada Prospect" }),
     ).toBeVisible();

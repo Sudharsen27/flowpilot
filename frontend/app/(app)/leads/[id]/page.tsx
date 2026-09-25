@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
 import { EmptyState } from "@/components/empty-state";
@@ -60,6 +60,7 @@ function canReviewDraft(run: SalesRun | null) {
 export default function LeadWorkspacePage() {
   const params = useParams<{ id: string }>();
   const leadId = params.id;
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
   const [lead, setLead] = useState<Lead | null>(null);
   const [latestRun, setLatestRun] = useState<SalesRun | null>(null);
   const [qualificationDetail, setQualificationDetail] =
@@ -192,9 +193,17 @@ export default function LeadWorkspacePage() {
     agents.find((agent) => agent.id === lead?.latest_sales_run?.agent_id)?.name ??
     null;
 
+  useEffect(() => {
+    if (!lead || !headingRef.current) return;
+    headingRef.current.focus();
+  }, [lead]);
+
   if (loading) {
     return (
       <div className="gap-section flex flex-col">
+        <div role="status" aria-live="polite" aria-label="Selected lead" className="sr-only">
+          Loading lead
+        </div>
         <PageHeader
           breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: "Lead" }]}
           title="Lead"
@@ -206,7 +215,6 @@ export default function LeadWorkspacePage() {
           <Skeleton className="h-72 w-full" />
           <Skeleton className="order-3 h-[28rem] w-full xl:order-none" />
           <Skeleton className="order-2 h-72 w-full xl:order-none" />
-          <span className="sr-only">Loading lead</span>
         </div>
       </div>
     );
@@ -216,6 +224,9 @@ export default function LeadWorkspacePage() {
     const notFound = errorKind === "not-found";
     return (
       <div className="gap-section flex flex-col">
+        <div role="status" aria-live="polite" aria-label="Selected lead" className="sr-only">
+          {notFound ? "Lead not found" : "Lead unavailable"}
+        </div>
         <PageHeader
           breadcrumbs={[
             { label: "Leads", href: "/leads" },
@@ -318,6 +329,9 @@ export default function LeadWorkspacePage() {
 
   return (
     <div className="gap-section flex flex-col">
+      <div role="status" aria-live="polite" aria-label="Selected lead" className="sr-only">
+        {`Selected lead: ${lead.name}`}
+      </div>
       <PageHeader
         breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: lead.name }]}
         title={lead.name}

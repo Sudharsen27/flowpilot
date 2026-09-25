@@ -177,6 +177,7 @@ export function Customer360Insights({
       <div
         className={cn("rounded-md border px-3 py-3", nextStepTone(nextStep.kind))}
         role="status"
+        aria-live="polite"
         aria-labelledby="customer-360-next-step-title"
       >
         <p className="text-muted-foreground text-[0.6875rem] font-medium tracking-wide uppercase">
@@ -210,7 +211,9 @@ export function Customer360Insights({
         <div className="border-ai-border/60 grid gap-2 border-l-2 pl-3">
           <div className="flex flex-wrap items-center gap-2">
             <AiBadge label="Analysis" />
-            <span className="text-sm font-medium">AI qualification</span>
+            <span className="text-sm font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              AI insight
+            </span>
           </div>
           <QualificationStatus
             status={

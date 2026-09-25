@@ -16,7 +16,7 @@ export function LeadOverview({ summary, loading = false }: LeadOverviewProps) {
   const qualifiedCount = summary?.status_counts.QUALIFIED;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-live="polite">
       <MetricCard
         label="Total leads"
         value={total}
@@ -25,6 +25,7 @@ export function LeadOverview({ summary, loading = false }: LeadOverviewProps) {
         headingLevel={3}
         loading={loading}
         icon={<Users />}
+        className="border-border bg-muted/25"
       />
       <MetricCard
         label="New leads"
@@ -34,6 +35,7 @@ export function LeadOverview({ summary, loading = false }: LeadOverviewProps) {
         headingLevel={3}
         loading={loading}
         icon={<UserPlus />}
+        className="border-border bg-muted/25"
       />
       <MetricCard
         label="Qualified leads"
@@ -43,6 +45,7 @@ export function LeadOverview({ summary, loading = false }: LeadOverviewProps) {
         headingLevel={3}
         loading={loading}
         icon={<CircleCheck />}
+        className="border-border bg-muted/25"
       />
       <MetricCard
         label="Follow-up required"
@@ -50,6 +53,7 @@ export function LeadOverview({ summary, loading = false }: LeadOverviewProps) {
         unavailableLabel="See Follow-ups below for overdue and upcoming actions"
         headingLevel={3}
         icon={<ClockAlert />}
+        className="border-border bg-muted/25"
       />
     </div>
   );
