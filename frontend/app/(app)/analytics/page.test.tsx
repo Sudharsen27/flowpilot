@@ -1,5 +1,4 @@
 import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import AnalyticsPage from "@/app/(app)/analytics/page";
@@ -45,7 +44,6 @@ describe("Analytics page", () => {
   });
 
   it("provides accessible local-only date and filter controls", async () => {
-    const user = userEvent.setup();
     render(<AnalyticsPage />);
 
     const range = screen.getByRole("combobox", { name: "Date range" });
@@ -54,17 +52,16 @@ describe("Analytics page", () => {
     const channel = screen.getByRole("combobox", { name: "Channel or source" });
 
     expect(range).toHaveValue("30");
-    await user.selectOptions(range, "7");
-    await user.selectOptions(agent, "sales");
-    await user.selectOptions(workflow, "follow-up");
-    await user.selectOptions(channel, "inbox");
-    await user.click(screen.getByRole("button", { name: "Clear filters" }));
-
-    expect(range).toHaveValue("30");
     expect(agent).toHaveValue("all");
     expect(workflow).toHaveValue("all");
     expect(channel).toHaveValue("all");
-    expect(screen.getByText(/They do not query analytics data/)).toBeVisible();
+    for (const control of [range, agent, workflow, channel]) {
+      expect(control).toBeDisabled();
+    }
+    expect(
+      screen.getByText(/Preview controls only.*analytics data is connected/),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
   });
 
   it("renders performance and outcome sections as unavailable placeholders", () => {
@@ -78,18 +75,17 @@ describe("Analytics page", () => {
       "Business outcomes",
     ]) {
       expect(screen.getByRole("heading", { name: title })).toBeVisible();
-      expect(
-        screen.getByRole("img", {
-          name: `${title} chart placeholder. Data will appear here.`,
-        }),
-      ).toBeVisible();
+      const panel = screen.getByRole("region", { name: title });
+      expect(panel).toHaveAttribute("aria-describedby");
+      expect(within(panel).getByText("Reporting is coming soon")).toBeVisible();
     }
 
-    expect(screen.getAllByText("Data will appear here")).toHaveLength(5);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Reporting is coming soon")).toHaveLength(5);
     expect(
       screen.getAllByText(/No chart series, percentages, or trends/),
     ).toHaveLength(5);
-    expect(screen.getAllByText("Data unavailable")).toHaveLength(5);
+    expect(screen.getAllByText("Planned")).toHaveLength(5);
   });
 
   it("lists metric concepts without fabricating values", () => {
@@ -119,7 +115,7 @@ describe("Analytics page", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Analytics will become available as FlowPilot starts processing real business activity",
+        name: "Analytics is coming soon",
       }),
     ).toBeVisible();
     expect(
@@ -133,7 +129,7 @@ describe("Analytics page", () => {
       name: "Explore related workspaces",
     });
     for (const [label, href] of [
-      ["Leads", "/leads"],
+      ["View Leads", "/leads"],
       ["AI Inbox", "/inbox"],
       ["Agents", "/agents"],
       ["Workflows", "/workflows"],
@@ -144,5 +140,8 @@ describe("Analytics page", () => {
         within(navigation).getByRole("link", { name: label }),
       ).toHaveAttribute("href", href);
     }
+    expect(
+      within(navigation).getByRole("link", { name: "View Leads" }),
+    ).toHaveClass("bg-primary");
   });
 });

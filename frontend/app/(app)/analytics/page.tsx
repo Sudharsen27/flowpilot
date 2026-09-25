@@ -13,13 +13,13 @@ export default function AnalyticsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Analytics"
-        description="Understand FlowPilot performance and business outcomes as real activity is recorded."
+        description="Analytics is coming soon. Reporting metrics and performance insights will appear here when analytics data is available."
       />
 
       <section className="grid gap-5">
         <SectionHeader
           title="Reporting period"
-          description="Choose a date range and scope. These controls do not change analytics data yet."
+          description="Preview reporting controls. They are unavailable until analytics data is connected."
         />
         <AnalyticsToolbar />
       </section>
@@ -27,7 +27,7 @@ export default function AnalyticsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Overview"
-          description="Key signals will appear after analytics aggregation is implemented."
+          description="Overview metrics are unavailable until analytics data is connected."
         />
         <AnalyticsOverview />
       </section>
@@ -35,13 +35,13 @@ export default function AnalyticsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Performance"
-          description="Lead, conversation, agent, and workflow measurements are unavailable until real activity exists."
+          description="Performance reporting will be available when analytics data is connected."
         />
         <AnalyticsPanelGrid>
           <AnalyticsPanel
             headingId="lead-performance-title"
             title="Lead performance"
-            description="Future measurements for lead volume, qualification, conversion, and sources."
+            description="Planned measurements for lead volume, qualification, conversion, and sources."
             metrics={[
               "Lead volume",
               "Qualification rate",
@@ -52,7 +52,7 @@ export default function AnalyticsPage() {
           <AnalyticsPanel
             headingId="conversation-performance-title"
             title="Conversation performance"
-            description="Future measurements for conversation volume, AI handling, handoffs, and response performance."
+            description="Planned measurements for conversation volume, AI handling, handoffs, and response performance."
             metrics={[
               "Conversation volume",
               "AI handled conversations",
@@ -63,7 +63,7 @@ export default function AnalyticsPage() {
           <AnalyticsPanel
             headingId="agent-performance-title"
             title="AI agent performance"
-            description="Future measurements for agent work. No agent execution is claimed."
+            description="Planned measurements for agent work. No agent execution is claimed."
             metrics={[
               "Tasks completed",
               "AI-handled conversations",
@@ -74,7 +74,7 @@ export default function AnalyticsPage() {
           <AnalyticsPanel
             headingId="workflow-performance-title"
             title="Workflow performance"
-            description="Future measurements for workflow runs, success, failure, and approvals."
+            description="Planned measurements for workflow runs, success, failure, and approvals."
             metrics={[
               "Workflow runs",
               "Successful runs",
@@ -88,12 +88,12 @@ export default function AnalyticsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Outcomes"
-          description="Business outcome signals will appear after recorded activity can be measured."
+          description="Outcome reporting will be available when analytics aggregation is available."
         />
         <AnalyticsPanel
           headingId="outcomes-title"
           title="Business outcomes"
-          description="Future measurements for qualified opportunities, appointments, follow-ups, and human interventions."
+          description="Planned measurements for qualified opportunities, appointments, follow-ups, and human interventions."
           metrics={[
             "Qualified opportunities",
             "Appointments booked",
@@ -106,7 +106,7 @@ export default function AnalyticsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Setup and data trust"
-          description="Analytics remain empty until FlowPilot records real business activity."
+          description="Analytics is planned; no reporting data is connected yet."
         />
         <AnalyticsSetup />
       </section>

@@ -5,12 +5,12 @@ import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 
 const dataSources = [
-  { href: "/leads", label: "Leads" },
-  { href: "/inbox", label: "AI Inbox" },
-  { href: "/agents", label: "Agents" },
-  { href: "/workflows", label: "Workflows" },
-  { href: "/approvals", label: "Approvals" },
-  { href: "/integrations", label: "Integrations" },
+  { href: "/leads", label: "View Leads", primary: true },
+  { href: "/inbox", label: "AI Inbox", primary: false },
+  { href: "/agents", label: "Agents", primary: false },
+  { href: "/workflows", label: "Workflows", primary: false },
+  { href: "/approvals", label: "Approvals", primary: false },
+  { href: "/integrations", label: "Integrations", primary: false },
 ] as const;
 
 export function AnalyticsSetup() {
@@ -19,8 +19,8 @@ export function AnalyticsSetup() {
       <EmptyState
         icon={<BarChart3 />}
         className="max-w-none"
-        title="Analytics will become available as FlowPilot starts processing real business activity"
-        description="Measurements will eventually come from leads, AI Inbox, agents, workflows, approvals, and integrations. None of those systems are producing analytics yet."
+        title="Analytics is coming soon"
+        description="Reporting metrics and performance insights will appear here once analytics data is available."
         action={
           <nav aria-label="Explore related workspaces">
             <ul className="flex flex-wrap gap-2">
@@ -28,7 +28,11 @@ export function AnalyticsSetup() {
                 <li key={source.href}>
                   <Link
                     href={source.href}
-                    className="border-border bg-background hover:bg-muted focus-visible:ring-ring inline-flex min-h-8 items-center rounded-lg border px-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                    className={
+                      source.primary
+                        ? "focus-visible:ring-ring bg-primary text-primary-foreground hover:bg-primary/80 inline-flex min-h-8 items-center rounded-lg px-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                        : "border-border bg-background hover:bg-muted focus-visible:ring-ring inline-flex min-h-8 items-center rounded-lg border px-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                    }
                   >
                     {source.label}
                   </Link>
@@ -58,12 +62,12 @@ export function AnalyticsSetup() {
             Transparent visibility
           </h3>
           <p className="text-muted-foreground mt-2 text-sm leading-6">
-            Analytics will eventually help teams see what FlowPilot is doing and
-            the business outcomes it produces from recorded activity.
+            Analytics will help teams understand recorded FlowPilot activity and
+            the business outcomes it produces when reporting is available.
           </p>
           <p className="text-muted-foreground mt-3 text-xs leading-5">
             This screen does not calculate performance, accuracy, attribution,
-            or compliance metrics.
+            or compliance metrics yet.
           </p>
         </CardContent>
       </Card>

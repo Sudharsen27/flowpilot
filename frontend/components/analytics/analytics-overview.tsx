@@ -12,32 +12,32 @@ import { MetricCard } from "@/components/data-display/metric-card";
 const overviewMetrics = [
   {
     label: "Leads generated",
-    unavailableLabel: "No lead data",
+    unavailableLabel: "Unavailable until analytics data is connected",
     icon: Users,
   },
   {
     label: "Qualified leads",
-    unavailableLabel: "Qualification unavailable",
+    unavailableLabel: "Unavailable until analytics data is connected",
     icon: UserCheck,
   },
   {
     label: "Conversations",
-    unavailableLabel: "No conversation data",
+    unavailableLabel: "Unavailable until analytics data is connected",
     icon: MessageSquareText,
   },
   {
     label: "Appointments",
-    unavailableLabel: "No appointment data",
+    unavailableLabel: "Unavailable until analytics data is connected",
     icon: CalendarCheck,
   },
   {
     label: "AI handled",
-    unavailableLabel: "AI handling unavailable",
+    unavailableLabel: "Unavailable until analytics data is connected",
     icon: Bot,
   },
   {
     label: "Human handoffs",
-    unavailableLabel: "No handoff data",
+    unavailableLabel: "Unavailable until analytics data is connected",
     icon: UserRoundCheck,
   },
 ] as const;

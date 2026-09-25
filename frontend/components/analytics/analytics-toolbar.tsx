@@ -1,37 +1,14 @@
 "use client";
 
-import { useState } from "react";
-
 import { FilterBar } from "@/components/forms/filter-bar";
 import { Label } from "@/components/forms/label";
 import { Select } from "@/components/forms/select";
 
 export function AnalyticsToolbar() {
-  const [range, setRange] = useState("30");
-  const [agent, setAgent] = useState("all");
-  const [workflow, setWorkflow] = useState("all");
-  const [channel, setChannel] = useState("all");
-
-  const activeFilterCount = [
-    range !== "30",
-    agent !== "all",
-    workflow !== "all",
-    channel !== "all",
-  ].filter(Boolean).length;
-
-  function clearFilters() {
-    setRange("30");
-    setAgent("all");
-    setWorkflow("all");
-    setChannel("all");
-  }
-
   return (
     <div className="grid gap-2">
       <FilterBar
         className="!grid grid-cols-2 xl:grid-cols-4"
-        activeFilterCount={activeFilterCount}
-        onClearFilters={clearFilters}
       >
         <div className="min-w-0">
           <Label htmlFor="analytics-date-range" className="sr-only">
@@ -39,8 +16,8 @@ export function AnalyticsToolbar() {
           </Label>
           <Select
             id="analytics-date-range"
-            value={range}
-            onChange={(event) => setRange(event.target.value)}
+            defaultValue="30"
+            disabled
             aria-describedby="analytics-filters-note"
           >
             <option value="7">Last 7 days</option>
@@ -54,8 +31,8 @@ export function AnalyticsToolbar() {
           </Label>
           <Select
             id="analytics-agent"
-            value={agent}
-            onChange={(event) => setAgent(event.target.value)}
+            defaultValue="all"
+            disabled
             aria-describedby="analytics-filters-note"
           >
             <option value="all">All agents</option>
@@ -70,8 +47,8 @@ export function AnalyticsToolbar() {
           </Label>
           <Select
             id="analytics-workflow"
-            value={workflow}
-            onChange={(event) => setWorkflow(event.target.value)}
+            defaultValue="all"
+            disabled
             aria-describedby="analytics-filters-note"
           >
             <option value="all">All workflows</option>
@@ -85,8 +62,8 @@ export function AnalyticsToolbar() {
           </Label>
           <Select
             id="analytics-channel"
-            value={channel}
-            onChange={(event) => setChannel(event.target.value)}
+            defaultValue="all"
+            disabled
             aria-describedby="analytics-filters-note"
           >
             <option value="all">All channels</option>
@@ -97,7 +74,8 @@ export function AnalyticsToolbar() {
         </div>
       </FilterBar>
       <p id="analytics-filters-note" className="text-muted-foreground text-xs">
-        Date range and filters are UI-only. They do not query analytics data.
+        Preview controls only. Reporting filters will become available when
+        analytics data is connected.
       </p>
     </div>
   );

@@ -18,33 +18,38 @@ export function AnalyticsPanel({
   headingId,
 }: AnalyticsPanelProps) {
   return (
-    <Card as="section" aria-labelledby={headingId} className="h-full">
+    <Card
+      as="section"
+      aria-labelledby={headingId}
+      aria-describedby={`${headingId}-description`}
+      className="h-full"
+    >
       <CardContent className="flex h-full flex-col gap-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 id={headingId} className="text-base font-medium tracking-tight">
               {title}
             </h3>
-            <p className="text-muted-foreground mt-1 text-sm leading-6">
+            <p
+              id={`${headingId}-description`}
+              className="text-muted-foreground mt-1 text-sm leading-6"
+            >
               {description}
             </p>
           </div>
-          <StatusBadge status="draft" label="Data unavailable" />
+          <StatusBadge status="draft" label="Planned" />
         </div>
 
         <div
-          className="border-border bg-surface-subtle flex min-h-44 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center"
-          role="img"
-          aria-label={`${title} chart placeholder. Data will appear here.`}
+          className="border-border bg-surface-subtle flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center"
         >
           <ChartColumn
             className="text-muted-foreground size-5"
             aria-hidden="true"
           />
-          <p className="mt-3 text-sm font-medium">Data will appear here</p>
+          <p className="mt-3 text-sm font-medium">Reporting is coming soon</p>
           <p className="text-muted-foreground mt-1 max-w-sm text-xs leading-5">
-            This area is a placeholder. No chart series, percentages, or trends
-            are displayed.
+            No chart series, percentages, or trends are available yet.
           </p>
         </div>
 
