@@ -5,22 +5,22 @@ import { MetricCard } from "@/components/data-display/metric-card";
 const knowledgeMetrics = [
   {
     label: "Knowledge sources",
-    unavailableLabel: "No source data",
+    unavailableLabel: "Available when sources connect",
     icon: Library,
   },
   {
     label: "Documents",
-    unavailableLabel: "No document data",
+    unavailableLabel: "Available when sources connect",
     icon: FileText,
   },
   {
     label: "Indexed",
-    unavailableLabel: "Indexing unavailable",
+    unavailableLabel: "Available when sources connect",
     icon: ScanSearch,
   },
   {
     label: "Needs attention",
-    unavailableLabel: "No indexing health data",
+    unavailableLabel: "Available when sources connect",
     icon: CircleAlert,
   },
 ] as const;

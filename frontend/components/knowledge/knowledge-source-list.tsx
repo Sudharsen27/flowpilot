@@ -6,6 +6,8 @@ import {
   IndexingStatusBadge,
   type IndexingStatus,
 } from "@/components/knowledge/indexing-status-badge";
+import { StatePanel } from "@/components/data-display/state-panel";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { statusPresentation } from "@/lib/status";
 
@@ -22,6 +24,22 @@ export type KnowledgeSourceListItem = {
   lastUpdated?: string;
   indexingStatus: IndexingStatus;
 };
+
+export function filterKnowledgeSources(
+  sources: KnowledgeSourceListItem[],
+  query: string,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return sources;
+
+  return sources.filter((source) =>
+    [
+      source.name,
+      typeLabels[source.type],
+      sourceStatusLabels[source.status],
+    ].some((value) => value.toLowerCase().includes(normalizedQuery)),
+  );
+}
 
 const typeLabels: Record<KnowledgeSourceType, string> = {
   document: "Document",
@@ -48,7 +66,14 @@ const sourceColumns: DataTableColumn<KnowledgeSourceListItem>[] = [
   {
     key: "source",
     header: "Source name",
-    cell: (source) => <span className="font-medium">{source.name}</span>,
+    cell: (source) => (
+      <span
+        className="block max-w-[18rem] truncate font-medium"
+        title={source.name}
+      >
+        {source.name}
+      </span>
+    ),
   },
   {
     key: "type",
@@ -72,11 +97,16 @@ const sourceColumns: DataTableColumn<KnowledgeSourceListItem>[] = [
   {
     key: "last-updated",
     header: "Last updated",
-    cell: (source) => source.lastUpdated ?? "Unavailable",
+    cell: (source) =>
+      source.lastUpdated ? (
+        <RelativeTime value={source.lastUpdated} />
+      ) : (
+        <span className="text-muted-foreground">Unavailable</span>
+      ),
   },
   {
     key: "indexing",
-    header: "Content / indexing",
+    header: "Planned indexing",
     cell: (source) => <IndexingStatusBadge status={source.indexingStatus} />,
   },
   {
@@ -91,21 +121,45 @@ const sourceColumns: DataTableColumn<KnowledgeSourceListItem>[] = [
 type KnowledgeSourceListProps = {
   sources: KnowledgeSourceListItem[];
   loading?: boolean;
+  error?: string | null;
+  searchQuery?: string;
 };
 
 export function KnowledgeSourceList({
   sources,
   loading = false,
+  error = null,
+  searchQuery = "",
 }: KnowledgeSourceListProps) {
+  if (error) {
+    return (
+      <StatePanel
+        kind="error"
+        className="max-w-none"
+        title="Knowledge sources could not be loaded"
+        description={error}
+      />
+    );
+  }
+
+  const filteredSources = filterKnowledgeSources(sources, searchQuery);
+  const hasSearch = searchQuery.trim().length > 0 && sources.length > 0;
+
   return (
     <DataTable
       className="max-w-none"
       columns={sourceColumns}
-      rows={sources}
+      rows={filteredSources}
       getRowKey={(source) => source.id}
       loading={loading}
-      emptyTitle="Give your agents the context they need"
-      emptyDescription="Knowledge sources will appear here after ingestion is implemented. Businesses will eventually be able to provide company information, products and services, FAQs, policies, documents, and website content."
+      emptyTitle={
+        hasSearch ? "No matching sources" : "No Knowledge sources connected"
+      }
+      emptyDescription={
+        hasSearch
+          ? "No supplied Knowledge sources match this local search."
+          : "Sources will appear here when Knowledge source management is available."
+      }
     />
   );
 }

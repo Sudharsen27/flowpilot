@@ -62,12 +62,13 @@ describe("Knowledge page", () => {
     const search = screen.getByRole("searchbox", {
       name: "Search knowledge sources",
     });
-    expect(screen.getByText(/Search is UI-only/)).toBeVisible();
+    expect(screen.getByText(/applies locally to supplied source rows/)).toBeVisible();
 
     await user.type(search, "Example");
     expect(search).toHaveValue("Example");
     await user.click(screen.getByRole("button", { name: "Clear search" }));
     expect(search).toHaveValue("");
+    expect(screen.getByRole("status")).toHaveTextContent("0 supplied sources.");
   });
 
   it("shows an honest setup state without fabricated sources", () => {
@@ -75,10 +76,10 @@ describe("Knowledge page", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Give your agents the context they need",
+        name: "No Knowledge sources connected",
       }),
     ).toBeVisible();
-    expect(screen.getByText(/after ingestion is implemented/)).toBeVisible();
+    expect(screen.getByText(/source management is available/)).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText("example.pdf")).not.toBeInTheDocument();
   });
@@ -148,5 +149,76 @@ describe("Knowledge page", () => {
     expect(screen.getAllByText("Test source")).toHaveLength(2);
     expect(screen.getAllByText("Document")).toHaveLength(2);
     expect(screen.getAllByText("Not indexed")).toHaveLength(2);
+  });
+
+  it("filters supplied sources locally and shows a distinct no-results state", () => {
+    const sources: KnowledgeSourceListItem[] = [
+      {
+        id: "source-1",
+        name: "Support policy",
+        type: "policy",
+        status: "connected",
+        indexingStatus: "ready",
+      },
+      {
+        id: "source-2",
+        name: "Product FAQ",
+        type: "faq",
+        status: "setup",
+        indexingStatus: "not-indexed",
+      },
+    ];
+
+    const { rerender } = render(
+      <KnowledgeSourceList sources={sources} searchQuery="POLICY" />,
+    );
+    expect(screen.getAllByText("Support policy")).toHaveLength(2);
+    expect(screen.queryByText("Product FAQ")).not.toBeInTheDocument();
+
+    rerender(<KnowledgeSourceList sources={sources} searchQuery="missing" />);
+    expect(screen.getByRole("heading", { name: "No matching sources" })).toBeVisible();
+    expect(screen.getByText(/No supplied Knowledge sources match/)).toBeVisible();
+  });
+
+  it("renders loading and error states without fake source rows", () => {
+    const { rerender } = render(<KnowledgeSourceList sources={[]} loading />);
+    expect(screen.getByRole("status")).toBeVisible();
+    expect(screen.queryByText("Example source")).not.toBeInTheDocument();
+
+    rerender(
+      <KnowledgeSourceList
+        sources={[]}
+        error="The Knowledge source list is unavailable."
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Knowledge sources could not be loaded" }),
+    ).toBeVisible();
+    expect(screen.getByText("The Knowledge source list is unavailable.")).toBeVisible();
+  });
+
+  it("keeps long names accessible and timestamps semantic", () => {
+    const longName = "A very long source name that should remain available to users";
+    render(
+      <KnowledgeSourceList
+        sources={[
+          {
+            id: "source-1",
+            name: longName,
+            type: "document",
+            status: "connected",
+            lastUpdated: "2026-09-25T10:00:00Z",
+            indexingStatus: "processing",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByTitle(longName)).toHaveLength(2);
+    expect(screen.getAllByRole("time")[0]).toHaveAttribute(
+      "dateTime",
+      "2026-09-25T10:00:00Z",
+    );
+    expect(screen.getAllByTitle("Planned concept, not live indexing telemetry")).toHaveLength(2);
   });
 });

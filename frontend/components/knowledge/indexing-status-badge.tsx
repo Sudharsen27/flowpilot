@@ -29,6 +29,8 @@ export function IndexingStatusBadge({ status }: IndexingStatusBadgeProps) {
     item.fallback ?? "draft",
   );
   return (
-    <StatusBadge status={presentation.status} label={presentation.label} />
+    <span title="Planned concept, not live indexing telemetry">
+      <StatusBadge status={presentation.status} label={presentation.label} />
+    </span>
   );
 }
