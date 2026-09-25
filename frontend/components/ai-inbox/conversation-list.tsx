@@ -81,18 +81,34 @@ export function ConversationList({
                 isSelected && "bg-surface-subtle",
                 conversation.needsApproval &&
                   !isSelected &&
-                  "border-l-warning border-l-2",
-                isSelected && conversation.needsApproval && "border-l-warning border-l-2",
+                  "border-l-warning bg-warning/5 border-l-2",
+                isSelected && conversation.needsApproval &&
+                  "border-l-warning bg-warning/5 border-l-2",
               )}
               aria-pressed={isSelected}
+              aria-current={isSelected ? "true" : undefined}
+              title={
+                conversation.occurredAt
+                  ? `${conversation.contactName} · ${conversation.occurredAt}`
+                  : conversation.contactName
+              }
               onClick={() => onSelect?.(conversation)}
             >
-              <span className="flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="text-foreground block truncate text-sm font-semibold tracking-tight">
-                    {conversation.contactName}
-                  </span>
-                  <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="text-foreground block truncate text-sm font-semibold tracking-tight">
+                      {conversation.contactName}
+                    </span>
+                    {conversation.needsApproval ? (
+                      <StatusBadge
+                        status="warning"
+                        label="Review"
+                        className="shrink-0"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5">
                     {conversation.company ? (
                       <span className="truncate">{conversation.company}</span>
                     ) : (
@@ -100,34 +116,50 @@ export function ConversationList({
                     )}
                     {conversation.source ? (
                       <>
-                        <span aria-hidden="true">·</span>
+                        <span aria-hidden="true">•</span>
                         <span className="shrink-0">
                           {inboxSourceLabels[conversation.source]}
                         </span>
                       </>
                     ) : null}
-                  </span>
-                </span>
+                  </div>
+                </div>
                 {conversation.occurredAt ? (
                   <RelativeTime
                     value={conversation.occurredAt}
-                    className="shrink-0"
+                    className="shrink-0 text-right"
                   />
                 ) : null}
-              </span>
-              {conversation.lastMessagePreview ? (
-                <span className="text-muted-foreground mt-2.5 line-clamp-2 block text-sm leading-5">
-                  {conversation.lastMessagePreview}
-                </span>
-              ) : (
-                <span className="text-muted-foreground mt-2.5 block text-sm italic">
-                  No preview yet
-                </span>
-              )}
+              </div>
+
+              <div className="mt-3 flex items-start gap-2">
+                <div
+                  className={cn(
+                    "min-w-0 flex-1 rounded-md border px-2.5 py-2 text-sm leading-5",
+                    conversation.needsApproval
+                      ? "border-warning/25 bg-warning/5 text-foreground"
+                      : "border-border bg-muted/30 text-muted-foreground",
+                  )}
+                >
+                  {conversation.lastMessagePreview ? (
+                    <span className="line-clamp-2 block">
+                      {conversation.lastMessagePreview}
+                    </span>
+                  ) : (
+                    <span className="italic">No preview yet</span>
+                  )}
+                </div>
+              </div>
+
               {showStatusBadge ? (
-                <span className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <StatusBadge status={status.status} label={status.label} />
-                </span>
+                  {conversation.needsApproval ? (
+                    <span className="text-warning-text text-[11px] font-medium uppercase tracking-[0.08em]">
+                      Human review
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </button>
           </li>

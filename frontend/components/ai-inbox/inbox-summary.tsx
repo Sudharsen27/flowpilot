@@ -54,6 +54,7 @@ export function InboxSummary({
       className="border-border bg-card grid gap-0 overflow-hidden rounded-lg border sm:grid-cols-3"
       data-slot="inbox-summary"
       aria-label="Inbox summary"
+      aria-live="polite"
     >
       {metrics.map((metric, index) => {
         const Icon = metric.icon;

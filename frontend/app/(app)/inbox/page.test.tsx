@@ -393,6 +393,9 @@ describe("AI Inbox page", () => {
     expect(
       screen.getByRole("link", { name: "Open full lead record" }),
     ).toHaveAttribute("href", "/leads/lead-1");
+    expect(
+      screen.getByRole("status", { name: "Selected conversation" }),
+    ).toBeVisible();
   });
 
   it("loads a lead from the URL on first render", async () => {

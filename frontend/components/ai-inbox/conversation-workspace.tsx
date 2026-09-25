@@ -7,6 +7,7 @@ import {
   UserRound,
   UserRoundCheck,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { ConversationTimeline } from "@/components/ai-inbox/conversation-timeline";
 import { AiBadge } from "@/components/ai/ai-badge";
@@ -43,13 +44,33 @@ export function ConversationWorkspace({
   onBack,
 }: ConversationWorkspaceProps) {
   const lead = conversation?.lead;
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+
+  useEffect(() => {
+    if (!lead) {
+      return;
+    }
+
+    if (headingRef.current) {
+      headingRef.current.focus();
+    }
+  }, [lead]);
 
   return (
     <Card
       as="section"
       className="flex min-h-[42rem] min-w-0 flex-col overflow-hidden motion-safe:transition-shadow"
+      aria-label="Conversation workspace"
       aria-labelledby="conversation-workspace-title"
     >
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label="Selected conversation"
+        className="sr-only"
+      >
+        {lead ? `${lead.name} selected` : "No conversation selected"}
+      </div>
       <header className="border-border flex flex-wrap items-start justify-between gap-3 border-b px-4 py-4 sm:px-5">
         <div className="flex min-w-0 items-start gap-2">
           {onBack ? (
@@ -67,7 +88,9 @@ export function ConversationWorkspace({
           <div className="min-w-0">
             <h3
               id="conversation-workspace-title"
-              className="text-base font-semibold tracking-tight"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-base font-semibold tracking-tight outline-none"
             >
               {lead?.name ?? "Conversation workspace"}
             </h3>
