@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -105,6 +105,7 @@ export function ApprovalsWorkspace({
   const [selectedCache, setSelectedCache] = useState<ApprovalQueueItem | null>(
     null,
   );
+  const queueHeadingRef = useRef<HTMLHeadingElement>(null);
 
   // Match InboxWorkspace: adjust local UI state when the URL changes.
   // Do not call onSummary (parent state) here — that must stay in fetch callbacks.
@@ -274,6 +275,7 @@ export function ApprovalsWorkspace({
   }
 
   const hasFilters = urlState.q !== "" || urlState.status !== "pending";
+  const hasSearch = urlState.q.trim() !== "";
   const canPrevious = urlState.offset > 0;
   const canNext = Boolean(
     page && urlState.offset + page.limit < page.total,
@@ -361,6 +363,8 @@ export function ApprovalsWorkspace({
           <header className="px-4 pt-4 pb-3 sm:px-5">
             <h3
               id="approval-queue-title"
+              ref={queueHeadingRef}
+              tabIndex={-1}
               className="text-base font-medium tracking-tight"
             >
               Approval queue
@@ -393,17 +397,30 @@ export function ApprovalsWorkspace({
                 selectedId={urlState.approvalId}
                 onSelect={selectApproval}
                 emptyTitle={
-                  urlState.status === "pending"
+                  hasSearch
+                    ? "No matching approvals"
+                    : urlState.status === "pending"
                     ? "You're all caught up."
                     : `No ${urlState.status} responses`
                 }
                 emptyDescription={
-                  urlState.status === "pending"
+                  hasSearch
+                    ? "Try a different name, email, or company, or clear the search."
+                    : urlState.status === "pending"
                     ? "No responses are waiting for your review."
                     : `No ${urlState.status} responses match this filter.`
                 }
                 emptyAction={
-                  urlState.status === "pending" ? (
+                  hasSearch ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={clearFilters}
+                    >
+                      Clear search
+                    </Button>
+                  ) : urlState.status === "pending" ? (
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -484,9 +501,11 @@ export function ApprovalsWorkspace({
             key={selected?.draft_id ?? "none"}
             approval={selected}
             loading={loading && Boolean(urlState.approvalId) && !selected}
+            selectionUnavailable={Boolean(urlState.approvalId) && !selected && !loading}
             onBack={() => {
               setMobileView("queue");
               patchUrl({ approvalId: null });
+              requestAnimationFrame(() => queueHeadingRef.current?.focus());
             }}
             onChanged={handleChanged}
           />

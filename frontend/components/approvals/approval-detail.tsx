@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
+  Clipboard,
   ExternalLink,
   Pencil,
   Send,
@@ -42,6 +43,7 @@ import type {
 type ApprovalDetailProps = {
   approval?: ApprovalQueueItem | null;
   loading?: boolean;
+  selectionUnavailable?: boolean;
   onBack?: () => void;
   onChanged?: (item: ApprovalQueueItem) => void;
 };
@@ -97,6 +99,17 @@ function decisionPresentation(item: ApprovalQueueItem): {
       notice: "This response was sent to the customer.",
     };
   }
+  if (
+    item.email?.status === "FAILED" &&
+    item.draft.review_status === "APPROVED"
+  ) {
+    return {
+      status: "failed",
+      label: "Send failed — retry available",
+      notice:
+        "The last send attempt failed. The approved response has not been sent.",
+    };
+  }
   if (item.draft.review_status === "APPROVED") {
     return {
       status: "success",
@@ -116,6 +129,42 @@ function decisionPresentation(item: ApprovalQueueItem): {
     label: "Needs your review",
     notice: "This response has NOT been sent yet.",
   };
+}
+
+function CopyIdButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    },
+    [],
+  );
+
+  async function copyId() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      aria-label={copied ? `${label} copied` : `Copy ${label}`}
+      onClick={() => void copyId()}
+    >
+      <Clipboard aria-hidden="true" />
+      {copied ? "Copied" : "Copy"}
+    </Button>
+  );
 }
 
 function mergeDraftIntoItem(
@@ -157,9 +206,11 @@ function mergeDraftIntoItem(
 export function ApprovalDetail({
   approval,
   loading = false,
+  selectionUnavailable = false,
   onBack,
   onChanged,
 }: ApprovalDetailProps) {
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
   const [leadDetail, setLeadDetail] = useState<Lead | null>(null);
   const [qualification, setQualification] =
     useState<LeadQualificationResult | null>(null);
@@ -178,6 +229,10 @@ export function ApprovalDetail({
 
   const selectedLeadId = approval?.lead_id;
   const selectedDraftId = approval?.draft_id;
+
+  useEffect(() => {
+    if (approval) detailHeadingRef.current?.focus();
+  }, [selectedDraftId, approval]);
 
   useEffect(() => {
     if (!selectedLeadId) {
@@ -262,17 +317,24 @@ export function ApprovalDetail({
             <h3
               id="approval-detail-title"
               className="text-base font-medium tracking-tight"
+              tabIndex={-1}
+              ref={detailHeadingRef}
             >
-              What needs a decision?
+              {selectionUnavailable
+                ? "Approval is not in this queue"
+                : "What needs a decision?"}
             </h3>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
-              Select an item from the queue to review the customer enquiry and
-              AI-generated response.
+              {selectionUnavailable
+                ? "This draft is not on the current page or does not match the active status and search filters."
+                : "Select an item from the queue to review the customer enquiry and AI-generated response."}
             </p>
           </div>
         </header>
         <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center text-sm leading-6">
-          No approval selected
+          {selectionUnavailable
+            ? "Open the matching status filter or clear the search to find it."
+            : "No approval selected"}
         </div>
       </Card>
     );
@@ -457,6 +519,8 @@ export function ApprovalDetail({
             </p>
             <h3
               id="approval-detail-title"
+              ref={detailHeadingRef}
+              tabIndex={-1}
               className="mt-1 text-base font-semibold tracking-tight"
             >
               {approval.lead.name}
@@ -541,6 +605,9 @@ export function ApprovalDetail({
                   className="min-h-48 leading-7"
                 />
               </FormField>
+              <p className="text-muted-foreground text-xs tabular-nums">
+                {editText.length.toLocaleString()} / 8,000 characters
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={pending || !editText.trim()}>
                   Save edit
@@ -639,6 +706,13 @@ export function ApprovalDetail({
               <div className="grid gap-2">
                 <h5 className="text-sm font-medium">Email status</h5>
                 <p className="text-sm leading-6">{decision.label}</p>
+                {approval.draft.review_status === "APPROVED" &&
+                !approval.lead.email &&
+                approval.email?.status !== "SENT" ? (
+                  <p className="text-muted-foreground text-xs leading-5">
+                    Add an email address to this customer before sending.
+                  </p>
+                ) : null}
                 <p className="text-muted-foreground text-xs">
                   Updated <RelativeTime value={approval.updated_at} />
                   {leadDetail?.phone ? ` · Phone ${leadDetail.phone}` : null}
@@ -646,6 +720,67 @@ export function ApprovalDetail({
               </div>
             </div>
           </div>
+        </section>
+
+        <section
+          aria-labelledby="approval-metadata-title"
+          className="border-border grid gap-3 border-t pt-6"
+        >
+          <h4
+            id="approval-metadata-title"
+            className="text-muted-foreground text-xs font-medium tracking-wide uppercase"
+          >
+            Metadata
+          </h4>
+          <dl className="grid gap-3">
+            <DetailRow
+              label="Draft ID"
+              value={
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs break-all">
+                    {approval.draft_id}
+                  </span>
+                  <CopyIdButton label="draft ID" value={approval.draft_id} />
+                </span>
+              }
+            />
+            <DetailRow
+              label="Lead ID"
+              value={
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs break-all">
+                    {approval.lead_id}
+                  </span>
+                  <CopyIdButton label="lead ID" value={approval.lead_id} />
+                </span>
+              }
+            />
+            {approval.sales_run ? (
+              <DetailRow
+                label="SalesRun ID"
+                value={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs break-all">
+                      {approval.sales_run.id}
+                    </span>
+                    <CopyIdButton
+                      label="SalesRun ID"
+                      value={approval.sales_run.id}
+                    />
+                  </span>
+                }
+              />
+            ) : null}
+            <DetailRow label="Revision" value={approval.draft.revision} />
+            <DetailRow
+              label="Created"
+              value={<RelativeTime value={approval.draft.created_at} />}
+            />
+            <DetailRow
+              label="Updated"
+              value={<RelativeTime value={approval.draft.updated_at} />}
+            />
+          </dl>
         </section>
       </div>
 

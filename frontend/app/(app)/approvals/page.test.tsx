@@ -265,6 +265,58 @@ describe("Approvals page", () => {
     ).toBeVisible();
   });
 
+  it("shows existing metadata and confirms copied IDs", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    getApprovalsMock.mockResolvedValue(pageOf([approvalItem()]));
+
+    render(<ApprovalsPage />);
+    await user.click(await screen.findByRole("button", { name: /Jordan Lee/ }));
+
+    expect(screen.getByText("Draft ID")).toBeVisible();
+    expect(screen.getByText("draft-1")).toBeVisible();
+    expect(screen.getByText("Revision").parentElement).toHaveTextContent("1");
+
+    await user.click(screen.getByRole("button", { name: "Copy draft ID" }));
+    expect(writeText).toHaveBeenCalledWith("draft-1");
+    expect(
+      await screen.findByRole("button", { name: "draft ID copied" }),
+    ).toBeVisible();
+  });
+
+  it("distinguishes edited review and failed send statuses", async () => {
+    const edited = approvalItem({
+      draft: { ...approvalItem().draft, review_status: "EDITED" },
+    });
+    getApprovalsMock.mockResolvedValue(pageOf([edited]));
+
+    render(<ApprovalsPage />);
+    expect(
+      await screen.findByText("Edited — needs review"),
+    ).toBeVisible();
+
+    currentSearch = "status=approved&approval=draft-1";
+    getApprovalsMock.mockResolvedValue(
+      pageOf([
+        approvalItem({
+          draft: { ...edited.draft, review_status: "APPROVED" },
+          email: { status: "FAILED", sent_at: null },
+          needs_approval: false,
+          can_approve: false,
+          can_send: true,
+        }),
+      ]),
+    );
+    render(<ApprovalsPage />);
+    expect(
+      await screen.findAllByText("Send failed — retry available"),
+    ).not.toHaveLength(0);
+  });
+
   it("shows empty pending state", async () => {
     render(<ApprovalsPage />);
     expect(
@@ -294,6 +346,42 @@ describe("Approvals page", () => {
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Acme Technologies")).toBeVisible();
+  });
+
+  it("distinguishes search results with no matches", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<ApprovalsPage />);
+    await screen.findByRole("heading", { name: "You're all caught up." });
+
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search approvals" }),
+      "missing",
+    );
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(
+      await screen.findByRole("heading", { name: "No matching approvals" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Try a different name, email, or company/i),
+    ).toBeVisible();
+    expect(screen.getByText("Clear search", { selector: "button" })).toBeVisible();
+  });
+
+  it("explains when a deep-linked draft is outside the current queue page", async () => {
+    currentSearch = "approval=missing-draft";
+    getApprovalsMock.mockResolvedValue(pageOf([]));
+
+    render(<ApprovalsPage />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Approval is not in this queue",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/not on the current page or does not match/i),
+    ).toBeVisible();
   });
 
   it("approves without sending email and refreshes queue", async () => {

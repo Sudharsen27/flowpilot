@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 import urllib.error
 import urllib.request
 from typing import Any
+
+import certifi
 
 from app.ai.openai_provider import sanitize_provider_error
 from app.core.config import settings
@@ -32,7 +35,15 @@ class ResendEmailProvider:
             if timeout_seconds is not None
             else settings.email_request_timeout_seconds
         )
-        self._request = request or urllib.request.urlopen
+        if request is not None:
+            self._request = request
+        else:
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            self._request = lambda http_request, timeout: urllib.request.urlopen(
+                http_request,
+                timeout=timeout,
+                context=ssl_context,
+            )
 
     def send(self, message: EmailMessage) -> EmailSendResult:
         if not self._api_key:
@@ -51,6 +62,7 @@ class ResendEmailProvider:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "FlowPilot/0.1",
         }
         if message.idempotency_key:
             headers["Idempotency-Key"] = message.idempotency_key

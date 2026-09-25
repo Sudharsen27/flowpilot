@@ -30,11 +30,20 @@ function queueStatus(approval: ApprovalQueueItem): {
   if (approval.email?.status === "SENT") {
     return { status: "success", label: "Response sent" };
   }
+  if (
+    approval.email?.status === "FAILED" &&
+    approval.draft.review_status === "APPROVED"
+  ) {
+    return { status: "failed", label: "Send failed — retry available" };
+  }
   if (approval.draft.review_status === "APPROVED") {
     return { status: "success", label: "Approved — ready to send" };
   }
   if (approval.draft.review_status === "REJECTED") {
     return { status: "failed", label: "Response rejected" };
+  }
+  if (approval.draft.review_status === "EDITED") {
+    return { status: "warning", label: "Edited — needs review" };
   }
   if (approval.needs_approval) {
     return { status: "warning", label: "Needs your review" };
