@@ -38,10 +38,15 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+      <p className="text-primary text-sm font-semibold tracking-wide uppercase">
+        FlowPilot
+      </p>
+      <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+        Your AI sales workspace
+      </h1>
       <p className="text-muted-foreground mt-2 text-sm">
-        Use the account created for your organization. Tokens are stored in this
-        browser only.
+        Sign in to review qualified leads, approve personalized replies, and
+        keep follow-ups moving.
       </p>
       <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
         <FormField label="Email" htmlFor="email" required>

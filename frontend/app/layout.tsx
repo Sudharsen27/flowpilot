@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     template: "%s · FlowPilot",
   },
   description:
-    "AI that understands your business, works across your tools, and gets work done.",
+    "Turn new enquiries into qualified, personalized sales conversations with human approval built in.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

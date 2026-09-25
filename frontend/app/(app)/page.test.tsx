@@ -123,13 +123,13 @@ describe("Command Center", () => {
     });
   });
 
-  it("renders the dashboard and its major sections", async () => {
+  it("renders the sales workspace and its major sections", async () => {
     render(<CommandCenterPage />);
     expect(
-      screen.getByRole("heading", { level: 1, name: "Command Center" }),
+      screen.getByRole("heading", { level: 1, name: "Good morning" }),
     ).toBeVisible();
     for (const heading of [
-      "Business overview",
+      "Pipeline at a glance",
       "AI workforce",
       "Needs attention",
       "Failed sends",

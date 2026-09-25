@@ -76,7 +76,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
               FlowPilot
             </span>
             <span className="text-muted-foreground block text-[0.6875rem] leading-4">
-              Business operations
+              AI sales workspace
             </span>
           </span>
         </Link>

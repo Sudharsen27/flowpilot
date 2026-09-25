@@ -13,32 +13,32 @@ import { Card, CardContent } from "@/components/ui/card";
 const quickActions = [
   {
     href: "/agents",
-    label: "AI Agents",
-    description: "Review agent setup and configuration.",
+    label: "AI team",
+    description: "See how your AI sales team is configured.",
     icon: Bot,
   },
   {
     href: "/leads",
     label: "Leads",
-    description: "Open the leads workspace.",
+    description: "Review new enquiries and qualification status.",
     icon: Users,
   },
   {
     href: "/inbox",
-    label: "AI Inbox",
-    description: "Open the shared AI inbox.",
+    label: "Inbox",
+    description: "See the conversations your team is handling.",
     icon: Inbox,
   },
   {
     href: "/approvals",
     label: "Approvals",
-    description: "Review the approvals workspace.",
+    description: "Make the final call on AI-drafted replies.",
     icon: CheckCheck,
   },
   {
     href: "/workflows",
     label: "Workflows",
-    description: "Review workflow setup.",
+    description: "Automate the next step after every lead.",
     icon: Workflow,
   },
 ] as const;

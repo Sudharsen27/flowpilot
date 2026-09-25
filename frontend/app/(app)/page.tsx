@@ -58,14 +58,14 @@ export default function CommandCenterPage() {
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
-        title="Command Center"
-        description="See what needs a decision or a retry from live records. Conversations and appointments are not available yet."
+        title="Good morning"
+        description="Keep your sales pipeline moving. FlowPilot has organized the leads, drafts, and decisions that need your attention."
       />
 
       <section className="grid gap-5">
         <SectionHeader
-          title="Business overview"
-          description="Lead counts are CRM records. Waiting for review counts Sales runs with a draft ready for human review."
+          title="Pipeline at a glance"
+          description="A live view of the work moving through your AI-assisted sales process."
         />
         <BusinessOverview
           loading={loading}
