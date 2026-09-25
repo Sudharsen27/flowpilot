@@ -5,29 +5,29 @@ import { MetricCard } from "@/components/data-display/metric-card";
 const integrationMetrics = [
   {
     label: "Connected",
-    unavailableLabel: "No connection data",
+    unavailableLabel: "Available when connections exist",
     icon: PlugZap,
   },
   {
     label: "Available",
-    unavailableLabel: "Availability not published",
+    unavailableLabel: "Available when integrations launch",
     icon: Library,
   },
   {
     label: "Needs attention",
-    unavailableLabel: "No integration health data",
+    unavailableLabel: "Available when connections exist",
     icon: CircleAlert,
   },
   {
     label: "Data sources",
-    unavailableLabel: "No source connection data",
+    unavailableLabel: "Available when connections exist",
     icon: Database,
   },
 ] as const;
 
 export function IntegrationOverview() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid max-w-5xl gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {integrationMetrics.map((metric) => {
         const Icon = metric.icon;
         return (

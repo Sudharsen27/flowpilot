@@ -11,13 +11,13 @@ export default function IntegrationsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Integrations"
-        description="Connect FlowPilot with the business tools your teams already use so future agents and workflows can work across approved systems."
+        description="Connect FlowPilot with the tools your team uses. Integration connections are coming soon."
       />
 
       <section className="grid gap-5">
         <SectionHeader
           title="Integration overview"
-          description="Connection, availability, health, and data-source signals will appear after integration support is implemented."
+          description="Live connection metrics are not available until integration connections are supported."
         />
         <IntegrationOverview />
       </section>
@@ -25,7 +25,7 @@ export default function IntegrationsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Connection status"
-          description="No external systems are connected to this organization."
+          description="No external systems are connected. Existing links below remain available while integrations are planned."
         />
         <IntegrationSetupState />
       </section>
@@ -33,7 +33,7 @@ export default function IntegrationsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Integration catalog"
-          description="Explore planned integration concepts by category. These entries do not represent current product support."
+          description="Explore the 11 planned provider concepts. None are available to connect yet."
         />
         <IntegrationCatalog />
       </section>
@@ -41,7 +41,7 @@ export default function IntegrationsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Integration setup"
-          description="A non-functional preview of the information a future connection flow may provide."
+          description="A preview of the setup information a future connection flow may provide."
         />
         <IntegrationSetupConcept />
       </section>

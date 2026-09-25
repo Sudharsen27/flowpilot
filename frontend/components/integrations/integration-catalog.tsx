@@ -113,7 +113,6 @@ const integrationConcepts: IntegrationConcept[] = [
 export function IntegrationCatalog() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState("all");
 
   const filteredIntegrations = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -126,22 +125,23 @@ export function IntegrationCatalog() {
           .includes(normalizedQuery);
       const matchesCategory =
         category === "all" || integration.category === category;
-      const matchesStatus = status === "all" || integration.status === status;
-      return matchesQuery && matchesCategory && matchesStatus;
+      return matchesQuery && matchesCategory;
     });
-  }, [category, query, status]);
+  }, [category, query]);
 
   const activeFilterCount = [
     query.trim() !== "",
     category !== "all",
-    status !== "all",
   ].filter(Boolean).length;
 
   function clearFilters() {
     setQuery("");
     setCategory("all");
-    setStatus("all");
   }
+
+  const resultLabel = `${filteredIntegrations.length} integration${
+    filteredIntegrations.length === 1 ? "" : "s"
+  }`;
 
   return (
     <div className="grid gap-4">
@@ -178,29 +178,23 @@ export function IntegrationCatalog() {
               <option value="developer">Automation / developer</option>
             </Select>
           </div>
-          <div className="w-full sm:w-44">
-            <Label htmlFor="integration-status" className="sr-only">
-              Connection status
-            </Label>
-            <Select
-              id="integration-status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              aria-describedby="integration-filter-note"
-            >
-              <option value="all">All statuses</option>
-              <option value="connected">Connected</option>
-              <option value="not-connected">Not connected</option>
-              <option value="needs-attention">Needs attention</option>
-              <option value="coming-soon">Coming soon</option>
-            </Select>
-          </div>
         </FilterBar>
         <p
           id="integration-filter-note"
           className="text-muted-foreground text-xs"
         >
           Search and filters apply only to planned catalog concepts in this UI.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-muted-foreground text-sm" aria-live="polite">
+          {resultLabel}
+        </p>
+        <p className="sr-only" role="status" aria-live="polite">
+          {filteredIntegrations.length === 0
+            ? "0 integrations match the current filters."
+            : `${resultLabel} shown.`}
         </p>
       </div>
 
@@ -217,14 +211,11 @@ export function IntegrationCatalog() {
               <li key={integration.id}>
                 <Card as="article" variant="subtle" className="h-full">
                   <CardContent className="flex h-full flex-col">
-                    <div className="flex items-start justify-between gap-3">
-                      <div
-                        className="bg-card text-muted-foreground border-border flex size-10 items-center justify-center rounded-lg border"
-                        aria-hidden="true"
-                      >
-                        <Icon className="size-5" />
-                      </div>
-                      <IntegrationStatusBadge status={integration.status} />
+                    <div
+                      className="bg-card text-muted-foreground border-border flex size-10 items-center justify-center rounded-lg border"
+                      aria-hidden="true"
+                    >
+                      <Icon className="size-5" />
                     </div>
                     <p className="text-muted-foreground mt-5 text-xs font-medium">
                       {categoryInfo.label}
@@ -235,19 +226,21 @@ export function IntegrationCatalog() {
                     <p className="text-muted-foreground mt-1.5 flex-1 text-sm leading-6">
                       {integration.description}
                     </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="mt-5 w-full"
-                      disabled
+                    <div
+                      className="border-border bg-background mt-5 grid gap-1.5 rounded-lg border px-3 py-2.5"
+                      title="Planned concept, not a live connection"
                       aria-describedby={descriptionId}
                     >
-                      Coming soon
-                    </Button>
-                    <span id={descriptionId} className="sr-only">
-                      {integration.name} connection is unavailable. This is a
-                      planned catalog concept.
-                    </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <IntegrationStatusBadge status={integration.status} />
+                        <span className="text-muted-foreground text-xs">
+                          No action available
+                        </span>
+                      </div>
+                      <span id={descriptionId} className="text-muted-foreground text-xs leading-5">
+                        Planned concept only. Connections are coming soon.
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
               </li>
@@ -257,8 +250,15 @@ export function IntegrationCatalog() {
       ) : (
         <EmptyState
           className="max-w-none"
-          title="No catalog concepts match"
-          description="Adjust the local search or filters. No integration data was queried."
+          title="No integrations found"
+          description="Try clearing your search or changing the category. The catalog itself is still available."
+          action={
+            activeFilterCount > 0 ? (
+              <Button type="button" variant="outline" onClick={clearFilters}>
+                Clear search and filters
+              </Button>
+            ) : undefined
+          }
         />
       )}
     </div>

@@ -89,12 +89,11 @@ describe("Integrations page", () => {
         within(catalog).getByRole("heading", { name: integration }),
       ).toBeVisible();
     }
+    expect(within(catalog).getAllByText("Coming soon")).toHaveLength(11);
     expect(
-      within(catalog).getAllByRole("button", { name: "Coming soon" }),
+      within(catalog).getAllByTitle("Planned concept, not a live connection"),
     ).toHaveLength(11);
-    within(catalog)
-      .getAllByRole("button", { name: "Coming soon" })
-      .forEach((button) => expect(button).toBeDisabled());
+    expect(within(catalog).queryByRole("button")).not.toBeInTheDocument();
     expect(catalog.querySelector('[data-status="active"]')).toBeNull();
   });
 
@@ -108,12 +107,12 @@ describe("Integrations page", () => {
     const category = screen.getByRole("combobox", {
       name: "Integration category",
     });
-    const status = screen.getByRole("combobox", {
-      name: "Connection status",
-    });
+    expect(screen.getByText("11 integrations")).toBeVisible();
 
     await user.type(search, "HubSpot");
     expect(screen.getByRole("heading", { name: "HubSpot" })).toBeVisible();
+    expect(screen.getByText("1 integration")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("1 integration shown.");
     expect(
       screen.queryByRole("heading", { name: "Salesforce" }),
     ).not.toBeInTheDocument();
@@ -130,11 +129,17 @@ describe("Integrations page", () => {
       screen.queryByRole("heading", { name: "Gmail" }),
     ).not.toBeInTheDocument();
 
-    await user.selectOptions(status, "connected");
+    expect(screen.getByText("2 integrations")).toBeVisible();
+    await user.type(search, "unknown");
     expect(
-      screen.getByRole("heading", { name: "No catalog concepts match" }),
+      screen.getByRole("heading", { name: "No integrations found" }),
     ).toBeVisible();
-    expect(screen.getByText(/No integration data was queried/)).toBeVisible();
+    expect(screen.getByText(/catalog itself is still available/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Clear search and filters" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Clear search and filters" }));
+    expect(screen.getByText("11 integrations")).toBeVisible();
   });
 
   it("keeps setup and credential behavior unavailable", () => {
