@@ -72,15 +72,43 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="bg-background flex min-h-screen">
-      <a
-        href="#main"
-        className="focus:bg-background focus:shadow-overlay sr-only z-[60] focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:rounded-md focus:px-3 focus:py-2 focus:text-sm"
+      <div
+        aria-hidden={mobileNavOpen || undefined}
+        inert={mobileNavOpen || undefined}
+        data-slot="app-content"
+        className="flex min-w-0 flex-1"
       >
-        Skip to content
-      </a>
-      <aside className="border-sidebar-border sticky top-0 hidden h-screen w-64 shrink-0 border-r lg:block">
-        <AppSidebar />
-      </aside>
+        <a
+          href="#main"
+          className="focus:bg-background focus:shadow-overlay sr-only z-[60] focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:rounded-md focus:px-3 focus:py-2 focus:text-sm"
+        >
+          Skip to content
+        </a>
+        <aside className="border-sidebar-border sticky top-0 hidden h-screen w-64 shrink-0 border-r lg:block">
+          <AppSidebar />
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <ApplicationTopBar
+            mobileNavigationTrigger={
+              <Button
+                ref={menuButtonRef}
+                variant="ghost"
+                size="icon-sm"
+                aria-expanded={mobileNavOpen}
+                aria-controls="mobile-navigation"
+                aria-label="Open menu"
+                onClick={() => setMobileNavOpen(true)}
+              >
+                <Menu />
+              </Button>
+            }
+          />
+          <main id="main" className="flex-1 py-6 sm:py-8">
+            <PageContainer size="wide">{children}</PageContainer>
+          </main>
+        </div>
+      </div>
 
       {mobileNavOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -113,27 +141,6 @@ export function AppShell({ children }: AppShellProps) {
           </aside>
         </div>
       ) : null}
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <ApplicationTopBar
-          mobileNavigationTrigger={
-            <Button
-              ref={menuButtonRef}
-              variant="ghost"
-              size="icon-sm"
-              aria-expanded={mobileNavOpen}
-              aria-controls="mobile-navigation"
-              aria-label="Open menu"
-              onClick={() => setMobileNavOpen(true)}
-            >
-              <Menu />
-            </Button>
-          }
-        />
-        <main id="main" className="flex-1 py-6 sm:py-8">
-          <PageContainer size="wide">{children}</PageContainer>
-        </main>
-      </div>
     </div>
   );
 }

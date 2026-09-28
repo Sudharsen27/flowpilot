@@ -99,6 +99,13 @@ function decisionPresentation(item: ApprovalQueueItem): {
       notice: "This response was sent to the customer.",
     };
   }
+  if (item.email?.status === "PENDING") {
+    return {
+      status: "pending",
+      label: "Send pending",
+      notice: "The approved response is being sent. It is not confirmed as sent yet.",
+    };
+  }
   if (
     item.email?.status === "FAILED" &&
     item.draft.review_status === "APPROVED"
@@ -440,6 +447,7 @@ export function ApprovalDetail({
     setPending(true);
     setActionErrorMessage(null);
     try {
+      let emailStatus: string | null = null;
       if (approval.sales_run) {
         const run = await getSalesRun(
           approval.sales_run.agent_id,
@@ -467,6 +475,7 @@ export function ApprovalDetail({
           can_approve: false,
           needs_approval: false,
         };
+        emailStatus = next.email?.status ?? null;
         onChanged?.(next);
       } else {
         const sent = await sendLeadResponseDraft(
@@ -483,9 +492,16 @@ export function ApprovalDetail({
           needs_approval: false,
           can_approve: false,
         };
+        emailStatus = next.email?.status ?? null;
         onChanged?.(next);
       }
-      setActionSuccess("Response sent.");
+      setActionSuccess(
+        emailStatus === "SENT"
+          ? "Response sent."
+          : emailStatus === "PENDING"
+            ? "Send pending. The response is not confirmed as sent yet."
+            : "The send request completed without a confirmed delivery status.",
+      );
     } catch (cause) {
       setActionErrorMessage(actionError(cause, "Could not send this email."));
     } finally {

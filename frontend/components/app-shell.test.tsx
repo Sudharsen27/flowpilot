@@ -42,6 +42,9 @@ describe("mobile application navigation", () => {
     const drawer = screen.getByRole("dialog", { name: "Primary navigation" });
     expect(drawer).toHaveAttribute("id", "mobile-navigation");
     expect(document.body.style.overflow).toBe("hidden");
+    const appContent = document.querySelector('[data-slot="app-content"]');
+    expect(appContent).toHaveAttribute("aria-hidden", "true");
+    expect(appContent).toHaveAttribute("inert");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Close menu" })).toHaveFocus(),
     );
@@ -52,6 +55,8 @@ describe("mobile application navigation", () => {
       screen.queryByRole("dialog", { name: "Primary navigation" }),
     ).not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
+    expect(appContent).not.toHaveAttribute("aria-hidden");
+    expect(appContent).not.toHaveAttribute("inert");
     await waitFor(() => expect(openButton).toHaveFocus());
   });
 });

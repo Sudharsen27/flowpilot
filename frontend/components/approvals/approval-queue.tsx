@@ -30,6 +30,9 @@ function queueStatus(approval: ApprovalQueueItem): {
   if (approval.email?.status === "SENT") {
     return { status: "success", label: "Response sent" };
   }
+  if (approval.email?.status === "PENDING") {
+    return { status: "pending", label: "Send pending" };
+  }
   if (
     approval.email?.status === "FAILED" &&
     approval.draft.review_status === "APPROVED"

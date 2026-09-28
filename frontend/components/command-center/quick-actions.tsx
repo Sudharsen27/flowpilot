@@ -38,7 +38,7 @@ const quickActions = [
   {
     href: "/workflows",
     label: "Workflows",
-    description: "Automate the next step after every lead.",
+    description: "Explore planned workflow concepts; configuration and execution are unavailable.",
     icon: Workflow,
   },
 ] as const;

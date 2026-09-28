@@ -9,6 +9,7 @@ type EmptyStateProps = {
   icon?: ReactNode;
   action?: ReactNode;
   compact?: boolean;
+  headingLevel?: 2 | 3 | 4;
   className?: string;
 };
 
@@ -18,8 +19,11 @@ export function EmptyState({
   icon,
   action,
   compact = false,
+  headingLevel = 2,
   className,
 }: EmptyStateProps) {
+  const Heading = headingLevel === 4 ? "h4" : headingLevel === 3 ? "h3" : "h2";
+
   return (
     <Card
       as="section"
@@ -38,9 +42,9 @@ export function EmptyState({
           {icon}
         </div>
       ) : null}
-      <h2 className="text-foreground text-base font-medium tracking-tight">
+      <Heading className="text-foreground text-base font-medium tracking-tight">
         {title}
-      </h2>
+      </Heading>
       <p className="text-muted-foreground mt-1.5 max-w-xl text-sm leading-6">
         {description}
       </p>

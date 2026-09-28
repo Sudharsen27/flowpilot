@@ -1,5 +1,5 @@
 import { AlertCircle, CircleOff, Info } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ type StatePanelProps = {
   description: string;
   kind?: "error" | "unavailable" | "information";
   action?: ReactNode;
+  headingLevel?: 2 | 3 | 4;
   className?: string;
 };
 
@@ -23,15 +24,22 @@ export function StatePanel({
   description,
   kind = "information",
   action,
+  headingLevel = 2,
   className,
 }: StatePanelProps) {
   const Icon = icons[kind];
+  const titleId = useId();
+  const descriptionId = useId();
+  const Heading = headingLevel === 4 ? "h4" : headingLevel === 3 ? "h3" : "h2";
 
   return (
     <Card
       as="section"
       data-slot="state-panel"
       className={cn("flex max-w-2xl gap-4 p-5", className)}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      data-state={kind}
       aria-live={kind === "error" ? "polite" : undefined}
     >
       <div
@@ -48,8 +56,13 @@ export function StatePanel({
         <Icon className="size-4" />
       </div>
       <div className="min-w-0">
-        <h2 className="text-sm font-medium">{title}</h2>
-        <p className="text-muted-foreground mt-1 text-sm leading-6">
+        <Heading id={titleId} className="text-sm font-medium">
+          {title}
+        </Heading>
+        <p
+          id={descriptionId}
+          className="text-muted-foreground mt-1 text-sm leading-6"
+        >
           {description}
         </p>
         {action ? <div className="mt-4">{action}</div> : null}

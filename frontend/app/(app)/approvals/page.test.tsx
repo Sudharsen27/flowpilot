@@ -317,6 +317,28 @@ describe("Approvals page", () => {
     ).not.toHaveLength(0);
   });
 
+  it("keeps a pending email distinct from approved and sent", async () => {
+    currentSearch = "status=approved&approval=draft-1";
+    getApprovalsMock.mockResolvedValue(
+      pageOf([
+        approvalItem({
+          draft: { ...approvalItem().draft, review_status: "APPROVED" },
+          email: { status: "PENDING", sent_at: null },
+          needs_approval: false,
+          can_approve: false,
+          can_send: false,
+        }),
+      ]),
+    );
+
+    render(<ApprovalsPage />);
+
+    expect(await screen.findAllByText("Send pending")).not.toHaveLength(0);
+    const detail = document.querySelector("#approval-detail-pane") as HTMLElement;
+    expect(within(detail).queryByText("Approved — ready to send")).not.toBeInTheDocument();
+    expect(within(detail).queryByText("Response sent")).not.toBeInTheDocument();
+  });
+
   it("shows empty pending state", async () => {
     render(<ApprovalsPage />);
     expect(

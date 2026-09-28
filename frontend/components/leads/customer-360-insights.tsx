@@ -7,6 +7,7 @@ import { QualificationStatus } from "@/components/leads/qualification-status";
 import { SalesAgentStatus } from "@/components/leads/sales-agent-status";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   deriveCustomer360NextStep,
@@ -134,13 +135,15 @@ export function Customer360Insights({
           <p className="text-sm font-medium">AI insights are temporarily unavailable</p>
           <p className="text-muted-foreground mt-1 text-xs leading-5">{error}</p>
           {onRetry ? (
-            <button
+            <Button
               type="button"
-              className="text-foreground mt-3 text-sm font-medium underline-offset-4 hover:underline"
+              variant="link"
+              size="sm"
+              className="mt-3 px-0"
               onClick={onRetry}
             >
               Retry
-            </button>
+            </Button>
           ) : null}
         </div>
       </section>

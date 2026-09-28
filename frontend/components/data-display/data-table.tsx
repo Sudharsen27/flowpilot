@@ -20,6 +20,7 @@ type DataTableProps<T> = {
   loading?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
+  headingLevel?: 2 | 3 | 4;
   className?: string;
 };
 
@@ -29,8 +30,9 @@ export function DataTable<T>({
   getRowKey,
   rowActions,
   loading = false,
-  emptyTitle = "No records yet",
-  emptyDescription = "Records will appear here when they become available.",
+  emptyTitle = "No data yet",
+  emptyDescription = "Data will appear here when it becomes available.",
+  headingLevel = 2,
   className,
 }: DataTableProps<T>) {
   if (!loading && rows.length === 0) {
@@ -39,6 +41,7 @@ export function DataTable<T>({
         className={className}
         title={emptyTitle}
         description={emptyDescription}
+        headingLevel={headingLevel}
       />
     );
   }
@@ -52,6 +55,11 @@ export function DataTable<T>({
       )}
       aria-busy={loading || undefined}
     >
+      {loading ? (
+        <span className="sr-only" role="status" aria-live="polite">
+          Loading records
+        </span>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="hidden w-full min-w-[56rem] border-collapse text-left text-sm md:table">
           <thead className="bg-surface-subtle text-muted-foreground">
@@ -126,10 +134,9 @@ export function DataTable<T>({
 
       <div className="md:hidden">
         {loading ? (
-          <div className="space-y-3 p-4" role="status">
+          <div className="space-y-3 p-4">
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-24 w-full" />
-            <span className="sr-only">Loading records</span>
           </div>
         ) : (
           <ul className="divide-border divide-y">

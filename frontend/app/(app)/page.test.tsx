@@ -171,6 +171,75 @@ describe("Command Center", () => {
     expect(within(conversations!).getByText("—")).toBeVisible();
   });
 
+  it("recommends creating a lead when the organization has no leads", async () => {
+    render(<CommandCenterPage />);
+
+    expect(await screen.findByRole("heading", { name: "Start with a lead" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Open Leads/ })).toHaveAttribute(
+      "href",
+      "/leads",
+    );
+  });
+
+  it("recommends configuring an agent when leads exist without an agent", async () => {
+    getLeadsMock.mockResolvedValue(leads(2, 2));
+    render(<CommandCenterPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure an AI Agent" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: /Open AI Agents/ })).toHaveAttribute(
+      "href",
+      "/agents",
+    );
+  });
+
+  it("recommends qualification when a configured agent and new leads exist", async () => {
+    getAgentsMock.mockResolvedValue([agent]);
+    getLeadsMock.mockResolvedValue(leads(2, 1));
+    render(<CommandCenterPage />);
+
+    expect(await screen.findByRole("heading", { name: "Qualify a new lead" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Open Leads/ })).toHaveAttribute(
+      "href",
+      "/leads",
+    );
+  });
+
+  it("prioritizes approval work as the next action", async () => {
+    getLeadsMock.mockResolvedValue(leads(2, 1));
+    listOrganizationSalesRunsMock.mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      total: 1,
+      status_counts: {
+        RUNNING: 0,
+        WAITING_APPROVAL: 1,
+        COMPLETED: 0,
+        FAILED: 0,
+        CANCELLED: 0,
+      },
+    });
+    render(<CommandCenterPage />);
+
+    expect(await screen.findByRole("heading", { name: "Your next step" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Review Approvals/ })).toHaveAttribute(
+      "href",
+      "/approvals",
+    );
+  });
+
+  it("offers optional website capture and qualification guidance without requiring capture", async () => {
+    render(<CommandCenterPage />);
+
+    expect(await screen.findByRole("link", { name: "Website enquiries (optional)" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+    expect(screen.getByText(/create one here or optionally enable website enquiries/i)).toBeVisible();
+  });
+
   it("shows real agent count instead of not configured copy", async () => {
     getAgentsMock.mockResolvedValue([agent]);
     getLeadsMock.mockResolvedValue(leads(4, 2));
@@ -285,5 +354,8 @@ describe("Command Center", () => {
       expect(hrefs).toContain(href);
     }
     expect(hrefs.every((href) => href?.startsWith("/"))).toBe(true);
+    expect(
+      screen.getByText(/planned workflow concepts; configuration and execution are unavailable/i),
+    ).toBeVisible();
   });
 });

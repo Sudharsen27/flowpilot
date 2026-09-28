@@ -6,6 +6,8 @@ import {
   DataTable,
   type DataTableColumn,
 } from "@/components/data-display/data-table";
+import { StatePanel } from "@/components/data-display/state-panel";
+import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { SearchInput } from "@/components/forms/search-input";
 import { PageHeader } from "@/components/page-header";
@@ -98,5 +100,54 @@ describe("design system foundations", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getAllByText("First record")).toHaveLength(2);
     expect(screen.getByRole("list")).toBeInTheDocument();
+  });
+
+  it("preserves the default empty-state heading level in tables", () => {
+    render(
+      <DataTable
+        columns={[]}
+        rows={[]}
+        getRowKey={() => "row"}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "No data yet" })).toBeVisible();
+  });
+
+  it("supports nested heading levels for empty and state panels", () => {
+    render(
+      <>
+        <EmptyState
+          title="No leads yet"
+          description="Create a lead to begin."
+          headingLevel={3}
+        />
+        <StatePanel
+          title="Unavailable"
+          description="This capability is planned."
+          kind="unavailable"
+          headingLevel={3}
+        />
+      </>,
+    );
+
+    expect(screen.getByRole("heading", { level: 3, name: "No leads yet" })).toBeVisible();
+    const panel = screen.getByRole("heading", { level: 3, name: "Unavailable" }).closest("section");
+    expect(panel).toHaveAttribute("data-state", "unavailable");
+    expect(panel).toHaveAttribute("aria-describedby");
+  });
+
+  it("announces table loading consistently across responsive renderings", () => {
+    render(
+      <DataTable
+        columns={[{ key: "name", header: "Name", cell: () => "Loading" }]}
+        rows={[]}
+        getRowKey={() => "row"}
+        loading
+      />,
+    );
+
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading records");
   });
 });
