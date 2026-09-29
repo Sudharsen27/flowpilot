@@ -10,7 +10,7 @@ describe("inbox URL helpers", () => {
   it("parses and serializes inbox search params", () => {
     const parsed = parseInboxSearchParams(
       new URLSearchParams(
-        "q=Ada&state=NEEDS_APPROVAL&source=WEBSITE&needs_approval=true&human_attention_required=true&offset=20&lead=lead-1",
+        "q=Ada&state=NEEDS_APPROVAL&source=WEBSITE&needs_approval=true&offset=20&lead=lead-1",
       ),
     );
     expect(parsed).toEqual({
@@ -18,25 +18,21 @@ describe("inbox URL helpers", () => {
       conversationState: "NEEDS_APPROVAL",
       source: "WEBSITE",
       needsApproval: "true",
-      humanAttentionRequired: "true",
       offset: 20,
       leadId: "lead-1",
     });
     expect(serializeInboxSearchParams(parsed)).toBe(
-      "q=Ada&state=NEEDS_APPROVAL&source=WEBSITE&needs_approval=true&human_attention_required=true&offset=20&lead=lead-1",
+      "q=Ada&state=NEEDS_APPROVAL&source=WEBSITE&needs_approval=true&offset=20&lead=lead-1",
     );
   });
 
   it("ignores invalid enum values", () => {
     const parsed = parseInboxSearchParams(
-      new URLSearchParams(
-        "state=NOPE&source=WHATSAPP&needs_approval=maybe&human_attention_required=maybe",
-      ),
+      new URLSearchParams("state=NOPE&source=WHATSAPP&needs_approval=maybe"),
     );
     expect(parsed.conversationState).toBe("");
     expect(parsed.source).toBe("");
     expect(parsed.needsApproval).toBe("");
-    expect(parsed.humanAttentionRequired).toBe("");
   });
 
   it("compares url state equality", () => {

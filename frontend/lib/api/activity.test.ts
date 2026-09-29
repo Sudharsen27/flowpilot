@@ -24,13 +24,12 @@ describe("Activity API client", () => {
     await listActivity({
       type: "AI_ACTION",
       entity_type: "LEAD",
-      lead_id: "lead-1",
       q: "qualified / lead",
       limit: 20,
       offset: 20,
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/activity?type=AI_ACTION&entity_type=LEAD&lead_id=lead-1&q=qualified+%2F+lead&limit=20&offset=20",
+      "http://localhost:8000/api/v1/activity?type=AI_ACTION&entity_type=LEAD&q=qualified+%2F+lead&limit=20&offset=20",
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
