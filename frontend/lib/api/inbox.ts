@@ -1,4 +1,5 @@
 import { apiGet } from "@/lib/api/client";
+import { listActivity } from "@/lib/api/activity";
 import type {
   InboxConversationResponse,
   InboxListParams,
@@ -12,6 +13,9 @@ function listQuery(params: InboxListParams = {}) {
   }
   if (params.lead_status) {
     query.set("lead_status", params.lead_status);
+  }
+  if (params.human_attention_required !== undefined) {
+    query.set("human_attention_required", String(params.human_attention_required));
   }
   if (params.needs_approval !== undefined) {
     query.set("needs_approval", String(params.needs_approval));
@@ -49,5 +53,55 @@ export function getInbox(params: InboxListParams = {}) {
 export function getInboxConversation(leadId: string) {
   return apiGet<InboxConversationResponse>(
     `/api/v1/inbox/${encodeURIComponent(leadId)}`,
-  );
+  ).then(async (conversation) => {
+    let activityItems;
+    try {
+      activityItems = await listActivity({
+        type: "AI_ACTION",
+        entity_type: "LEAD",
+        lead_id: leadId,
+        q: "Human attention required",
+        limit: 50,
+      });
+    } catch {
+      return conversation;
+    }
+
+    const existingActivityIds = new Set(
+      conversation.items.map((item) => item.activity_id ?? item.id),
+    );
+    const attentionEvents = activityItems.items
+      .filter(
+        (event) =>
+          event.type === "AI_ACTION" &&
+          event.entity_type === "LEAD" &&
+          event.lead_id === leadId &&
+          event.title === "Human attention required" &&
+          !existingActivityIds.has(event.id),
+      )
+      .map((event) => ({
+        id: event.id,
+        kind: "HUMAN_ATTENTION_REQUIRED" as const,
+        direction: "internal" as const,
+        occurred_at: event.occurred_at,
+        title: event.title,
+        summary: event.summary,
+        body: null,
+        status: event.status,
+        actor_type: event.actor_type,
+        actor_user_id: event.actor_user_id,
+        agent_id: event.agent_id,
+        source_entity_type: "LEAD" as const,
+        source_entity_id: event.entity_id,
+        activity_id: event.id,
+        is_draft: false,
+        is_sent_message: false,
+      }));
+    const items = [...conversation.items, ...attentionEvents].sort(
+      (left, right) =>
+        left.occurred_at.localeCompare(right.occurred_at) ||
+        left.id.localeCompare(right.id),
+    );
+    return { ...conversation, items, total_items: items.length };
+  });
 }

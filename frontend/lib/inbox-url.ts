@@ -4,12 +4,14 @@ import type {
 } from "@/types/api";
 
 export type NeedsApprovalFilter = "" | "true" | "false";
+export type HumanAttentionFilter = "" | "true" | "false";
 
 export type InboxUrlState = {
   q: string;
   conversationState: InboxConversationState | "";
   source: LeadSource | "";
   needsApproval: NeedsApprovalFilter;
+  humanAttentionRequired: HumanAttentionFilter;
   offset: number;
   leadId: string | null;
 };
@@ -37,6 +39,7 @@ export function parseInboxSearchParams(
   const conversationStateRaw = searchParams.get("state") ?? "";
   const sourceRaw = searchParams.get("source") ?? "";
   const needsRaw = searchParams.get("needs_approval") ?? "";
+  const attentionRaw = searchParams.get("human_attention_required") ?? "";
   const offsetRaw = Number.parseInt(searchParams.get("offset") ?? "0", 10);
   const leadRaw = searchParams.get("lead")?.trim() ?? "";
 
@@ -54,6 +57,10 @@ export function parseInboxSearchParams(
       needsRaw === "true" || needsRaw === "false"
         ? (needsRaw as NeedsApprovalFilter)
         : "",
+    humanAttentionRequired:
+      attentionRaw === "true" || attentionRaw === "false"
+        ? (attentionRaw as HumanAttentionFilter)
+        : "",
     offset:
       Number.isFinite(offsetRaw) && offsetRaw > 0
         ? Math.max(0, Math.trunc(offsetRaw))
@@ -68,6 +75,9 @@ export function serializeInboxSearchParams(state: InboxUrlState): string {
   if (state.conversationState) query.set("state", state.conversationState);
   if (state.source) query.set("source", state.source);
   if (state.needsApproval) query.set("needs_approval", state.needsApproval);
+  if (state.humanAttentionRequired) {
+    query.set("human_attention_required", state.humanAttentionRequired);
+  }
   if (state.offset > 0) query.set("offset", String(state.offset));
   if (state.leadId) query.set("lead", state.leadId);
   return query.toString();
@@ -79,6 +89,7 @@ export function inboxUrlEquals(a: InboxUrlState, b: InboxUrlState): boolean {
     a.conversationState === b.conversationState &&
     a.source === b.source &&
     a.needsApproval === b.needsApproval &&
+    a.humanAttentionRequired === b.humanAttentionRequired &&
     a.offset === b.offset &&
     a.leadId === b.leadId
   );

@@ -95,6 +95,11 @@ class Lead(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=LeadStatus.NEW)
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     enquiry: Mapped[str | None] = mapped_column(String(8000), nullable=True)
+    human_attention_required: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     sales_agent_auto_start_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

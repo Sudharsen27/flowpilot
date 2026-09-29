@@ -154,6 +154,21 @@ class LeadRepository:
         self.session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
+    def mark_human_attention_required(self, organization_id: str, lead_id: str) -> bool:
+        self._expire_leads()
+        self.session.flush()
+        result = self.session.execute(
+            update(Lead)
+            .where(
+                Lead.organization_id == organization_id,
+                Lead.id == lead_id,
+                Lead.human_attention_required.is_(False),
+            )
+            .values(human_attention_required=True)
+        )
+        self._expire_leads()
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
     def _expire_leads(self) -> None:
         for obj in list(self.session.identity_map.values()):
             if isinstance(obj, Lead):

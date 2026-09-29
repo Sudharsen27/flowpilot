@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.openai_provider import sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider, TokenUsage
+from app.ai.typesafe_provider import TypeSafeDecisionProvider
 from app.core.exceptions import (
     NotFoundError,
     ProviderError,
@@ -29,9 +30,17 @@ from app.schemas.lead_qualification import (
     LeadQualificationAnalysis,
 )
 from app.services.activity_service import ActivityService
+from app.services.human_attention_service import HumanAttentionService
+from app.services.human_escalation_decision_service import HumanEscalationDecisionService
 from app.services.observability import duration_ms
 
 logger = logging.getLogger(__name__)
+_DECISION_ENQUIRY_MAX_LENGTH = 8000
+_ESCALATION_POLICY = (
+    "Decide whether this lead currently requires unresolved human attention. "
+    "A true decision only flags the lead; it does not approve or send a response, "
+    "change CRM status, or execute tools."
+)
 
 QUALIFICATION_SYSTEM_INSTRUCTIONS = """You analyze a single customer enquiry for a B2B sales team.
 
@@ -50,11 +59,20 @@ Rules:
 
 
 class LeadQualificationService:
-    def __init__(self, session: Session, provider: AIProvider | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        provider: AIProvider | None = None,
+        human_escalation_service: HumanEscalationDecisionService | None = None,
+    ) -> None:
         self.session = session
         self.provider = provider
         self.leads = LeadRepository(session)
         self.qualifications = LeadQualificationRepository(session)
+        self.human_attention = HumanAttentionService(session)
+        self.human_escalation = human_escalation_service or HumanEscalationDecisionService(
+            TypeSafeDecisionProvider()
+        )
 
     def get(
         self, *, organization_id: str, lead_id: str, qualification_id: str
@@ -134,7 +152,6 @@ class LeadQualificationService:
             )
             self.session.commit()
             self.session.refresh(row)
-            return row
         except ProviderNotConfiguredError as exc:
             return self._fail(
                 row,
@@ -166,6 +183,67 @@ class LeadQualificationService:
                 "AI provider request failed",
                 ExecutionFailureCategory.EXECUTION_ERROR,
                 configured=True,
+            )
+
+        self._evaluate_human_attention(lead, row, analysis)
+        return row
+
+    def _evaluate_human_attention(
+        self,
+        lead: Lead,
+        qualification: LeadQualification,
+        analysis: LeadQualificationAnalysis,
+    ) -> None:
+        trusted_context = json.dumps(
+            {
+                "policy": _ESCALATION_POLICY,
+                "lead_source": lead.source,
+                "lead_status": lead.status,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        untrusted_state = json.dumps(
+            {
+                "original_enquiry": qualification.enquiry[:_DECISION_ENQUIRY_MAX_LENGTH],
+                "qualification": analysis.qualification.value,
+                "intent": analysis.intent.value,
+                "confidence": analysis.confidence,
+                "qualification_reasons": analysis.qualification_reasons,
+                "buying_signals": analysis.buying_signals,
+                "missing_information": analysis.missing_information,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+        try:
+            requires_attention = self.human_escalation.decide_escalation(
+                trusted_context=trusted_context,
+                untrusted_state=untrusted_state,
+            )
+            if requires_attention:
+                self.human_attention.require_attention(
+                    organization_id=lead.organization_id,
+                    lead_id=lead.id,
+                    qualification_id=qualification.id,
+                )
+        except (ProviderError, ProviderNotConfiguredError) as exc:
+            logger.warning(
+                "Human attention decision failed qualification_id=%s lead_id=%s error=%s",
+                qualification.id,
+                lead.id,
+                sanitize_provider_error(exc.detail),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Human attention decision failed unexpectedly qualification_id=%s "
+                "lead_id=%s error_type=%s",
+                qualification.id,
+                lead.id,
+                type(exc).__name__,
             )
 
     def _fail(

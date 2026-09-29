@@ -37,6 +37,7 @@ def test_owner_admin_and_member_can_create_and_read(client: TestClient, db: Sess
     assert owner_lead.status_code == 200
     assert owner_lead.json()["status"] == "NEW"
     assert owner_lead.json()["source"] == "MANUAL"
+    assert owner_lead.json()["human_attention_required"] is False
     assert "organization_id" not in owner_lead.json()
     assert _create(client, admin, name="Admin lead").status_code == 200
     member_lead = _create(client, member, name="Member lead")
@@ -200,10 +201,14 @@ def test_missing_lead_is_not_found(client: TestClient) -> None:
     assert patch.status_code == 404
 
 
-def test_cross_tenant_lead_access_is_not_found(client: TestClient) -> None:
+def test_cross_tenant_lead_access_is_not_found(client: TestClient, db: Session) -> None:
     first = _auth(client, email="a@example.com", organization_name="Alpha")
     second = _auth(client, email="b@example.com", organization_name="Beta")
     lead = _create(client, first["access_token"]).json()
+    lead_row = db.get(Lead, lead["id"])
+    assert lead_row is not None
+    lead_row.human_attention_required = True
+    db.commit()
     foreign = _headers(second["access_token"])
     listed = client.get("/api/v1/leads", headers=foreign)
     assert listed.status_code == 200
@@ -218,6 +223,54 @@ def test_cross_tenant_lead_access_is_not_found(client: TestClient) -> None:
         ).status_code
         == 404
     )
+
+
+def test_lead_list_and_detail_expose_persisted_human_attention(
+    client: TestClient,
+    db: Session,
+) -> None:
+    token = _auth(client)["access_token"]
+    regular = _create(client, token, name="Regular Lead", enquiry="Hello").json()
+    flagged = _create(client, token, name="Flagged Lead", enquiry="Help").json()
+    flagged_row = db.get(Lead, flagged["id"])
+    assert flagged_row is not None
+    flagged_row.human_attention_required = True
+    db.commit()
+
+    listed = client.get("/api/v1/leads", headers=_headers(token)).json()
+    values = {item["id"]: item["human_attention_required"] for item in listed["items"]}
+    assert values[regular["id"]] is False
+    assert values[flagged["id"]] is True
+    assert client.get(f"/api/v1/leads/{regular['id']}", headers=_headers(token)).json()[
+        "human_attention_required"
+    ] is False
+    assert client.get(f"/api/v1/leads/{flagged['id']}", headers=_headers(token)).json()[
+        "human_attention_required"
+    ] is True
+
+
+def test_lead_create_and_update_cannot_set_human_attention(
+    client: TestClient,
+    db: Session,
+) -> None:
+    token = _auth(client)["access_token"]
+    create_response = client.post(
+        "/api/v1/leads",
+        json={"name": "Client Flagged", "human_attention_required": True},
+        headers=_headers(token),
+    )
+    assert create_response.status_code == 422
+
+    created = _create(client, token, name="Server Flagged", enquiry="Hello").json()
+    patch_response = client.patch(
+        f"/api/v1/leads/{created['id']}",
+        json={"human_attention_required": True},
+        headers=_headers(token),
+    )
+    assert patch_response.status_code == 422
+    row = db.get(Lead, created["id"])
+    assert row is not None
+    assert row.human_attention_required is False
 
 
 def test_same_email_can_exist_in_two_organizations(client: TestClient) -> None:

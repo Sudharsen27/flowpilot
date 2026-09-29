@@ -21,15 +21,15 @@ AUTO_START_STATUSES = (
 )
 
 
-def test_alembic_head_is_sales_agent_auto_start() -> None:
+def test_alembic_head_is_lead_human_attention() -> None:
     ini = Path(__file__).resolve().parents[1] / "alembic.ini"
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    revision = script.get_revision("021_sales_agent_auto_start")
-    assert script.get_current_head() == "021_sales_agent_auto_start"
+    revision = script.get_revision("022_lead_human_attention")
+    assert script.get_current_head() == "022_lead_human_attention"
     assert revision is not None
-    assert revision.down_revision == "020_activity_events"
+    assert revision.down_revision == "021_sales_agent_auto_start"
 
 
 def test_organization_auto_start_defaults_are_off(client: TestClient, db: Session) -> None:

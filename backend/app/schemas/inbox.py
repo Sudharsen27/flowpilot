@@ -60,6 +60,7 @@ class InboxItemPublic(BaseModel):
     company: str | None
     source: LeadSource
     lead_status: LeadStatus
+    human_attention_required: bool
     conversation_state: InboxConversationState
     needs_approval: bool
     last_activity_at: datetime
@@ -82,6 +83,7 @@ class InboxListResponse(BaseModel):
     total: int = Field(ge=0)
     state_counts: dict[InboxConversationState, int]
     needs_approval_count: int = Field(ge=0)
+    human_attention_count: int = Field(ge=0)
 
 
 class InboxLeadContext(BaseModel):
@@ -94,6 +96,7 @@ class InboxLeadContext(BaseModel):
     company: str | None
     source: LeadSource
     lead_status: LeadStatus
+    human_attention_required: bool
     enquiry: str | None
     conversation_state: InboxConversationState
     needs_approval: bool

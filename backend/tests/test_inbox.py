@@ -112,6 +112,133 @@ def test_inbox_list_organization_isolation(client: TestClient) -> None:
     assert any(item["lead_id"] == lead["id"] for item in listed_a["items"])
 
 
+def test_inbox_human_attention_fields_filters_counts_and_tenant_isolation(
+    client: TestClient,
+    db: Session,
+) -> None:
+    org_a = _auth(client, email="attention-a@example.com", organization_name="Attention A")
+    org_b = _auth(client, email="attention-b@example.com", organization_name="Attention B")
+    token_a = org_a["access_token"]
+    token_b = org_b["access_token"]
+
+    flagged_web = _create(
+        client,
+        token_a,
+        name="Flagged Web Qualified",
+        source="WEBSITE",
+        status="QUALIFIED",
+        enquiry="Need a demo",
+    ).json()
+    flagged_manual = _create(
+        client,
+        token_a,
+        name="Flagged Manual",
+        enquiry="Please help",
+    ).json()
+    flagged_approval = _create(
+        client,
+        token_a,
+        name="Flagged Needs Approval",
+        enquiry="Draft a response",
+    ).json()
+    _generate(client, token_a, flagged_approval["id"])
+    unflagged_approval = _create(
+        client,
+        token_a,
+        name="Unflagged Needs Approval",
+        enquiry="Draft another response",
+    ).json()
+    _generate(client, token_a, unflagged_approval["id"])
+    foreign_flagged = _create(
+        client,
+        token_b,
+        name="Foreign Flagged",
+        enquiry="Other organization",
+    ).json()
+
+    for lead_id in (flagged_web["id"], flagged_manual["id"], flagged_approval["id"]):
+        row = db.get(Lead, lead_id)
+        assert row is not None
+        row.human_attention_required = True
+    foreign_row = db.get(Lead, foreign_flagged["id"])
+    assert foreign_row is not None
+    foreign_row.human_attention_required = True
+    db.commit()
+
+    all_flagged = _inbox(client, token_a, human_attention_required="true").json()
+    assert all(item["human_attention_required"] is True for item in all_flagged["items"])
+    assert {item["lead_id"] for item in all_flagged["items"]} == {
+        flagged_web["id"],
+        flagged_manual["id"],
+        flagged_approval["id"],
+    }
+    assert all_flagged["human_attention_count"] == 3
+    assert all_flagged["total"] == 3
+
+    no_attention = _inbox(client, token_a, human_attention_required="false").json()
+    assert no_attention["total"] >= 1
+    assert all(item["human_attention_required"] is False for item in no_attention["items"])
+
+    combined_approval = _inbox(
+        client,
+        token_a,
+        human_attention_required="true",
+        needs_approval="true",
+    ).json()
+    assert [item["lead_id"] for item in combined_approval["items"]] == [
+        flagged_approval["id"]
+    ]
+    assert combined_approval["human_attention_count"] == 1
+
+    false_with_approval = _inbox(
+        client,
+        token_a,
+        human_attention_required="false",
+        needs_approval="true",
+    ).json()
+    assert [item["lead_id"] for item in false_with_approval["items"]] == [
+        unflagged_approval["id"]
+    ]
+    by_status = _inbox(
+        client,
+        token_a,
+        human_attention_required="true",
+        lead_status="QUALIFIED",
+    ).json()
+    assert [item["lead_id"] for item in by_status["items"]] == [flagged_web["id"]]
+    by_source = _inbox(
+        client,
+        token_a,
+        human_attention_required="true",
+        source="WEBSITE",
+    ).json()
+    assert [item["lead_id"] for item in by_source["items"]] == [flagged_web["id"]]
+
+    page = _inbox(client, token_a, human_attention_required="true", limit=1, offset=1).json()
+    assert page["total"] == 3
+    assert page["limit"] == 1
+    assert page["offset"] == 1
+    assert len(page["items"]) == 1
+    assert page["human_attention_count"] == 3
+
+    listed_b = _inbox(client, token_b, human_attention_required="true").json()
+    assert [item["lead_id"] for item in listed_b["items"]] == [foreign_flagged["id"]]
+    assert listed_b["human_attention_count"] == 1
+
+
+def test_inbox_detail_reads_human_attention_from_lead(client: TestClient, db: Session) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token, name="Attention Detail", enquiry="Please review").json()
+    row = db.get(Lead, lead["id"])
+    assert row is not None
+    row.human_attention_required = True
+    db.commit()
+
+    detail = _detail(client, token, lead["id"]).json()
+
+    assert detail["lead"]["human_attention_required"] is True
+
+
 def test_manual_crm_only_lead_excluded(client: TestClient, db: Session) -> None:
     created = _auth(client)
     token = created["access_token"]

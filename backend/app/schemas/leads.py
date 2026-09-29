@@ -97,6 +97,7 @@ class LeadPublic(BaseModel):
     company: str | None
     source: LeadSource
     status: LeadStatus
+    human_attention_required: bool
     notes: str | None
     enquiry: str | None
     created_at: datetime

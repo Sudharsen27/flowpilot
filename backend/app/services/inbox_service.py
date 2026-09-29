@@ -149,6 +149,7 @@ class InboxService:
         *,
         search: str | None = None,
         lead_status: LeadStatus | None = None,
+        human_attention_required: bool | None = None,
         needs_approval: bool | None = None,
         conversation_state: InboxConversationState | None = None,
         email_status: LeadEmailSendStatus | None = None,
@@ -165,6 +166,7 @@ class InboxService:
         candidates = self._list_candidate_leads(
             organization_id,
             lead_status=lead_status,
+            human_attention_required=human_attention_required,
             source=source,
             search=search,
         )
@@ -177,6 +179,7 @@ class InboxService:
                 total=0,
                 state_counts=empty_counts,
                 needs_approval_count=0,
+                human_attention_count=0,
             )
 
         lead_ids = [lead.id for lead in candidates]
@@ -206,10 +209,13 @@ class InboxService:
 
         state_counts = {state: 0 for state in InboxConversationState}
         needs_approval_count = 0
+        human_attention_count = 0
         for item in items:
             state_counts[item.conversation_state] += 1
             if item.needs_approval:
                 needs_approval_count += 1
+            if item.human_attention_required:
+                human_attention_count += 1
 
         page = items[safe_offset : safe_offset + capped]
         return InboxListResponse(
@@ -219,6 +225,7 @@ class InboxService:
             total=len(items),
             state_counts=state_counts,
             needs_approval_count=needs_approval_count,
+            human_attention_count=human_attention_count,
         )
 
     def get_conversation(
@@ -276,6 +283,7 @@ class InboxService:
                 company=lead.company,
                 source=LeadSource(lead.source),
                 lead_status=LeadStatus(lead.status),
+                human_attention_required=lead.human_attention_required,
                 enquiry=lead.enquiry,
                 conversation_state=state,
                 needs_approval=needs,
@@ -291,6 +299,7 @@ class InboxService:
         organization_id: str,
         *,
         lead_status: LeadStatus | None,
+        human_attention_required: bool | None,
         source: LeadSource | None,
         search: str | None,
     ) -> _LeadRows:
@@ -331,6 +340,8 @@ class InboxService:
         filters = [Lead.organization_id == organization_id, inclusion]
         if lead_status is not None:
             filters.append(Lead.status == lead_status)
+        if human_attention_required is not None:
+            filters.append(Lead.human_attention_required == human_attention_required)
         if source is not None:
             filters.append(Lead.source == source)
         if search:
@@ -395,6 +406,7 @@ class InboxService:
                 company=lead.company,
                 source=LeadSource(lead.source),
                 lead_status=LeadStatus(lead.status),
+                human_attention_required=lead.human_attention_required,
                 conversation_state=state,
                 needs_approval=needs,
                 last_activity_at=last_at,

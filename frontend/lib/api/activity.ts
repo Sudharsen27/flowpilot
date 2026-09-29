@@ -18,6 +18,9 @@ function listQuery(params: ActivityListParams = {}) {
   if (params.entity_id?.trim()) {
     query.set("entity_id", params.entity_id.trim());
   }
+  if (params.lead_id?.trim()) {
+    query.set("lead_id", params.lead_id.trim());
+  }
   if (params.q?.trim()) {
     query.set("q", params.q.trim());
   }

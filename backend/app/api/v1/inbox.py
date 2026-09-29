@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/v1/inbox", tags=["inbox"])
 def list_inbox(
     q: str | None = Query(default=None, max_length=200),
     lead_status: LeadStatus | None = None,
+    human_attention_required: bool | None = None,
     needs_approval: bool | None = None,
     conversation_state: InboxConversationState | None = None,
     email_status: LeadEmailSendStatus | None = None,
@@ -41,6 +42,7 @@ def list_inbox(
         organization.id,
         search=q,
         lead_status=lead_status,
+        human_attention_required=human_attention_required,
         needs_approval=needs_approval,
         conversation_state=conversation_state,
         email_status=email_status,

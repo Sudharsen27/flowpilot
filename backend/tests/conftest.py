@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.core.rate_limit import website_capture_limiter
 from app.db.base import Base
 from app.db.session import get_db
@@ -39,6 +40,11 @@ TestingSessionLocal = sessionmaker(
     autocommit=False,
     expire_on_commit=False,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_typesafe_credentials_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "typesafe_api_key", None)
 
 
 @pytest.fixture
