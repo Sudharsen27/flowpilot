@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_DEFAULT_SECRET = "replace-with-a-long-random-local-secret"
@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     openai_request_timeout_seconds: float = 60
     groq_api_key: str | None = None
     groq_model: str = "openai/gpt-oss-20b"
+    typesafe_api_key: SecretStr | None = None
+    jev_model: str = "jev-latest"
     email_provider: str = "resend"
     resend_api_key: str | None = None
     email_from_address: str | None = None
