@@ -7,10 +7,10 @@ LeadResponseDraftService (not duplicated here).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.ai.provider import AIProvider
@@ -21,7 +21,10 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.models.lead import LeadSource, LeadStatus
-from app.models.lead_follow_up import LeadFollowUpStatus
+from app.models.lead_follow_up import (
+    LeadFollowUpStatus,
+    LeadFollowUpType,
+)
 from app.repositories.lead_follow_up_repository import (
     FOLLOW_UP_LIST_DEFAULT_LIMIT,
     FOLLOW_UP_LIST_MAX_LIMIT,
@@ -96,6 +99,34 @@ class GetFollowUpsOutput(BaseModel):
     offset: int
 
 
+class CreateManualFollowUpInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lead_id: str = Field(min_length=1, max_length=36)
+    due_at: datetime
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("due_at")
+    @classmethod
+    def require_future_aware_due_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+            raise ValueError("due_at must include a timezone offset")
+        due_at = value.astimezone(UTC)
+        now = datetime.now(UTC)
+        if due_at <= now:
+            raise ValueError("due_at must be in the future")
+        if due_at > now + timedelta(days=3650):
+            raise ValueError("due_at is outside the allowed range")
+        return due_at
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def normalize_notes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+
 class CreateResponseDraftInput(BaseModel):
     """Only accepts the canonical lead id; the enquiry comes from the lead record."""
 
@@ -117,6 +148,15 @@ class CreateResponseDraftOutput(BaseModel):
     review_status: str | None = None
     revision: int
     created_at: datetime
+
+
+class CreateManualFollowUpOutput(BaseModel):
+    follow_up_id: str
+    lead_id: str
+    type: LeadFollowUpType
+    status: LeadFollowUpStatus
+    due_at: datetime
+    revision: int
 
 
 class QualifyLeadTool(Tool):
@@ -274,6 +314,51 @@ class GetFollowUpsTool(Tool):
             total=result.total,
             limit=result.limit,
             offset=result.offset,
+        )
+
+
+class CreateManualFollowUpTool(Tool):
+    """Controlled WRITE that creates a human-managed reminder, never an email."""
+
+    name = "create_manual_follow_up"
+    description = (
+        "Create a manual follow-up reminder for a lead in the current organization. "
+        "Requires an explicit future due_at. This reminder is human-managed and "
+        "does not send or schedule email."
+    )
+    risk_level = ToolRiskLevel.LOW
+    side_effect_level = ToolSideEffectLevel.WRITE
+    requires_human_approval = False
+    input_model = CreateManualFollowUpInput
+    output_model = CreateManualFollowUpOutput
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def execute(self, arguments: BaseModel, context: ToolContext) -> BaseModel:
+        payload = CreateManualFollowUpInput.model_validate(arguments)
+        row = LeadFollowUpService(self._session).create(
+            organization_id=context.organization_id,
+            lead_id=payload.lead_id,
+            due_at=payload.due_at,
+            follow_up_type=LeadFollowUpType.MANUAL_FOLLOW_UP,
+            notes=payload.notes,
+            body_text=None,
+            email_send_id=None,
+            initiated_by_user_id=context.user_id,
+            initiated_by_agent_id=context.agent_id,
+        )
+        return CreateManualFollowUpOutput(
+            follow_up_id=row.id,
+            lead_id=row.lead_id,
+            type=LeadFollowUpType(row.type),
+            status=LeadFollowUpStatus(row.status),
+            due_at=(
+                row.due_at
+                if row.due_at.tzinfo is not None
+                else row.due_at.replace(tzinfo=UTC)
+            ),
+            revision=row.revision,
         )
 
 

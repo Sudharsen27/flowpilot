@@ -242,8 +242,9 @@ export function LeadFollowUpsDialog({
         <DialogHeader>
           <DialogTitle>Follow-ups</DialogTitle>
           <DialogDescription>
-            Schedule a reminder for this lead. Due follow-ups are not sent
-            automatically.
+            {type === "MANUAL_FOLLOW_UP"
+              ? "Creates a human-managed reminder. It is never sent by email."
+              : "Creates an email follow-up. The worker sends it when due; review the message before scheduling."}
           </DialogDescription>
         </DialogHeader>
         {lead ? (

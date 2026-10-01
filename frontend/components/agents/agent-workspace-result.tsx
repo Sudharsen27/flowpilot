@@ -82,8 +82,15 @@ export type ApprovalHandoff = {
   draft: CreatedDraftSummary | null;
 };
 
+export type CreatedManualFollowUpSummary = {
+  followUpId: string;
+  leadId: string;
+  dueAt: string;
+};
+
 function formatToolName(name: string) {
   if (name === "qualify_lead") return "Qualify Lead";
+  if (name === "create_manual_follow_up") return "Create Manual Follow-up";
   return name.replaceAll("_", " ");
 }
 
@@ -239,6 +246,32 @@ export function extractCreatedDraft(
   return found;
 }
 
+export function extractCreatedManualFollowUp(
+  result: Pick<OrchestrationResult, "step_results">,
+): CreatedManualFollowUpSummary | null {
+  let found: CreatedManualFollowUpSummary | null = null;
+  for (const step of result.step_results) {
+    if (step.tool_name !== "create_manual_follow_up") continue;
+    const toolResult = step.result;
+    if (!toolResult?.success || !toolResult.output) continue;
+    const followUpId = asNonEmptyString(toolResult.output.follow_up_id);
+    const leadId = asNonEmptyString(toolResult.output.lead_id);
+    const dueAt = asNonEmptyString(toolResult.output.due_at);
+    if (
+      !followUpId ||
+      !leadId ||
+      !dueAt ||
+      toolResult.output.type !== "MANUAL_FOLLOW_UP" ||
+      toolResult.output.status !== "PENDING" ||
+      Number.isNaN(Date.parse(dueAt))
+    ) {
+      continue;
+    }
+    found = { followUpId, leadId, dueAt };
+  }
+  return found;
+}
+
 /**
  * Resolve Approval Center handoff from orchestration payload only.
  * Prefers exact draft deep-link when create_response_draft returned draft_id.
@@ -281,6 +314,9 @@ export function approvalHandoffHref(
 function stepStatusLabel(result: OrchestrationResult["step_results"][number]) {
   if (!result.result) return "Not executed";
   if (result.result.success) {
+    if (result.tool_name === "create_manual_follow_up") {
+      return "Manual follow-up created";
+    }
     if (result.tool_name === "create_response_draft") {
       return "Completed — Draft created. Review required before sending.";
     }
@@ -417,6 +453,73 @@ function QualificationToolResult({
           </ul>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ManualFollowUpToolResult({
+  result,
+}: {
+  result: ToolResult | null;
+}) {
+  if (!result?.success) {
+    return (
+      <p className="text-muted-foreground mt-2 text-xs">
+        Manual follow-up was not created.
+      </p>
+    );
+  }
+  const followUp = extractCreatedManualFollowUp({
+    step_results: [
+      {
+        step_id: result.call_id,
+        sequence: 0,
+        tool_name: result.tool_name,
+        result,
+      },
+    ],
+  });
+  if (!followUp) {
+    return (
+      <p className="text-muted-foreground mt-2 text-xs">
+        Manual follow-up was created, but its details are unavailable.
+      </p>
+    );
+  }
+  const dueDate = new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(followUp.dueAt));
+
+  return (
+    <div
+      className="border-border bg-background mt-2 grid gap-2 rounded-md border p-3 text-xs sm:grid-cols-2"
+      aria-label="Manual follow-up result"
+    >
+      <div>
+        <dt className="text-muted-foreground">Follow-up ID</dt>
+        <dd className="mt-0.5 font-mono break-all">{followUp.followUpId}</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Lead</dt>
+        <dd className="mt-0.5 font-mono break-all">
+          <Link
+            href={`/leads/${encodeURIComponent(followUp.leadId)}`}
+            className="underline underline-offset-2"
+          >
+            {followUp.leadId}
+          </Link>
+        </dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Due</dt>
+        <dd className="mt-0.5">{dueDate} UTC</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Status</dt>
+        <dd className="mt-0.5 font-medium">Pending · Manual follow-up</dd>
+      </div>
     </div>
   );
 }
@@ -622,7 +725,9 @@ export function AgentWorkspaceResult({
           {result.step_results.map((step, index) => {
             const ok = Boolean(step.result?.success);
             const isQualification = step.tool_name === "qualify_lead";
-            const output = isQualification
+            const isManualFollowUp =
+              step.tool_name === "create_manual_follow_up";
+            const output = isQualification || isManualFollowUp
               ? null
               : outputText(step.result?.output ?? null);
             return (
@@ -679,6 +784,8 @@ export function AgentWorkspaceResult({
                   </p>
                   {isQualification ? (
                     <QualificationToolResult result={step.result} />
+                  ) : isManualFollowUp ? (
+                    <ManualFollowUpToolResult result={step.result} />
                   ) : output ? (
                     <details className="group mt-2 rounded-md border bg-background px-3 py-2">
                       <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium [&::-webkit-details-marker]:hidden">

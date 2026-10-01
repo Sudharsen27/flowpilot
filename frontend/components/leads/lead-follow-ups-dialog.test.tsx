@@ -98,6 +98,9 @@ describe("Lead follow-ups dialog", () => {
       <LeadFollowUpsDialog open lead={lead} onOpenChange={() => undefined} />,
     );
     expect(await screen.findByText("No follow-ups yet.")).toBeVisible();
+    expect(
+      screen.getByText(/worker sends it when due; review the message before scheduling/i),
+    ).toBeVisible();
     await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
     await user.type(screen.getByLabelText(/Email body/), "Checking in on your enquiry.");
     await user.click(screen.getByRole("button", { name: "Create follow-up" }));
@@ -135,6 +138,9 @@ describe("Lead follow-ups dialog", () => {
     );
     await screen.findByText("No follow-ups yet.");
     await user.selectOptions(screen.getByLabelText(/^Type/), "MANUAL_FOLLOW_UP");
+    expect(
+      screen.getByText(/human-managed reminder. It is never sent by email/i),
+    ).toBeVisible();
     expect(screen.queryByLabelText(/Email body/)).not.toBeInTheDocument();
     await user.type(screen.getByLabelText(/Due date and time/), "2030-06-15T10:30");
     await user.type(screen.getByLabelText(/^Notes/), "Call them");

@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError
 from app.core.security import hash_password
+from app.models.activity_event import ActivityActorType, ActivityEvent, ActivityEventType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.lead import Lead, LeadStatus
+from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
+from app.models.lead_qualification import LeadQualification
+from app.models.lead_response_draft import LeadResponseDraft, LeadResponseReviewStatus
 from app.models.membership import Membership, MembershipRole
 from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
@@ -44,6 +51,7 @@ from app.tools.schema import (
     ToolRiskLevel,
 )
 from tests.conftest import register_payload
+from tests.test_agent_planner import ScriptedPlannerProvider
 from tests.test_agent_runtime import _create_agent
 from tests.test_tools import FailingTool, MediumRiskTool, RecordingEchoTool
 
@@ -173,6 +181,119 @@ def test_successful_orchestration_creates_execution_and_runs_plan(
     assert execution.initiated_by_user_id == user_id
     assert execution.input.get("correlation_id") == "corr-1"
     assert db.query(ToolInvocation).count() == 1
+
+
+def test_actual_planner_orchestration_runs_qualification_draft_then_manual_reminder(
+    db: Session, client: TestClient
+) -> None:
+    created = _auth(client)
+    organization_id = created["organization"]["id"]
+    user_id = created["user"]["id"]
+    agent = _create_agent(db, organization_id)
+    lead = Lead(
+        organization_id=organization_id,
+        name="Orchestration Manual Reminder Lead",
+        email="orchestration@example.test",
+        enquiry="We are evaluating sales automation and would like a demo.",
+        status=LeadStatus.NEW,
+    )
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
+    tool_arguments = {
+        "lead_id": lead.id,
+        "due_at": "2026-10-05T15:00:00Z",
+        "notes": "Follow up on the demo discussion.",
+    }
+    provider = ScriptedPlannerProvider(
+        payloads=[
+            {
+                "version": "1",
+                "steps": [
+                    {
+                        "step_id": "qualify",
+                        "tool_name": "qualify_lead",
+                        "arguments_json": json.dumps({"lead_id": lead.id}),
+                        "sequence": 0,
+                    },
+                    {
+                        "step_id": "draft",
+                        "tool_name": "create_response_draft",
+                        "arguments_json": json.dumps({"lead_id": lead.id}),
+                        "sequence": 1,
+                    },
+                    {
+                        "step_id": "reminder",
+                        "tool_name": "create_manual_follow_up",
+                        "arguments_json": json.dumps(tool_arguments),
+                        "sequence": 2,
+                    },
+                ],
+            },
+            {
+                "summary": "The lead requested a demo.",
+                "intent": "REQUEST_DEMO",
+                "qualification": "QUALIFIED",
+                "qualification_reasons": ["The lead requested a demo."],
+                "confidence": 0.8,
+                "extracted_contact": {"name": None, "email": None, "phone": None},
+                "extracted_company": {"name": None},
+                "buying_signals": ["Requested a demo"],
+                "missing_information": [],
+            },
+            {"response": "Thanks for your interest. We would be glad to arrange a demo."},
+        ]
+    )
+    service = AgentOrchestrationService(db, provider)
+
+    result = service.orchestrate(
+        organization_id=organization_id,
+        agent_id=agent.id,
+        initiated_by_user_id=user_id,
+        user_input=(
+            "Qualify the lead, draft a reply, then create a manual reminder "
+            "for October 5, 2026 at 3 PM UTC with the supplied note."
+        ),
+    )
+
+    assert result.outcome == OrchestrationOutcome.SUCCESS
+    assert result.completed_step_count == 3
+    assert [step.tool_name for step in result.step_results] == [
+        "qualify_lead",
+        "create_response_draft",
+        "create_manual_follow_up",
+    ]
+    assert all(step.result is not None and step.result.success for step in result.step_results)
+    assert len(provider.calls) == 3
+    assert "create_manual_follow_up" in {
+        tool.name for tool in service.registry.list_available()
+    }
+
+    qualification = db.scalar(
+        select(LeadQualification).where(LeadQualification.lead_id == lead.id)
+    )
+    draft = db.scalar(select(LeadResponseDraft).where(LeadResponseDraft.lead_id == lead.id))
+    follow_up = db.scalar(select(LeadFollowUp).where(LeadFollowUp.lead_id == lead.id))
+    assert qualification is not None
+    assert draft is not None
+    assert draft.review_status == LeadResponseReviewStatus.GENERATED
+    assert follow_up is not None
+    assert follow_up.type == LeadFollowUpType.MANUAL_FOLLOW_UP
+    assert follow_up.status == LeadFollowUpStatus.PENDING
+    assert follow_up.notes == tool_arguments["notes"]
+    assert db.get(Lead, lead.id).status == LeadStatus.NEW
+    assert db.scalar(select(ToolInvocation).where(
+        ToolInvocation.tool_name == "create_manual_follow_up"
+    )) is not None
+    activity = db.scalar(
+        select(ActivityEvent).where(ActivityEvent.entity_id == follow_up.id)
+    )
+    assert activity is not None
+    assert activity.type == ActivityEventType.AI_ACTION
+    assert activity.actor_type == ActivityActorType.AGENT
+    assert activity.actor_user_id == user_id
+    assert activity.agent_id == agent.id
 
 
 def test_planner_failure_skips_plan_and_tool_execution(

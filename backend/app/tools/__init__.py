@@ -26,6 +26,7 @@ def build_default_tool_registry(
     registry.register(EchoTool())
     if session is not None:
         from app.tools.business import (
+            CreateManualFollowUpTool,
             CreateResponseDraftTool,
             GetCustomerContextTool,
             GetFollowUpsTool,
@@ -38,6 +39,7 @@ def build_default_tool_registry(
         registry.register(GetLeadTool(session))
         registry.register(GetCustomerContextTool(session))
         registry.register(GetFollowUpsTool(session))
+        registry.register(CreateManualFollowUpTool(session))
         registry.register(CreateResponseDraftTool(session, provider))
         registry.register(QualifyLeadTool(session, provider))
     return registry

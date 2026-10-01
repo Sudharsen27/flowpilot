@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.activity_event import ActivityActorType, ActivityEvent, ActivityEventType
 from app.models.agent_execution import AgentExecution
 from app.models.lead import Lead
 from app.models.lead_follow_up import LeadFollowUp
@@ -73,7 +74,8 @@ def test_unauthenticated_follow_ups_are_rejected(client: TestClient) -> None:
 
 
 def test_create_list_get_follow_up(client: TestClient, db: Session) -> None:
-    token = _auth(client)["access_token"]
+    auth = _auth(client)
+    token = auth["access_token"]
     lead = _create(client, token, email="ada@example.com").json()
     created = _create_follow_up(client, token, lead["id"])
     assert created["status"] == "PENDING"
@@ -95,6 +97,13 @@ def test_create_list_get_follow_up(client: TestClient, db: Session) -> None:
     assert db.get(Lead, lead["id"]).status == "NEW"
     assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
     assert db.scalar(select(func.count()).select_from(ToolInvocation)) == 0
+    activity = db.scalar(
+        select(ActivityEvent).where(ActivityEvent.entity_id == created["id"])
+    )
+    assert activity is not None
+    assert activity.type == ActivityEventType.HUMAN_ACTION
+    assert activity.actor_type == ActivityActorType.USER
+    assert activity.actor_user_id == auth["user"]["id"]
 
 
 def test_due_at_must_be_timezone_aware(client: TestClient) -> None:

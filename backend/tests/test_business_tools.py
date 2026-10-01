@@ -1,11 +1,20 @@
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.activity_event import ActivityActorType, ActivityEvent, ActivityEventType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
-from app.models.lead import Lead
+from app.models.lead import Lead, LeadStatus
+from app.models.lead_email_send import LeadEmailSend
+from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
+from app.models.lead_follow_up_execution import LeadFollowUpExecution
+from app.models.lead_response_draft import LeadResponseDraft
+from app.models.tool_invocation import ToolInvocation, ToolInvocationRecordStatus
+from app.repositories.lead_follow_up_repository import LeadFollowUpRepository
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools import build_default_tool_registry
 from app.tools.business import (
@@ -85,6 +94,7 @@ def test_default_registry_registers_read_tools(db: Session) -> None:
     assert names == sorted(
         [
             "create_response_draft",
+            "create_manual_follow_up",
             "echo",
             "get_customer_context",
             "get_followups",
@@ -102,6 +112,13 @@ def test_default_registry_registers_read_tools(db: Session) -> None:
     qualify = registry.lookup("qualify_lead")
     assert qualify.side_effect_level == ToolSideEffectLevel.WRITE
     assert qualify.definition().requires_human_approval is False
+    manual_follow_up = registry.lookup("create_manual_follow_up")
+    assert manual_follow_up.side_effect_level == ToolSideEffectLevel.WRITE
+    assert manual_follow_up.definition().requires_human_approval is False
+    schema = manual_follow_up.definition().input_schema
+    assert schema["required"] == ["lead_id", "due_at"]
+    assert list(schema["properties"]) == ["lead_id", "due_at", "notes"]
+    assert schema["additionalProperties"] is False
 
 
 def test_registry_has_unknown_is_false() -> None:
@@ -334,3 +351,180 @@ def test_unknown_business_tool_safe(db: Session, client: TestClient) -> None:
     assert result.success is False
     assert result.outcome == ToolOutcome.VALIDATION_FAILURE
     assert result.decision == PolicyDecision.DENY
+
+
+def test_create_manual_follow_up_persists_and_audits_without_side_effects(
+    db: Session, client: TestClient
+) -> None:
+    org_id, agent_id, execution_id, user_id = _running_execution(db, client)
+    lead = Lead(
+        organization_id=org_id,
+        name="Phase 6D.14 Synthetic Lead",
+        email="phase6d14@example.test",
+        status=LeadStatus.NEW,
+    )
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
+    result = ToolExecutionService(db, build_default_tool_registry(db)).execute(
+        ToolCall(
+            id="call-manual-follow-up",
+            name="create_manual_follow_up",
+            arguments={
+                "lead_id": lead.id,
+                "due_at": "2030-06-15T10:30:00Z",
+                "notes": "  Call to follow up on the demo  ",
+            },
+        ),
+        _context(org_id, agent_id, execution_id, user_id=user_id),
+    )
+
+    assert result.success is True
+    assert result.output is not None
+    assert result.output["type"] == LeadFollowUpType.MANUAL_FOLLOW_UP
+    assert result.output["status"] == LeadFollowUpStatus.PENDING
+    row = db.get(LeadFollowUp, result.output["follow_up_id"])
+    assert row is not None
+    assert row.organization_id == org_id
+    assert row.lead_id == lead.id
+    assert row.type == LeadFollowUpType.MANUAL_FOLLOW_UP
+    assert row.status == LeadFollowUpStatus.PENDING
+    assert row.due_at.replace(tzinfo=UTC) == datetime(2030, 6, 15, 10, 30, tzinfo=UTC)
+    assert row.notes == "Call to follow up on the demo"
+    assert row.revision == 1
+    assert row.email_send_id is None
+    assert row.body_text is None
+
+    event = db.scalar(
+        select(ActivityEvent).where(ActivityEvent.entity_id == row.id)
+    )
+    assert event is not None
+    assert event.type == ActivityEventType.AI_ACTION
+    assert event.actor_type == ActivityActorType.AGENT
+    assert event.actor_user_id == user_id
+    assert event.agent_id == agent_id
+
+    invocation = db.scalar(
+        select(ToolInvocation).where(ToolInvocation.call_id == "call-manual-follow-up")
+    )
+    assert invocation is not None
+    assert invocation.tool_name == "create_manual_follow_up"
+    assert invocation.status == ToolInvocationRecordStatus.SUCCESS
+    assert invocation.argument_keys == ["due_at", "lead_id", "notes"]
+    assert db.scalar(select(LeadEmailSend)) is None
+    assert db.scalar(select(LeadResponseDraft)) is None
+    assert db.scalar(select(LeadFollowUpExecution)) is None
+    assert db.scalar(
+        select(LeadFollowUp).where(LeadFollowUp.type == LeadFollowUpType.EMAIL_FOLLOW_UP)
+    ) is None
+    assert db.get(Lead, lead.id).status == LeadStatus.NEW
+    due_email_rows = LeadFollowUpRepository(db).list_due_email_follow_ups(
+        as_of=datetime(2030, 6, 16, tzinfo=UTC), limit=10
+    )
+    assert due_email_rows == []
+
+
+@pytest.mark.parametrize(
+    "extra_field",
+    [
+        "organization_id",
+        "user_id",
+        "agent_id",
+        "execution_id",
+        "type",
+        "status",
+        "email_send_id",
+        "body_text",
+        "unexpected",
+    ],
+)
+def test_create_manual_follow_up_rejects_server_controlled_and_unknown_fields(
+    db: Session, client: TestClient, extra_field: str
+) -> None:
+    org_id, agent_id, execution_id, user_id = _running_execution(db, client)
+    lead = Lead(organization_id=org_id, name="Input Safety Lead")
+    db.add(lead)
+    db.commit()
+    arguments = {
+        "lead_id": lead.id,
+        "due_at": "2030-06-15T10:30:00Z",
+        extra_field: "EMAIL_FOLLOW_UP" if extra_field == "type" else "attacker-value",
+    }
+
+    result = ToolExecutionService(db, build_default_tool_registry(db)).execute(
+        ToolCall(
+            id=f"call-reject-{extra_field}",
+            name="create_manual_follow_up",
+            arguments=arguments,
+        ),
+        _context(org_id, agent_id, execution_id, user_id=user_id),
+    )
+
+    assert result.success is False
+    assert result.executed is False
+    assert result.outcome == ToolOutcome.VALIDATION_FAILURE
+    assert db.scalar(select(LeadFollowUp)) is None
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"lead_id": "lead-only"},
+        {"lead_id": "lead-only", "due_at": "not-a-timestamp"},
+        {"lead_id": "lead-only", "due_at": "2030-06-15T10:30:00"},
+        {"lead_id": "lead-only", "due_at": "2020-06-15T10:30:00Z"},
+        {"lead_id": "lead-only", "due_at": "9999-06-15T10:30:00Z"},
+        {
+            "lead_id": "lead-only",
+            "due_at": "2030-06-15T10:30:00Z",
+            "notes": "x" * 4001,
+        },
+    ],
+)
+def test_create_manual_follow_up_rejects_invalid_dates_or_oversized_notes(
+    db: Session, client: TestClient, arguments: dict[str, object]
+) -> None:
+    org_id, agent_id, execution_id, user_id = _running_execution(db, client)
+    result = ToolExecutionService(db, build_default_tool_registry(db)).execute(
+        ToolCall(
+            id="call-invalid-manual-follow-up",
+            name="create_manual_follow_up",
+            arguments=arguments,
+        ),
+        _context(org_id, agent_id, execution_id, user_id=user_id),
+    )
+    assert result.success is False
+    assert result.executed is False
+    assert result.outcome == ToolOutcome.VALIDATION_FAILURE
+    assert db.scalar(select(LeadFollowUp)) is None
+
+
+def test_create_manual_follow_up_cross_tenant_lead_is_not_found(
+    db: Session, client: TestClient
+) -> None:
+    org_a, agent_a, execution_a, user_a = _running_execution(
+        db, client, email="manual-a@example.com", organization_name="Manual A"
+    )
+    org_b, _agent_b, _execution_b, _user_b = _running_execution(
+        db, client, email="manual-b@example.com", organization_name="Manual B"
+    )
+    lead_b = Lead(organization_id=org_b, name="Private Tenant Lead")
+    db.add(lead_b)
+    db.commit()
+
+    result = ToolExecutionService(db, build_default_tool_registry(db)).execute(
+        ToolCall(
+            id="call-cross-tenant-manual",
+            name="create_manual_follow_up",
+            arguments={
+                "lead_id": lead_b.id,
+                "due_at": "2030-06-15T10:30:00Z",
+            },
+        ),
+        _context(org_a, agent_a, execution_a, user_id=user_a),
+    )
+
+    assert result.success is False
+    assert result.error == "Lead not found"
+    assert db.scalar(select(LeadFollowUp)) is None

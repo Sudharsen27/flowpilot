@@ -48,6 +48,7 @@ class LeadFollowUpService:
         body_text: str | None,
         email_send_id: str | None,
         initiated_by_user_id: str | None,
+        initiated_by_agent_id: str | None = None,
     ) -> LeadFollowUp:
         self._require_lead(organization_id, lead_id)
         send_id = self._validated_send_id(organization_id, lead_id, email_send_id)
@@ -68,9 +69,17 @@ class LeadFollowUpService:
         self.session.flush()
         ActivityService(self.session).record(
             organization_id=organization_id,
-            event_type=ActivityEventType.HUMAN_ACTION,
+            event_type=(
+                ActivityEventType.AI_ACTION
+                if initiated_by_agent_id
+                else ActivityEventType.HUMAN_ACTION
+            ),
             actor_type=(
-                ActivityActorType.USER if initiated_by_user_id else ActivityActorType.SYSTEM
+                ActivityActorType.AGENT
+                if initiated_by_agent_id
+                else ActivityActorType.USER
+                if initiated_by_user_id
+                else ActivityActorType.SYSTEM
             ),
             title="Follow-up scheduled",
             summary="A follow-up was scheduled for this lead.",
@@ -78,6 +87,7 @@ class LeadFollowUpService:
             entity_id=row.id,
             lead_id=lead_id,
             actor_user_id=initiated_by_user_id,
+            agent_id=initiated_by_agent_id,
             status=LeadFollowUpStatus.PENDING,
             dedupe_key=f"follow_up:{row.id}:SCHEDULED",
         )

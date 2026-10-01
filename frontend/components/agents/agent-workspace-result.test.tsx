@@ -6,6 +6,7 @@ import {
   AgentWorkspaceResult,
   approvalHandoffHref,
   extractCreatedDraft,
+  extractCreatedManualFollowUp,
   resolveApprovalHandoff,
 } from "@/components/agents/agent-workspace-result";
 import { getApprovals } from "@/lib/api/approvals";
@@ -120,6 +121,39 @@ function qualificationStep(
       executed: true,
       failure_category: null,
       ...resultOverrides,
+    },
+  };
+}
+
+function manualFollowUpStep(
+  outputOverrides: Record<string, unknown> = {},
+): PlanStepResult {
+  return {
+    step_id: "manual-follow-up-step",
+    sequence: 0,
+    tool_name: "create_manual_follow_up",
+    result: {
+      call_id: "manual-follow-up-step",
+      tool_name: "create_manual_follow_up",
+      success: true,
+      outcome: "SUCCESS",
+      decision: "ALLOW",
+      risk_level: "LOW",
+      side_effect_level: "WRITE",
+      output: {
+        follow_up_id: "follow-up-42",
+        lead_id: "lead-42",
+        type: "MANUAL_FOLLOW_UP",
+        status: "PENDING",
+        due_at: "2026-10-05T15:00:00Z",
+        revision: 1,
+        api_key: "sk-test-secret-value",
+        provider_error: "private-provider-error",
+        ...outputOverrides,
+      },
+      error: null,
+      executed: true,
+      failure_category: null,
     },
   };
 }
@@ -582,5 +616,50 @@ describe("AgentWorkspaceResult qualify_lead", () => {
     ).toBeVisible();
     expect(screen.queryByText("Invalid tool arguments")).toBeNull();
     expect(screen.queryByText("private validation details")).toBeNull();
+  });
+});
+
+describe("AgentWorkspaceResult create_manual_follow_up", () => {
+  it("shows only safe reminder details and does not create an approval handoff", () => {
+    const payload = result({ step_results: [manualFollowUpStep()] });
+    expect(extractCreatedManualFollowUp(payload)).toEqual({
+      followUpId: "follow-up-42",
+      leadId: "lead-42",
+      dueAt: "2026-10-05T15:00:00Z",
+    });
+    render(<AgentWorkspaceResult result={payload} />);
+
+    expect(screen.getByText("Manual follow-up created")).toBeVisible();
+    expect(screen.getByText("follow-up-42")).toBeVisible();
+    expect(screen.getByRole("link", { name: "lead-42" })).toHaveAttribute(
+      "href",
+      "/leads/lead-42",
+    );
+    expect(screen.getByText("Oct 5, 2026, 3:00 PM UTC")).toBeVisible();
+    expect(screen.getByText("Pending · Manual follow-up")).toBeVisible();
+    expect(screen.queryByText("sk-test-secret-value")).toBeNull();
+    expect(screen.queryByText("private-provider-error")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Review draft" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Review in Approvals" })).toBeNull();
+  });
+
+  it("does not extract failed or non-manual follow-up results", () => {
+    const failed = result({
+      step_results: [
+        {
+          ...manualFollowUpStep(),
+          result: {
+            ...manualFollowUpStep().result!,
+            success: false,
+          },
+        },
+      ],
+    });
+    expect(extractCreatedManualFollowUp(failed)).toBeNull();
+    expect(
+      extractCreatedManualFollowUp(
+        result({ step_results: [manualFollowUpStep({ type: "EMAIL_FOLLOW_UP" })] }),
+      ),
+    ).toBeNull();
   });
 });
