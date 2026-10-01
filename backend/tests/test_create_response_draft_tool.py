@@ -155,7 +155,9 @@ def test_create_response_draft_metadata(db: Session) -> None:
     schema = definition.input_schema
     props = schema.get("properties", {})
     assert "lead_id" in props
-    assert "enquiry" in props
+    assert "enquiry" not in props
+    assert "provider" not in props
+    assert "model" not in props
     assert "organization_id" not in props
     assert "user_id" not in props
     assert "role" not in props
@@ -193,7 +195,7 @@ def test_create_response_draft_persists_real_draft(
         ToolCall(
             id="call-draft",
             name="create_response_draft",
-            arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead.id},
         ),
         _context(org_id, agent_id, execution_id, user_id=user_id, role="OWNER"),
     )
@@ -242,7 +244,7 @@ def test_create_response_draft_cross_tenant_fails(
         ToolCall(
             id="call-xtenant",
             name="create_response_draft",
-            arguments={"lead_id": lead_b.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead_b.id},
         ),
         _context(org_a, agent_a, exec_a, user_id=user_a, role="OWNER"),
     )
@@ -259,21 +261,53 @@ def test_create_response_draft_cross_tenant_fails(
     assert len(provider.requests) == 0
 
 
+def test_create_response_draft_requires_canonical_lead_enquiry(
+    db: Session, client: TestClient
+) -> None:
+    org_id, agent_id, execution_id, user_id = _running_execution(db, client)
+    lead = _add_lead(db, org_id)
+    lead.enquiry = "   "
+    db.commit()
+    provider = FakeStructuredProvider()
+    registry = ToolRegistry()
+    registry.register(CreateResponseDraftTool(db, provider))
+
+    result = ToolExecutionService(db, registry).execute(
+        ToolCall(
+            id="call-blank-enquiry",
+            name="create_response_draft",
+            arguments={"lead_id": lead.id},
+        ),
+        _context(org_id, agent_id, execution_id, user_id=user_id, role="OWNER"),
+    )
+
+    assert result.success is False
+    assert result.executed is False
+    assert result.outcome.value == "VALIDATION_FAILURE"
+    assert "Lead enquiry is required" in (result.error or "")
+    assert len(provider.requests) == 0
+    assert db.scalar(select(func.count()).select_from(LeadResponseDraft)) == 0
+
+
 # --- E: auth fields rejected ---
 
 
 @pytest.mark.parametrize(
     "extra",
     [
+        {"enquiry": ENQUIRY},
         {"organization_id": "org-evil"},
         {"user_id": "user-evil"},
         {"role": "OWNER"},
         {"execution_id": "exec-evil"},
         {"agent_id": "agent-evil"},
+        {"provider": "openai"},
+        {"model": "gpt-4o"},
+        {"unknown": "value"},
     ],
 )
 def test_create_response_draft_rejects_authorization_fields(extra: dict[str, str]) -> None:
-    payload = {"lead_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "enquiry": ENQUIRY}
+    payload = {"lead_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}
     payload.update(extra)
     with pytest.raises(PydanticValidationError):
         CreateResponseDraftInput.model_validate(payload)
@@ -297,7 +331,7 @@ def test_create_response_draft_allows_multiple_drafts_per_lead(
         ToolCall(
             id="call-1",
             name="create_response_draft",
-            arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead.id},
         ),
         ctx,
     )
@@ -305,7 +339,7 @@ def test_create_response_draft_allows_multiple_drafts_per_lead(
         ToolCall(
             id="call-2",
             name="create_response_draft",
-            arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead.id},
         ),
         ctx,
     )
@@ -349,7 +383,7 @@ def test_create_response_draft_never_sends_or_approves(
             ToolCall(
                 id="call-safe",
                 name="create_response_draft",
-                arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+                arguments={"lead_id": lead.id},
             ),
             _context(org_id, agent_id, execution_id, user_id=user_id, role="OWNER"),
         )
@@ -379,7 +413,7 @@ def test_create_response_draft_reuses_service_activity_event(
         ToolCall(
             id="call-activity",
             name="create_response_draft",
-            arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead.id},
         ),
         _context(org_id, agent_id, execution_id, user_id=user_id, role="OWNER"),
     )
@@ -416,7 +450,7 @@ def test_create_response_draft_denied_by_policy(
         ToolCall(
             id="call-deny",
             name="create_response_draft",
-            arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead.id},
         ),
         _context(org_id, agent_id, execution_id, user_id=user_id, role="OWNER"),
     )
@@ -448,7 +482,7 @@ def test_create_response_draft_require_approval_does_not_execute(
         ToolCall(
             id="call-approval",
             name="create_response_draft",
-            arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+            arguments={"lead_id": lead.id},
         ),
         _context(org_id, agent_id, execution_id, user_id=user_id, role="OWNER"),
     )
@@ -526,7 +560,7 @@ def test_plan_execution_preserves_create_response_draft_output(
             AgentPlanStep(
                 step_id="s1",
                 tool_name="create_response_draft",
-                arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+                arguments={"lead_id": lead.id},
                 sequence=0,
             )
         ],
@@ -576,7 +610,7 @@ def test_orchestration_result_exposes_create_response_draft_output(
             AgentPlanStep(
                 step_id="draft",
                 tool_name="create_response_draft",
-                arguments={"lead_id": lead.id, "enquiry": ENQUIRY},
+                arguments={"lead_id": lead.id},
                 sequence=0,
             )
         ],

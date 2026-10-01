@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.ai.provider import AIProvider
@@ -97,20 +97,11 @@ class GetFollowUpsOutput(BaseModel):
 
 
 class CreateResponseDraftInput(BaseModel):
-    """Matches LeadResponseDraftService.generate / LeadRespondRequest contract."""
+    """Only accepts the canonical lead id; the enquiry comes from the lead record."""
 
     model_config = ConfigDict(extra="forbid")
 
     lead_id: str = Field(min_length=1, max_length=36)
-    enquiry: str = Field(min_length=1, max_length=8000)
-
-    @field_validator("enquiry")
-    @classmethod
-    def strip_enquiry(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("Enquiry is required")
-        return stripped
 
 
 class QualifyLeadInput(BaseModel):
@@ -314,12 +305,19 @@ class CreateResponseDraftTool(Tool):
 
     def execute(self, arguments: BaseModel, context: ToolContext) -> BaseModel:
         payload = CreateResponseDraftInput.model_validate(arguments)
+        lead = LeadService(self._session).get_or_raise(
+            context.organization_id, payload.lead_id
+        )
+        enquiry = (lead.enquiry or "").strip()
+        if not enquiry:
+            raise ValidationError("Lead enquiry is required for response draft")
+
         service = LeadResponseDraftService(self._session, self._provider)
         try:
             row = service.generate(
                 organization_id=context.organization_id,
                 lead_id=payload.lead_id,
-                enquiry=payload.enquiry,
+                enquiry=enquiry,
                 initiated_by_user_id=context.user_id,
             )
         except NotFoundError:

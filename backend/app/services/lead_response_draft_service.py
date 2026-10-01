@@ -13,6 +13,7 @@ from app.core.exceptions import (
     NotFoundError,
     ProviderError,
     ProviderNotConfiguredError,
+    ValidationError,
 )
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.agent_execution import ExecutionFailureCategory
@@ -82,6 +83,9 @@ class LeadResponseDraftService:
         enquiry: str,
         initiated_by_user_id: str | None = None,
     ) -> LeadResponseDraft:
+        if enquiry is None or not enquiry.strip():
+            raise ValidationError("Lead enquiry is required for response draft")
+
         lead = self.leads.get_by_id(organization_id, lead_id)
         if lead is None:
             raise NotFoundError("Lead not found")
@@ -92,7 +96,7 @@ class LeadResponseDraftService:
             lead_id=lead.id,
             initiated_by_user_id=initiated_by_user_id,
             status=LeadResponseDraftStatus.FAILED,
-            enquiry=enquiry,
+            enquiry=enquiry.strip(),
             started_at=started,
         )
         self.drafts.add(row)
