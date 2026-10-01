@@ -20,7 +20,7 @@ def build_default_tool_registry(
     Business tools require a DB session and delegate to existing services.
     When session is omitted (tests that only need echo), only EchoTool is registered.
     Business tools are imported lazily to avoid circular imports with AI providers.
-    Optional provider is passed to AI-backed write tools (create_response_draft).
+    Optional provider is passed to AI-backed write tools.
     """
     registry = ToolRegistry()
     registry.register(EchoTool())
@@ -30,6 +30,7 @@ def build_default_tool_registry(
             GetCustomerContextTool,
             GetFollowUpsTool,
             GetLeadTool,
+            QualifyLeadTool,
             SearchLeadsTool,
         )
 
@@ -38,4 +39,5 @@ def build_default_tool_registry(
         registry.register(GetCustomerContextTool(session))
         registry.register(GetFollowUpsTool(session))
         registry.register(CreateResponseDraftTool(session, provider))
+        registry.register(QualifyLeadTool(session, provider))
     return registry

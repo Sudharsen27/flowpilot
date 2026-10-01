@@ -18,6 +18,7 @@ from app.core.exceptions import (
     NotFoundError,
     ProviderError,
     ProviderNotConfiguredError,
+    ValidationError,
 )
 from app.models.lead import LeadSource, LeadStatus
 from app.models.lead_follow_up import LeadFollowUpStatus
@@ -26,10 +27,12 @@ from app.repositories.lead_follow_up_repository import (
     FOLLOW_UP_LIST_MAX_LIMIT,
 )
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
+from app.schemas.lead_qualification import LeadQualificationPublic
 from app.services.inbox_service import InboxService
 from app.services.lead_follow_up_service import LeadFollowUpService
+from app.services.lead_qualification_service import LeadQualificationService
 from app.services.lead_response_draft_service import LeadResponseDraftService
-from app.services.lead_service import LeadService
+from app.services.lead_service import LeadService, to_qualification_public
 from app.services.tool_execution_service import ToolExecutionError
 from app.tools.base import Tool
 from app.tools.schema import ToolContext, ToolRiskLevel, ToolSideEffectLevel
@@ -110,6 +113,12 @@ class CreateResponseDraftInput(BaseModel):
         return stripped
 
 
+class QualifyLeadInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lead_id: str = Field(min_length=1, max_length=36)
+
+
 class CreateResponseDraftOutput(BaseModel):
     draft_id: str
     lead_id: str
@@ -117,6 +126,44 @@ class CreateResponseDraftOutput(BaseModel):
     review_status: str | None = None
     revision: int
     created_at: datetime
+
+
+class QualifyLeadTool(Tool):
+    name = "qualify_lead"
+    description = (
+        "Qualify a lead in the current organization using the enquiry already "
+        "stored on that lead. Records the qualification for review; does not "
+        "change lead status or take follow-up or email actions."
+    )
+    risk_level = ToolRiskLevel.LOW
+    side_effect_level = ToolSideEffectLevel.WRITE
+    requires_human_approval = False
+    input_model = QualifyLeadInput
+    output_model = LeadQualificationPublic
+
+    def __init__(self, session: Session, provider: AIProvider | None = None) -> None:
+        self._session = session
+        self._provider = provider
+
+    def execute(self, arguments: BaseModel, context: ToolContext) -> BaseModel:
+        payload = QualifyLeadInput.model_validate(arguments)
+        lead = LeadService(self._session).get_or_raise(
+            context.organization_id, payload.lead_id
+        )
+        if not lead.enquiry or not lead.enquiry.strip():
+            raise ValidationError("Lead enquiry is required for qualification")
+
+        try:
+            row = LeadQualificationService(self._session, self._provider).qualify(
+                organization_id=context.organization_id,
+                lead_id=lead.id,
+                enquiry=lead.enquiry,
+                initiated_by_user_id=context.user_id,
+            )
+        except (ProviderError, ProviderNotConfiguredError) as exc:
+            raise ToolExecutionError(exc.detail) from exc
+
+        return to_qualification_public(row)
 
 
 class SearchLeadsTool(Tool):

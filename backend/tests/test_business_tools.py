@@ -80,6 +80,7 @@ def test_default_registry_registers_read_tools(db: Session) -> None:
     assert registry.has("get_customer_context")
     assert registry.has("get_followups")
     assert registry.has("create_response_draft")
+    assert registry.has("qualify_lead")
     names = registry.list_names()
     assert names == sorted(
         [
@@ -88,6 +89,7 @@ def test_default_registry_registers_read_tools(db: Session) -> None:
             "get_customer_context",
             "get_followups",
             "get_lead",
+            "qualify_lead",
             "search_leads",
         ]
     )
@@ -97,6 +99,9 @@ def test_default_registry_registers_read_tools(db: Session) -> None:
     write = registry.lookup("create_response_draft")
     assert write.side_effect_level == ToolSideEffectLevel.WRITE
     assert write.definition().requires_human_approval is False
+    qualify = registry.lookup("qualify_lead")
+    assert qualify.side_effect_level == ToolSideEffectLevel.WRITE
+    assert qualify.definition().requires_human_approval is False
 
 
 def test_registry_has_unknown_is_false() -> None:

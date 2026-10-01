@@ -79,6 +79,51 @@ function draftStep(
   };
 }
 
+function qualificationStep(
+  resultOverrides: Partial<NonNullable<PlanStepResult["result"]>> = {},
+): PlanStepResult {
+  return {
+    step_id: "qualification-step",
+    sequence: 0,
+    tool_name: "qualify_lead",
+    result: {
+      call_id: "qualification-step",
+      tool_name: "qualify_lead",
+      success: true,
+      outcome: "SUCCESS",
+      decision: "ALLOW",
+      risk_level: "LOW",
+      side_effect_level: "WRITE",
+      output: {
+        id: "qualification-1",
+        lead_id: "lead-42",
+        status: "COMPLETED",
+        enquiry: "Customer enquiry stays in the existing lead view.",
+        analysis: {
+          summary: "The prospect requested a demo for a sales automation tool.",
+          intent: "REQUEST_DEMO",
+          qualification: "QUALIFIED",
+          qualification_reasons: ["The prospect requested a demo."],
+          confidence: 0.82,
+          extracted_contact: { name: null, email: null, phone: null },
+          extracted_company: { name: null },
+          buying_signals: ["Requested a demo"],
+          missing_information: [],
+        },
+        error: null,
+        failure_category: null,
+        provider: "provider-secret-metadata",
+        model: "private-model-metadata",
+        api_key: "sk-test-secret-value",
+      },
+      error: null,
+      executed: true,
+      failure_category: null,
+      ...resultOverrides,
+    },
+  };
+}
+
 describe("AgentWorkspaceResult draft handoff", () => {
   let writeText: ReturnType<typeof vi.fn>;
 
@@ -423,5 +468,119 @@ describe("AgentWorkspaceResult draft handoff", () => {
     expect(
       screen.queryByRole("link", { name: "Review in Approvals" }),
     ).toBeNull();
+  });
+});
+
+describe("AgentWorkspaceResult qualify_lead", () => {
+  it("shows the lead, qualification summary, reasons, and confidence", () => {
+    render(
+      <AgentWorkspaceResult
+        result={result({
+          provider: null,
+          model: null,
+          step_results: [qualificationStep()],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Qualify Lead")).toBeVisible();
+    expect(screen.getByText("Qualification completed")).toBeVisible();
+    expect(screen.getByText("Qualified")).toBeVisible();
+    expect(screen.getByRole("link", { name: "lead-42" })).toHaveAttribute(
+      "href",
+      "/leads/lead-42",
+    );
+    expect(
+      screen.getByText("The prospect requested a demo for a sales automation tool."),
+    ).toBeVisible();
+    expect(screen.getByText("Qualification reasons")).toBeVisible();
+    expect(screen.getByText("The prospect requested a demo.")).toBeVisible();
+    expect(
+      screen.getByText("Self-reported confidence: 82% (not calibrated)."),
+    ).toBeVisible();
+    expect(screen.queryByText("Customer enquiry stays in the existing lead view."))
+      .toBeNull();
+  });
+
+  it("does not render provider metadata or unavailable human-attention state", () => {
+    render(
+      <AgentWorkspaceResult
+        result={result({
+          provider: null,
+          model: null,
+          step_results: [qualificationStep()],
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("provider-secret-metadata")).toBeNull();
+    expect(screen.queryByText("private-model-metadata")).toBeNull();
+    expect(screen.queryByText("sk-test-secret-value")).toBeNull();
+    expect(screen.queryByText(/human attention/i)).toBeNull();
+  });
+
+  it("shows a safe failure state without rendering provider errors", () => {
+    render(
+      <AgentWorkspaceResult
+        result={result({
+          outcome: "TOOL_FAILED",
+          execution_status: "FAILED",
+          provider: null,
+          model: null,
+          error: "OPENAI_API_KEY=top-level-private-value",
+          step_results: [
+            qualificationStep({
+              success: false,
+              outcome: "FAILURE",
+              output: null,
+              error: "Authorization: Bearer provider-private-value",
+            }),
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Qualify Lead")).toBeVisible();
+    expect(screen.getByText("Qualification failed")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Qualification could not be completed. Provider details are not shown.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/top-level-private-value/)).toBeNull();
+    expect(screen.queryByText(/provider-private-value/)).toBeNull();
+    expect(screen.queryByText(/OPENAI_API_KEY/)).toBeNull();
+  });
+
+  it("distinguishes a rejected plan from an executed qualification failure", () => {
+    render(
+      <AgentWorkspaceResult
+        result={result({
+          outcome: "PLAN_VALIDATION_FAILED",
+          execution_status: "FAILED",
+          provider: null,
+          model: null,
+          error: "Invalid tool arguments",
+          step_results: [
+            qualificationStep({
+              success: false,
+              outcome: "VALIDATION_FAILURE",
+              executed: false,
+              output: null,
+              error: "private validation details",
+            }),
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Qualification not run")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Qualification was not run. The planned tool inputs were not accepted.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("Invalid tool arguments")).toBeNull();
+    expect(screen.queryByText("private validation details")).toBeNull();
   });
 });

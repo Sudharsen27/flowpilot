@@ -438,7 +438,7 @@ describe("Agent Workspace page", () => {
     expect(orchestrateAgentMock).toHaveBeenCalledTimes(2);
   });
 
-  it("disables submit while running", async () => {
+  it("shows the running state while a qualification instruction is pending", async () => {
     const user = userEvent.setup();
     let resolveRun: ((value: OrchestrationResult) => void) | undefined;
     orchestrateAgentMock.mockReturnValue(
@@ -451,10 +451,14 @@ describe("Agent Workspace page", () => {
       await screen.findByRole("textbox", {
         name: /What would you like me to do/i,
       }),
-      "Slow run",
+      "Qualify the lead using its saved enquiry.",
     );
     await user.click(screen.getByRole("button", { name: "Run Agent" }));
-    expect(await screen.findByRole("button", { name: "Running…" })).toBeDisabled();
+    const runningButton = await screen.findByRole("button", {
+      name: "Running…",
+    });
+    expect(runningButton).toBeDisabled();
+    expect(runningButton).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText("Running your instruction…")).toBeVisible();
     expect(orchestrateAgentMock).toHaveBeenCalledTimes(1);
     resolveRun?.(successResult());

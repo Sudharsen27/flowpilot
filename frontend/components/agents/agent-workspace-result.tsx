@@ -12,11 +12,18 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { QualificationStatus } from "@/components/leads/qualification-status";
 import { StatusBadge, type StatusValue } from "@/components/ui/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { buildApprovalsHref } from "@/lib/approvals-url";
 import { cn } from "@/lib/utils";
-import type { OrchestrationOutcome, OrchestrationResult } from "@/types/api";
+import type {
+  LeadAiQualification,
+  LeadQualificationResult,
+  OrchestrationOutcome,
+  OrchestrationResult,
+  ToolResult,
+} from "@/types/api";
 
 const OUTCOME_COPY: Record<
   OrchestrationOutcome,
@@ -76,6 +83,7 @@ export type ApprovalHandoff = {
 };
 
 function formatToolName(name: string) {
+  if (name === "qualify_lead") return "Qualify Lead";
   return name.replaceAll("_", " ");
 }
 
@@ -94,6 +102,44 @@ function asNonEmptyString(value: unknown): string | null {
 
 function asOptionalNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asLeadAiQualification(value: unknown): LeadAiQualification | null {
+  if (
+    value === "QUALIFIED" ||
+    value === "UNQUALIFIED" ||
+    value === "NEEDS_MORE_INFORMATION"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function asLeadQualificationResult(
+  output: Record<string, unknown> | null,
+): LeadQualificationResult | null {
+  if (
+    !output ||
+    !asNonEmptyString(output.id) ||
+    !asNonEmptyString(output.lead_id) ||
+    (output.status !== "COMPLETED" && output.status !== "FAILED")
+  ) {
+    return null;
+  }
+  return output as unknown as LeadQualificationResult;
+}
+
+function safeQualificationText(value: string) {
+  return value
+    .replace(
+      /\b(?:api[_ -]?key|secret|token|password|authorization)\b\s*[:=]\s*[^\s,;]+/gi,
+      "[redacted]",
+    )
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted]");
 }
 
 const PRIVATE_OUTPUT_KEYS = new Set([
@@ -238,7 +284,13 @@ function stepStatusLabel(result: OrchestrationResult["step_results"][number]) {
     if (result.tool_name === "create_response_draft") {
       return "Completed — Draft created. Review required before sending.";
     }
+    if (result.tool_name === "qualify_lead") return "Qualification completed";
     return "Completed";
+  }
+  if (result.tool_name === "qualify_lead") {
+    return result.result.executed
+      ? "Qualification failed"
+      : "Qualification not run";
   }
   if (result.result.outcome === "APPROVAL_REQUIRED") {
     return "Approval required";
@@ -270,6 +322,105 @@ function stoppedAtLabel(result: OrchestrationResult): string | null {
   return result.stopped_at_step_id;
 }
 
+function QualificationToolResult({
+  result,
+}: {
+  result: ToolResult | null;
+}) {
+  if (!result) {
+    return (
+      <p className="text-muted-foreground mt-2 text-xs">
+        Qualification has not run.
+      </p>
+    );
+  }
+  if (!result.success) {
+    const message = result.executed
+      ? "Qualification could not be completed. Provider details are not shown."
+      : "Qualification was not run. The planned tool inputs were not accepted.";
+    return (
+      <p className="text-danger-text mt-2 text-xs" role="alert">
+        {message}
+      </p>
+    );
+  }
+
+  const qualification = asLeadQualificationResult(result.output);
+  if (!qualification) {
+    return (
+      <p className="text-muted-foreground mt-2 text-xs">
+        Qualification completed, but its details are unavailable.
+      </p>
+    );
+  }
+
+  const analysis = isRecord(qualification.analysis)
+    ? qualification.analysis
+    : null;
+  const leadId = asNonEmptyString(qualification.lead_id);
+  const qualificationValue = asLeadAiQualification(analysis?.qualification);
+  const summary = asNonEmptyString(analysis?.summary);
+  const reasons = Array.isArray(analysis?.qualification_reasons)
+    ? analysis.qualification_reasons.filter(
+        (reason): reason is string =>
+          typeof reason === "string" && Boolean(reason.trim()),
+      )
+    : [];
+  const confidence = asOptionalNumber(analysis?.confidence);
+  const confidenceCopy =
+    confidence !== null && confidence >= 0 && confidence <= 1
+      ? `Self-reported confidence: ${Math.round(confidence * 100)}% (not calibrated).`
+      : undefined;
+  const status =
+    qualification.status === "FAILED"
+      ? "failed"
+      : (qualificationValue ?? "not-assessed");
+
+  return (
+    <div
+      className="border-border bg-background mt-2 grid gap-3 rounded-md border p-3"
+      aria-label="Qualification result"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">Qualification</p>
+        <QualificationStatus status={status} explanation={confidenceCopy} />
+      </div>
+      {leadId ? (
+        <dl className="grid gap-1 text-xs">
+          <div>
+            <dt className="text-muted-foreground inline">Lead </dt>
+            <dd className="inline font-mono break-all">
+              <Link
+                href={`/leads/${encodeURIComponent(leadId)}`}
+                className="underline underline-offset-2"
+              >
+                {leadId}
+              </Link>
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      {summary ? (
+        <p className="text-muted-foreground text-sm leading-6">
+          {safeQualificationText(summary)}
+        </p>
+      ) : null}
+      {reasons.length > 0 ? (
+        <div>
+          <p className="text-muted-foreground text-xs font-medium">
+            Qualification reasons
+          </p>
+          <ul className="text-muted-foreground mt-1 list-inside list-disc text-xs leading-5">
+            {reasons.map((reason, index) => (
+              <li key={`${index}-${reason}`}>{safeQualificationText(reason)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 type AgentWorkspaceResultProps = {
   result: OrchestrationResult;
   onRunAgain?: () => void;
@@ -296,6 +447,12 @@ export function AgentWorkspaceResult({
   const handoff = resolveApprovalHandoff(result);
   const createdDraft = handoff?.draft ?? null;
   const canRunAgain = Boolean(onRunAgain && isRetryableOutcome(result.outcome));
+  const failedQualification = result.step_results.some(
+    (step) =>
+      step.tool_name === "qualify_lead" &&
+      step.result !== null &&
+      !step.result.success,
+  );
 
   useEffect(() => {
     resultHeadingRef.current?.focus();
@@ -380,7 +537,7 @@ export function AgentWorkspaceResult({
         ) : null}
       </dl>
 
-      {result.error ? (
+      {result.error && !failedQualification ? (
         <p className="text-danger-text mt-4 text-sm" role="alert">
           {result.error}
         </p>
@@ -464,7 +621,10 @@ export function AgentWorkspaceResult({
         >
           {result.step_results.map((step, index) => {
             const ok = Boolean(step.result?.success);
-            const output = outputText(step.result?.output ?? null);
+            const isQualification = step.tool_name === "qualify_lead";
+            const output = isQualification
+              ? null
+              : outputText(step.result?.output ?? null);
             return (
               <li
                 key={step.step_id}
@@ -513,9 +673,13 @@ export function AgentWorkspaceResult({
                   </div>
                   <p className="text-muted-foreground mt-0.5 text-xs">
                     {stepStatusLabel(step)}
-                    {step.result?.error ? ` — ${step.result.error}` : null}
+                    {!isQualification && step.result?.error
+                      ? ` — ${step.result.error}`
+                      : null}
                   </p>
-                  {output ? (
+                  {isQualification ? (
+                    <QualificationToolResult result={step.result} />
+                  ) : output ? (
                     <details className="group mt-2 rounded-md border bg-background px-3 py-2">
                       <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
                         <ChevronDown
