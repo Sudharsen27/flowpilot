@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     email_from_address: str | None = None
     email_from_name: str | None = None
+    # Signing secret for Resend inbound webhooks (Svix). Absent means the
+    # webhook refuses events. Outbound sending does not require it.
+    resend_webhook_secret: SecretStr | None = None
+    # Domain that receives inbound mail. The recipient local-part must equal
+    # an organization slug. Absent means no tenant can be resolved.
+    resend_inbound_domain: str | None = None
     email_request_timeout_seconds: float = 30
     agent_max_tool_iterations: int = 3
     # Phase 6D.4: conservative bounds for untrusted AgentPlan artifacts.

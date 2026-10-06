@@ -86,6 +86,17 @@ Failure: Render stops the deploy when the pre-deploy command exits non-zero. The
 
 Rollback: deploy the previous application release only when its code still matches the current schema. Alembic downgrade is a manual, reviewed step and is not part of the start command. Do not generate a new revision during a routine deploy.
 
+## Inbound email
+
+The public webhook is `POST /api/v1/webhooks/resend/inbound`. Production is not receiving inbound mail. Turning it on later requires every one of these:
+
+- `RESEND_WEBHOOK_SECRET` set on the API service to the Resend webhook signing secret
+- `RESEND_INBOUND_DOMAIN` set on the API service to the domain whose recipient local-part equals an organization slug, such as `acme@inbound.example.com`
+- migration `023_inbound_emails` applied before that API release starts
+- a Resend `email.received` webhook pointing at `https://<render-api-host>/api/v1/webhooks/resend/inbound`
+
+Leave the secret and domain unset until that route exists. Outbound mail does not use them. The webhook returns 503 until the signing secret is set. A signed event is stored only when exactly one `to` mailbox is `{organization-slug}@{RESEND_INBOUND_DOMAIN}`. This repository does not create the Resend webhook.
+
 ## Local datastores
 
 `infra/docker-compose.yml` starts PostgreSQL and Redis for local development. It is not the production topology.
