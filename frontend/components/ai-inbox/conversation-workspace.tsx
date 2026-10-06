@@ -293,6 +293,27 @@ export function ConversationWorkspace({
             </section>
           ) : null}
 
+          {lead?.human_attention_required ? (
+            <section
+              className="border-info/40 bg-info/5 rounded-lg border p-4"
+              aria-labelledby="human-attention-title"
+            >
+              <h4 id="human-attention-title" className="text-sm font-medium">
+                Human attention
+              </h4>
+              <p className="text-muted-foreground mt-2 text-xs leading-5">
+                A person needs to review this lead. Resolve it from the customer
+                record. That does not approve a draft or send an email.
+              </p>
+              <Link
+                href={`/leads/${lead.lead_id}`}
+                className="text-foreground mt-3 inline-block text-sm font-medium underline-offset-4 hover:underline"
+              >
+                Open customer record
+              </Link>
+            </section>
+          ) : null}
+
           <section
             className="bg-card border-border rounded-lg border p-4"
             aria-labelledby="attention-title"

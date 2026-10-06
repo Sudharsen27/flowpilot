@@ -444,6 +444,39 @@ describe("AI Inbox page", () => {
     expect(conversationsButton).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("shows human attention and opens the existing lead page", async () => {
+    getInboxMock.mockResolvedValue(
+      pageOf([
+        {
+          ...inboxItem,
+          conversation_state: "OPEN",
+          needs_approval: false,
+          human_attention_required: true,
+        },
+      ]),
+    );
+    getInboxConversationMock.mockResolvedValue({
+      ...conversation,
+      lead: {
+        ...conversation.lead,
+        conversation_state: "OPEN",
+        needs_approval: false,
+        human_attention_required: true,
+      },
+    });
+    render(<InboxPage />);
+    expect(await screen.findByText("Human attention")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Ada Lovelace/ }),
+    );
+    expect(
+      await screen.findByRole("link", { name: "Open customer record" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
+    expect(
+      screen.queryByRole("button", { name: "Resolve human attention" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("paginates with next via URL offset", async () => {
     getInboxMock.mockResolvedValue({
       ...pageOf([inboxItem], 21),

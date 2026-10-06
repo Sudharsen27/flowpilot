@@ -53,6 +53,7 @@ function toListItem(item: InboxItem): ConversationListItem {
     lastMessagePreview: item.preview ?? undefined,
     occurredAt: item.last_activity_at,
     needsApproval: item.needs_approval,
+    humanAttentionRequired: item.human_attention_required === true,
   };
 }
 

@@ -87,6 +87,12 @@ class LeadUpdate(BaseModel):
         return value
 
 
+class HumanAttentionResolveRequest(BaseModel):
+    """Explicit resolution accepts no client-controlled attention or tenant state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class LeadPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

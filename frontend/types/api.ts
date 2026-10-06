@@ -282,6 +282,7 @@ export type Lead = {
   company: string | null;
   source: LeadSource;
   status: LeadStatus;
+  human_attention_required?: boolean;
   notes: string | null;
   enquiry?: string | null;
   created_at: string;
@@ -844,7 +845,9 @@ export type InboxTimelineKind =
   | "SALES_RUN_WAITING_APPROVAL"
   | "SALES_RUN_COMPLETED"
   | "SALES_RUN_CANCELLED"
-  | "SALES_RUN_FAILED";
+  | "SALES_RUN_FAILED"
+  | "HUMAN_ATTENTION_REQUIRED"
+  | "HUMAN_ATTENTION_RESOLVED";
 
 export type InboxDirection = "inbound" | "outbound" | "internal";
 
@@ -855,6 +858,7 @@ export type InboxItem = {
   company: string | null;
   source: LeadSource;
   lead_status: LeadStatus;
+  human_attention_required?: boolean;
   conversation_state: InboxConversationState;
   needs_approval: boolean;
   last_activity_at: string;
@@ -875,12 +879,14 @@ export type InboxListResponse = {
   total: number;
   state_counts: Record<InboxConversationState, number>;
   needs_approval_count: number;
+  human_attention_count?: number;
 };
 
 export type InboxListParams = {
   q?: string;
   lead_status?: LeadStatus;
   needs_approval?: boolean;
+  human_attention_required?: boolean;
   conversation_state?: InboxConversationState;
   email_status?: LeadEmailSendStatus;
   sales_run_status?: SalesRunStatus;
@@ -898,6 +904,7 @@ export type InboxLeadContext = {
   company: string | null;
   source: LeadSource;
   lead_status: LeadStatus;
+  human_attention_required?: boolean;
   enquiry: string | null;
   conversation_state: InboxConversationState;
   needs_approval: boolean;

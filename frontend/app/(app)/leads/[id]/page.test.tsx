@@ -9,6 +9,7 @@ import { getInboxConversation } from "@/lib/api/inbox";
 import {
   getLead,
   getLeadFollowUps,
+  resolveHumanAttention,
   getLeadQualification,
   getLeadResponseDraft,
   getLeadFollowUp,
@@ -40,6 +41,7 @@ vi.mock("@/lib/api/inbox", () => ({
 
 vi.mock("@/lib/api/leads", () => ({
   getLead: vi.fn(),
+  resolveHumanAttention: vi.fn(),
   updateLead: vi.fn(),
   getLeadFollowUps: vi.fn(),
   getLeadFollowUp: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
 }));
 
 const getLeadMock = vi.mocked(getLead);
+const resolveHumanAttentionMock = vi.mocked(resolveHumanAttention);
 const getAgentsMock = vi.mocked(getAgents);
 const getSalesRunMock = vi.mocked(getSalesRun);
 const startLeadSalesRunMock = vi.mocked(startLeadSalesRun);
@@ -181,6 +184,7 @@ function run(overrides: Partial<SalesRun> = {}): SalesRun {
 describe("Lead workspace", () => {
   beforeEach(() => {
     getLeadMock.mockReset();
+    resolveHumanAttentionMock.mockReset();
     getAgentsMock.mockReset();
     getSalesRunMock.mockReset();
     startLeadSalesRunMock.mockReset();
@@ -632,5 +636,85 @@ describe("Lead workspace", () => {
       "href",
       "/agents",
     );
+  });
+
+  it("hides resolve when the lead does not require human attention", async () => {
+    getLeadMock.mockResolvedValue({ ...lead, human_attention_required: false });
+    render(<LeadWorkspacePage />);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Ada Prospect" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Resolve human attention" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Human attention" })).not.toBeInTheDocument();
+  });
+
+  it("resolves human attention once and updates the lead", async () => {
+    const user = userEvent.setup();
+    let release: (value: Lead) => void = () => undefined;
+    getLeadMock.mockResolvedValue({ ...lead, human_attention_required: true });
+    resolveHumanAttentionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    render(<LeadWorkspacePage />);
+    expect(await screen.findByRole("heading", { name: "Human attention" })).toBeVisible();
+    const button = screen.getByRole("button", { name: "Resolve human attention" });
+    await user.click(button);
+    await user.click(button);
+    expect(resolveHumanAttentionMock).toHaveBeenCalledTimes(1);
+    expect(resolveHumanAttentionMock).toHaveBeenCalledWith("lead-1");
+    expect(button).toBeDisabled();
+    const callsBefore = getInboxConversationMock.mock.calls.length;
+    release({ ...lead, human_attention_required: false });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Resolve human attention" }),
+      ).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(getInboxConversationMock.mock.calls.length).toBeGreaterThan(
+        callsBefore,
+      );
+    });
+  });
+
+  it("refreshes the lead when resolution is stale", async () => {
+    const user = userEvent.setup();
+    getLeadMock.mockResolvedValue({ ...lead, human_attention_required: true });
+    resolveHumanAttentionMock.mockRejectedValue(new ApiError("stale", 409));
+    render(<LeadWorkspacePage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Resolve human attention" }),
+    );
+    expect(
+      await screen.findByText(
+        "Human attention changed. The latest lead state has been loaded.",
+      ),
+    ).toBeVisible();
+    expect(getLeadMock.mock.calls.length).toBeGreaterThan(1);
+    expect(
+      screen.getByRole("button", { name: "Resolve human attention" }),
+    ).toBeEnabled();
+  });
+
+  it("shows an error when human attention cannot be resolved", async () => {
+    const user = userEvent.setup();
+    getLeadMock.mockResolvedValue({ ...lead, human_attention_required: true });
+    resolveHumanAttentionMock.mockRejectedValue(new ApiError("unavailable", 500));
+    render(<LeadWorkspacePage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Resolve human attention" }),
+    );
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Human attention could not be resolved. Try again.");
+    expect(
+      screen.getByRole("button", { name: "Resolve human attention" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("heading", { name: "Human attention" })).toBeVisible();
   });
 });

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandCenterPage from "@/app/(app)/page";
 import { getAgents } from "@/lib/api/agents";
+import { getInbox } from "@/lib/api/inbox";
 import { listActivity } from "@/lib/api/activity";
 import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
 import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
@@ -16,6 +17,11 @@ vi.mock("@/lib/api/activity", () => ({
 
 vi.mock("@/lib/api/agents", () => ({
   getAgents: vi.fn(),
+}));
+
+vi.mock("@/lib/api/inbox", () => ({
+  getInbox: vi.fn(),
+  getInboxConversation: vi.fn(),
 }));
 
 vi.mock("@/lib/api/leads", () => ({
@@ -38,6 +44,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
 }));
 
 const getAgentsMock = vi.mocked(getAgents);
+const getInboxMock = vi.mocked(getInbox);
 const listActivityMock = vi.mocked(listActivity);
 const getLeadsMock = vi.mocked(getLeads);
 const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
@@ -89,11 +96,21 @@ function followUps(overdue: number): FollowUpOperationsResponse {
 describe("Command Center", () => {
   beforeEach(() => {
     getAgentsMock.mockReset();
+    getInboxMock.mockReset();
     listActivityMock.mockReset();
     getLeadsMock.mockReset();
     getFollowUpOperationsMock.mockReset();
     listOrganizationSalesRunsMock.mockReset();
     getAgentsMock.mockResolvedValue([]);
+    getInboxMock.mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      total: 0,
+      state_counts: { OPEN: 0, NEEDS_APPROVAL: 0, CLOSED: 0 },
+      needs_approval_count: 0,
+      human_attention_count: 0,
+    });
     listActivityMock.mockResolvedValue({
       items: [],
       limit: 8,

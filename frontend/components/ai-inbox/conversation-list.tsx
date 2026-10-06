@@ -19,6 +19,7 @@ export type ConversationListItem = {
   lastMessagePreview?: string;
   occurredAt?: string;
   needsApproval: boolean;
+  humanAttentionRequired: boolean;
 };
 
 type ConversationListProps = {
@@ -70,7 +71,9 @@ export function ConversationList({
         const status = statusPresentation[conversation.status];
         const isSelected = selectedId === conversation.id;
         const showStatusBadge =
-          conversation.needsApproval || conversation.status !== "open";
+          conversation.needsApproval ||
+          conversation.humanAttentionRequired ||
+          conversation.status !== "open";
 
         return (
           <li key={conversation.id}>
@@ -157,6 +160,11 @@ export function ConversationList({
                   {conversation.needsApproval ? (
                     <span className="text-warning-text text-[11px] font-medium uppercase tracking-[0.08em]">
                       Human review
+                    </span>
+                  ) : null}
+                  {conversation.humanAttentionRequired ? (
+                    <span className="text-info-text text-[11px] font-medium uppercase tracking-[0.08em]">
+                      Human attention
                     </span>
                   ) : null}
                 </div>

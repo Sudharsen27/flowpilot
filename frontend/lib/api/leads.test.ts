@@ -10,6 +10,7 @@ import {
   qualifyLead,
   getLeadQualification,
   rejectLeadResponseDraft,
+  resolveHumanAttention,
   sendLeadResponseDraft,
   updateLead,
   updateLeadResponseDraft,
@@ -99,6 +100,33 @@ describe("Lead API client", () => {
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body).not.toHaveProperty("organization_id");
+  });
+
+  it("resolves human attention with an empty body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "lead/1", human_attention_required: false }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await resolveHumanAttention("lead/1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/leads/lead%2F1/human-attention/resolve",
+      expect.objectContaining({
+        method: "POST",
+        body: "{}",
+        headers: expect.objectContaining({
+          Authorization: "Bearer lead-token",
+        }),
+      }),
+    );
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload).toEqual({});
+    expect(payload).not.toHaveProperty("organization_id");
+    expect(payload).not.toHaveProperty("human_attention_required");
   });
 
   it("patches an encoded lead id", async () => {

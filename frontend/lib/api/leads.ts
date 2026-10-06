@@ -67,6 +67,13 @@ export function createLead(input: LeadCreateRequest) {
   return apiPost<Lead>("/api/v1/leads", input);
 }
 
+export function resolveHumanAttention(leadId: string) {
+  return apiPost<Lead>(
+    `/api/v1/leads/${encodeURIComponent(leadId)}/human-attention/resolve`,
+    {},
+  );
+}
+
 export function updateLead(leadId: string, input: LeadUpdateRequest) {
   return apiPatch<Lead>(
     `/api/v1/leads/${encodeURIComponent(leadId)}`,

@@ -41,6 +41,28 @@ describe("Inbox API client", () => {
     );
   });
 
+  it("filters inbox leads that require human attention", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [],
+          limit: 20,
+          offset: 0,
+          total: 0,
+          state_counts: { OPEN: 0, NEEDS_APPROVAL: 0, CLOSED: 0 },
+          needs_approval_count: 0,
+          human_attention_count: 0,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    await getInbox({ human_attention_required: true, limit: 20, offset: 0 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/inbox?human_attention_required=true&limit=20&offset=0",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("gets encoded inbox conversation detail", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

@@ -85,6 +85,8 @@ _TITLE_KIND: dict[str, InboxTimelineKind] = {
     "Sales Run completed": InboxTimelineKind.SALES_RUN_COMPLETED,
     "Sales Run cancelled": InboxTimelineKind.SALES_RUN_CANCELLED,
     "Sales Run failed": InboxTimelineKind.SALES_RUN_FAILED,
+    "Human attention required": InboxTimelineKind.HUMAN_ATTENTION_REQUIRED,
+    "Human attention resolved": InboxTimelineKind.HUMAN_ATTENTION_RESOLVED,
 }
 
 _DRAFT_KINDS = {

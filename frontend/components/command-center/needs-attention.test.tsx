@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NeedsAttention } from "@/components/command-center/needs-attention";
 import { ApiError } from "@/lib/api/client";
+import { getInbox } from "@/lib/api/inbox";
 import {
   getFollowUpOperations,
   getLead,
@@ -18,9 +19,14 @@ import {
 import type {
   FollowUpOperationsItem,
   FollowUpOperationsResponse,
+  InboxItem,
   Lead,
   SalesRun,
 } from "@/types/api";
+
+vi.mock("@/lib/api/inbox", () => ({
+  getInbox: vi.fn(),
+}));
 
 vi.mock("@/lib/api/sales-runs", () => ({
   listOrganizationSalesRuns: vi.fn(),
@@ -51,6 +57,19 @@ const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
 const getLeadMock = vi.mocked(getLead);
 const getLeadFollowUpsMock = vi.mocked(getLeadFollowUps);
 const getLeadResponseDraftMock = vi.mocked(getLeadResponseDraft);
+const getInboxMock = vi.mocked(getInbox);
+
+function emptyInbox() {
+  return {
+    items: [] as InboxItem[],
+    limit: 20,
+    offset: 0,
+    total: 0,
+    state_counts: { OPEN: 0, NEEDS_APPROVAL: 0, CLOSED: 0 },
+    needs_approval_count: 0,
+    human_attention_count: 0,
+  };
+}
 
 const lead: Lead = {
   id: "lead-1",
@@ -160,6 +179,7 @@ describe("NeedsAttention", () => {
     cancelSalesRunMock.mockReset();
     sendSalesRunMock.mockReset();
     getFollowUpOperationsMock.mockReset();
+    getInboxMock.mockReset();
     getLeadMock.mockReset();
     getLeadFollowUpsMock.mockReset();
     getLeadResponseDraftMock.mockReset();
@@ -201,6 +221,7 @@ describe("NeedsAttention", () => {
       return salesPage([]);
     });
     getFollowUpOperationsMock.mockResolvedValue(emptyFollowUps());
+    getInboxMock.mockResolvedValue(emptyInbox());
   });
 
   it("shows empty copy for each queue and does not invent activity", async () => {
@@ -210,6 +231,9 @@ describe("NeedsAttention", () => {
     ).toBeVisible();
     expect(screen.getByText("No failed sends")).toBeVisible();
     expect(screen.getByText("No overdue follow-ups")).toBeVisible();
+    expect(
+      screen.getByText("No leads currently require human attention."),
+    ).toBeVisible();
     expect(screen.queryByText("SECRET ENQUIRY BODY")).not.toBeInTheDocument();
     expect(
       screen.getByText(/Completed work is not listed here/),
@@ -384,5 +408,42 @@ describe("NeedsAttention", () => {
         expected_revision: 2,
       }),
     );
+  });
+
+  it("lists leads that require human attention and opens the lead page", async () => {
+    const item: InboxItem = {
+      lead_id: "lead-9",
+      name: "Nia Cole",
+      email: "nia@example.com",
+      company: null,
+      source: "WEBSITE",
+      lead_status: "NEW",
+      human_attention_required: true,
+      conversation_state: "OPEN",
+      needs_approval: false,
+      last_activity_at: "2026-09-22T11:58:00Z",
+      last_activity_type: "AI_ACTION",
+      last_activity_title: "Human attention required",
+      preview: null,
+      latest_draft: null,
+      latest_email_status: null,
+      latest_sales_run: null,
+      latest_follow_up_status: null,
+      latest_follow_up_overdue: null,
+    };
+    getInboxMock.mockResolvedValue({
+      ...emptyInbox(),
+      items: [item],
+      total: 1,
+      human_attention_count: 1,
+    });
+    render(<NeedsAttention />);
+    const link = await screen.findByRole("link", { name: /Nia Cole/ });
+    expect(link).toHaveAttribute("href", "/leads/lead-9");
+    expect(getInboxMock).toHaveBeenCalledWith({
+      human_attention_required: true,
+      limit: 20,
+      offset: 0,
+    });
   });
 });

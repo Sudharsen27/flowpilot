@@ -37,7 +37,14 @@ from app.schemas.lead_response_draft import (
     LeadResponseDraftSendRequest,
     LeadResponseDraftUpdate,
 )
-from app.schemas.leads import LeadCreate, LeadListResponse, LeadPublic, LeadUpdate
+from app.schemas.leads import (
+    HumanAttentionResolveRequest,
+    LeadCreate,
+    LeadListResponse,
+    LeadPublic,
+    LeadUpdate,
+)
+from app.services.human_attention_service import HumanAttentionService
 from app.services.lead_email_send_service import LeadEmailSendService, to_email_send_public
 from app.services.lead_follow_up_execution_service import LeadFollowUpExecutionService
 from app.services.lead_follow_up_service import LeadFollowUpService, to_follow_up_public
@@ -118,6 +125,23 @@ def update_lead(
         initiated_by_user_id=membership.user_id,
     )
     return service.get_public(organization.id, lead_id)
+
+
+@router.post("/{lead_id}/human-attention/resolve", response_model=LeadPublic)
+def resolve_lead_human_attention(
+    lead_id: str,
+    payload: HumanAttentionResolveRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> LeadPublic:
+    del payload
+    HumanAttentionService(db).resolve_attention(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        actor_user_id=membership.user_id,
+    )
+    return LeadService(db).get_public(organization.id, lead_id)
 
 
 @router.post("/{lead_id}/qualify", response_model=LeadQualificationPublic)

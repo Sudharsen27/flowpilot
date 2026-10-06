@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Customer360Insights } from "@/components/leads/customer-360-insights";
 import { Customer360Profile } from "@/components/leads/customer-360-profile";
 import { Customer360Timeline } from "@/components/leads/customer-360-timeline";
+import { HumanAttentionNotice } from "@/components/leads/human-attention-notice";
 import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
 import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
@@ -172,6 +173,22 @@ export default function LeadWorkspacePage() {
       cancelled = true;
     };
   }, [leadId, loading, errorKind, retryKey, conversationRetryKey]);
+
+  async function refreshConversation(nextLeadId: string) {
+    setConversationLoading(true);
+    try {
+      const data = await getInboxConversation(nextLeadId);
+      setConversation(data);
+      setConversationError(null);
+    } catch {
+      setConversation(null);
+      setConversationError(
+        "Conversation history could not be loaded right now.",
+      );
+    } finally {
+      setConversationLoading(false);
+    }
+  }
 
   function reload() {
     setLoading(true);
@@ -370,10 +387,24 @@ export default function LeadWorkspacePage() {
       {/* Mobile: Profile → Insights → Timeline. Desktop xl: Profile | Timeline | Insights */}
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)_minmax(16rem,20rem)] xl:items-start">
         <div className="order-1 min-w-0 xl:order-none">
-          <Customer360Profile
-            lead={lead}
-            conversationState={conversation?.lead.conversation_state}
-          />
+          <div className="grid gap-4">
+            <HumanAttentionNotice
+              lead={lead}
+              onResolved={(updated) => {
+                setLead(updated);
+                void refreshConversation(updated.id);
+              }}
+              onStale={async () => {
+                const current = await getLead(lead.id);
+                setLead(current);
+                await refreshConversation(current.id);
+              }}
+            />
+            <Customer360Profile
+              lead={lead}
+              conversationState={conversation?.lead.conversation_state}
+            />
+          </div>
         </div>
 
         <div className="order-3 min-w-0 xl:order-none">

@@ -28,6 +28,7 @@ type TimelineLane =
   | "customer"
   | "ai"
   | "human"
+  | "attention"
   | "outbound"
   | "automation"
   | "system";
@@ -54,6 +55,8 @@ const kindLabels: Record<InboxTimelineKind, string> = {
   SALES_RUN_COMPLETED: "Sales Run completed",
   SALES_RUN_CANCELLED: "Sales Run cancelled",
   SALES_RUN_FAILED: "Sales Run failed",
+  HUMAN_ATTENTION_REQUIRED: "Human attention required",
+  HUMAN_ATTENTION_RESOLVED: "Human attention resolved",
 };
 
 const actorLabels: Record<ActivityActorType, string> = {
@@ -64,6 +67,12 @@ const actorLabels: Record<ActivityActorType, string> = {
 };
 
 function laneFor(item: InboxTimelineItem): TimelineLane {
+  if (
+    item.kind === "HUMAN_ATTENTION_REQUIRED" ||
+    item.kind === "HUMAN_ATTENTION_RESOLVED"
+  ) {
+    return "attention";
+  }
   if (item.kind === "WEBSITE_ENQUIRY") return "customer";
   if (
     item.kind === "EMAIL_SENT" ||
@@ -116,6 +125,11 @@ const lanePresentation: Record<
   human: {
     label: "Human",
     className: "border-l-warning bg-warning/5",
+    icon: UserRound,
+  },
+  attention: {
+    label: "Human attention",
+    className: "border-l-info bg-info/5",
     icon: UserRound,
   },
   outbound: {

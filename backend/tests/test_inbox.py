@@ -605,6 +605,55 @@ def test_inbox_timeline_order_bodies_and_flags(
     assert started_item["activity_id"] == started_item["id"]
 
 
+def test_inbox_timeline_maps_human_attention_titles(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    organization_id = created["organization"]["id"]
+    lead = _seed_silent_lead(db, organization_id, name="Attention Lead")
+    service = ActivityService(db)
+    service.record(
+        organization_id=organization_id,
+        event_type=ActivityEventType.AI_ACTION,
+        actor_type=ActivityActorType.AGENT,
+        title="Human attention required",
+        summary="The AI decision flagged this lead for human attention.",
+        entity_type=ActivityEntityType.LEAD,
+        entity_id=lead.id,
+        lead_id=lead.id,
+        status="REQUIRED",
+        dedupe_key=f"lead:{lead.id}:human_attention:qualification:q1",
+    )
+    service.record(
+        organization_id=organization_id,
+        event_type=ActivityEventType.HUMAN_ACTION,
+        actor_type=ActivityActorType.USER,
+        title="Human attention resolved",
+        summary="A team member resolved human attention for this lead.",
+        entity_type=ActivityEntityType.LEAD,
+        entity_id=lead.id,
+        lead_id=lead.id,
+        status="RESOLVED",
+        dedupe_key=f"lead:{lead.id}:human_attention:resolved:episode",
+    )
+    db.commit()
+
+    detail = _detail(client, token, lead.id)
+    assert detail.status_code == 200
+    by_kind = {item["kind"]: item for item in detail.json()["items"]}
+    required = by_kind["HUMAN_ATTENTION_REQUIRED"]
+    resolved = by_kind["HUMAN_ATTENTION_RESOLVED"]
+    assert required["title"] == "Human attention required"
+    assert required["direction"] == "internal"
+    assert required["is_draft"] is False
+    assert required["is_sent_message"] is False
+    assert required["body"] is None
+    assert resolved["title"] == "Human attention resolved"
+    assert resolved["is_draft"] is False
+    assert resolved["is_sent_message"] is False
+
+
 def test_inbox_empty_timeline(client: TestClient, db: Session) -> None:
     created = _auth(client)
     token = created["access_token"]

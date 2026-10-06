@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { formatTimestamp } from "@/components/agents/execution-status";
@@ -17,10 +18,12 @@ import { SectionHeader } from "@/components/layout/section-header";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError } from "@/lib/api/client";
+import { getInbox } from "@/lib/api/inbox";
 import { getFollowUpOperations, getLead, getLeadResponseDraft } from "@/lib/api/leads";
 import { cancelSalesRun, listOrganizationSalesRuns, sendSalesRun } from "@/lib/api/sales-runs";
 import type {
   FollowUpOperationsItem,
+  InboxItem,
   Lead,
   LeadResponseDraftResult,
   LeadResponseReviewStatus,
@@ -154,6 +157,14 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
     total: 0,
   });
 
+  const [attentionKey, setAttentionKey] = useState(0);
+  const [attentionLoading, setAttentionLoading] = useState(true);
+  const [attentionError, setAttentionError] = useState<string | null>(null);
+  const [attention, setAttention] = useState<QueuePage<InboxItem>>({
+    items: [],
+    total: 0,
+  });
+
   const [review, setReview] = useState<{ lead: Lead; draftId: string } | null>(null);
   const [cancelTarget, setCancelTarget] = useState<SalesRun | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
@@ -258,17 +269,54 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
     };
   }, [overdueOffset, overdueKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getInbox({
+      human_attention_required: true,
+      limit: PAGE_SIZE,
+      offset: 0,
+    })
+      .then((page) => {
+        if (cancelled) return;
+        setAttention({ items: page.items, total: page.total });
+        setAttentionError(null);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setAttentionError(
+            listError(cause, "Leads requiring human attention could not be loaded."),
+          );
+          setAttention({ items: [], total: 0 });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAttentionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attentionKey]);
+
   function refreshQueues() {
     setWaitingLoading(true);
     setFailedLoading(true);
     setOverdueLoading(true);
+    setAttentionLoading(true);
     setWaitingError(null);
     setFailedError(null);
     setOverdueError(null);
+    setAttentionError(null);
     setWaitingKey((value) => value + 1);
     setFailedKey((value) => value + 1);
     setOverdueKey((value) => value + 1);
+    setAttentionKey((value) => value + 1);
     onChanged?.();
+  }
+
+  function refreshAttention() {
+    setAttentionLoading(true);
+    setAttentionError(null);
+    setAttentionKey((value) => value + 1);
   }
 
   function refreshWaiting() {
@@ -446,13 +494,66 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
     <section className="grid gap-5" aria-label="Needs attention">
       <SectionHeader
         title="Needs attention"
-        description="Drafts waiting for review, emails that failed to send, and overdue follow-ups. Completed work is not listed here."
+        description="Leads that require human attention, drafts waiting for review, emails that failed to send, and overdue follow-ups. Human attention is separate from approval. Completed work is not listed here."
       />
       {actionAlert ? (
         <p className="text-danger-text text-sm" role="alert">
           {actionAlert}
         </p>
       ) : null}
+
+      <section
+        className="border-info/40 grid gap-3 border-l-2 pl-4 sm:pl-5"
+        aria-labelledby="human-attention-queue-heading"
+      >
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h3 id="human-attention-queue-heading" className="text-sm font-medium">
+            Human attention
+          </h3>
+          {!attentionLoading && !attentionError ? (
+            <p className="text-muted-foreground text-sm">
+              {attention.total} requiring attention
+            </p>
+          ) : null}
+        </div>
+        {attentionError ? (
+          <StatePanel
+            kind="error"
+            className="max-w-none"
+            title="Human attention could not be loaded"
+            description={attentionError}
+            action={
+              <Button type="button" variant="outline" onClick={refreshAttention}>
+                Retry
+              </Button>
+            }
+          />
+        ) : attentionLoading ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            Loading leads that require human attention
+          </p>
+        ) : attention.items.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No leads currently require human attention.
+          </p>
+        ) : (
+          <ul className="grid gap-2" aria-label="Leads requiring human attention">
+            {attention.items.map((item) => (
+              <li key={item.lead_id}>
+                <Link
+                  href={`/leads/${item.lead_id}`}
+                  className="hover:bg-surface-subtle border-border block rounded-md border px-3 py-2"
+                >
+                  <span className="block text-sm font-medium">{item.name}</span>
+                  <span className="text-muted-foreground block text-xs">
+                    {item.email || "No email"} · Human attention
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section
         className="border-warning/40 grid gap-4 border-l-2 pl-4 sm:pl-5"

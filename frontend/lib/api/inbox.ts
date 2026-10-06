@@ -16,6 +16,12 @@ function listQuery(params: InboxListParams = {}) {
   if (params.needs_approval !== undefined) {
     query.set("needs_approval", String(params.needs_approval));
   }
+  if (params.human_attention_required !== undefined) {
+    query.set(
+      "human_attention_required",
+      String(params.human_attention_required),
+    );
+  }
   if (params.conversation_state) {
     query.set("conversation_state", params.conversation_state);
   }
