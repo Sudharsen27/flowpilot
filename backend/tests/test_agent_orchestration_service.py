@@ -203,7 +203,7 @@ def test_actual_planner_orchestration_runs_qualification_draft_then_manual_remin
 
     tool_arguments = {
         "lead_id": lead.id,
-        "due_at": "2026-10-05T15:00:00Z",
+        "due_at": "2027-10-05T15:00:00Z",
         "notes": "Follow up on the demo discussion.",
     }
     provider = ScriptedPlannerProvider(
@@ -253,7 +253,7 @@ def test_actual_planner_orchestration_runs_qualification_draft_then_manual_remin
         initiated_by_user_id=user_id,
         user_input=(
             "Qualify the lead, draft a reply, then create a manual reminder "
-            "for October 5, 2026 at 3 PM UTC with the supplied note."
+            "for October 5, 2027 at 3 PM UTC with the supplied note."
         ),
     )
 

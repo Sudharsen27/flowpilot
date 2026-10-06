@@ -55,6 +55,10 @@ vi.mock("@/lib/api/client", () => ({
   apiGet,
 }));
 
+vi.mock("@/lib/api/runtime", () => ({
+  getRuntimeConfiguration: vi.fn(() => new Promise(() => undefined)),
+}));
+
 vi.mock("@/lib/api/website-capture", () => ({
   getWebsiteCaptureSettings,
   updateWebsiteCaptureSettings,
@@ -141,7 +145,7 @@ describe("identity-backed settings", () => {
     render(<AiSettingsPage />);
 
     expect(screen.getByRole("heading", { name: "AI & Automation" })).toBeVisible();
-    expect(screen.getByText("AI Providers")).toBeVisible();
+    expect(screen.getByText("Loading AI configuration")).toBeInTheDocument();
   });
 
   it("shows a member loading state while the request is pending", () => {

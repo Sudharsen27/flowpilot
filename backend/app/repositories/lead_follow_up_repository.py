@@ -143,7 +143,7 @@ class LeadFollowUpRepository:
 
     def due_email_follow_up_claim_statement(
         self, *, as_of: datetime, limit: int
-    ) -> Select[tuple[LeadFollowUp]]:
+    ) -> Select[LeadFollowUp]:
         """Claim statement for due EMAIL follow-ups across all organizations.
 
         Always carries FOR UPDATE SKIP LOCKED. Only PostgreSQL honours it;

@@ -13,6 +13,22 @@ export type OrganizationPublic = {
 
 export type MembershipRole = "OWNER" | "ADMIN" | "MEMBER";
 
+export type RuntimeCheckStatus = "configured" | "not_configured";
+
+export type RuntimeConfiguration = {
+  source: "environment";
+  ai_provider: "openai" | "groq";
+  ai_provider_label: "OpenAI" | "Groq";
+  ai_model: string | null;
+  ai_status: RuntimeCheckStatus;
+  human_decision_provider: "typesafe";
+  human_decision_status: RuntimeCheckStatus;
+  email_provider_label: "Resend" | "Not configured";
+  email_status: RuntimeCheckStatus;
+  sender_address: string | null;
+  sender_status: RuntimeCheckStatus;
+};
+
 export type MembershipPublic = {
   id: string;
   role: MembershipRole;

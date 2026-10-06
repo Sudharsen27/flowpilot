@@ -37,6 +37,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - Health: [http://localhost:8000/health](http://localhost:8000/health)
+- Readiness: [http://localhost:8000/health/ready](http://localhost:8000/health/ready)
 - Register: `POST /api/v1/auth/register`
 - Login: `POST /api/v1/auth/login`
 - Current user: `GET /api/v1/users/me`
@@ -52,6 +53,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Website capture settings (authenticated): `GET` / `PATCH /api/v1/organizations/current/website-capture`
 - Qualification detail (authenticated): `GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}`
 - Organization activity (authenticated): `GET /api/v1/activity` and `GET /api/v1/activity/{activity_id}`
+
+Production uses Vercel for the frontend, a Render web service for the API, a separate Render background worker, and Render PostgreSQL. Migrations run in the API pre-deploy command, not inside the API process. See [docs/deployment.md](docs/deployment.md).
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:
 

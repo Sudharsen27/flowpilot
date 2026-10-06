@@ -9,6 +9,7 @@ from app.api.v1.inbox import router as inbox_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.public_enquiries import router as public_enquiries_router
+from app.api.v1.runtime import router as runtime_router
 from app.api.v1.sales_runs import agent_router as agent_sales_runs_router
 from app.api.v1.sales_runs import lead_router as lead_sales_runs_router
 from app.api.v1.sales_runs import org_router as org_sales_runs_router
@@ -22,6 +23,7 @@ api_router.include_router(activity_router)
 api_router.include_router(inbox_router)
 api_router.include_router(approvals_router)
 api_router.include_router(public_enquiries_router)
+api_router.include_router(runtime_router)
 api_router.include_router(agents_router)
 api_router.include_router(leads_router)
 api_router.include_router(follow_ups_router)

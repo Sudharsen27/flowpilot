@@ -1,6 +1,20 @@
 import { clearAccessToken, getAccessToken } from "@/lib/auth/storage";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export function resolveApiBaseUrl(
+  url = process.env.NEXT_PUBLIC_API_URL,
+  nodeEnv = process.env.NODE_ENV,
+) {
+  const configured = url?.trim();
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+  if (nodeEnv === "production") {
+    throw new Error("NEXT_PUBLIC_API_URL is required");
+  }
+  return "http://localhost:8000";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 export class ApiError extends Error {
   constructor(

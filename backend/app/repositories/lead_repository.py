@@ -93,7 +93,7 @@ class LeadRepository:
             counts[str(status)] = int(count)
         return counts
 
-    def pending_auto_start_claim_statement(self, limit: int) -> Select[tuple[Lead]]:
+    def pending_auto_start_claim_statement(self, limit: int) -> Select[Lead]:
         """Claim statement for PENDING website leads across all organizations.
 
         Always carries FOR UPDATE SKIP LOCKED. Only PostgreSQL honours it;

@@ -5,6 +5,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_DEFAULT_SECRET = "replace-with-a-long-random-local-secret"
+LOCAL_DATABASE_URL = "postgresql+psycopg://app:app@localhost:5432/app"
 
 AiProviderName = Literal["openai", "groq"]
 
@@ -30,7 +31,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
+    database_url: str = LOCAL_DATABASE_URL
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
     secret_key: str = INSECURE_DEFAULT_SECRET
@@ -111,7 +112,7 @@ class Settings(BaseSettings):
         return self.environment.lower() == "production"
 
     @model_validator(mode="after")
-    def require_secure_secret_outside_dev(self) -> Self:
+    def require_production_configuration(self) -> Self:
         if self.environment.lower() in {"development", "test"}:
             return self
         if (
@@ -120,6 +121,19 @@ class Settings(BaseSettings):
             or len(self.secret_key) < 32
         ):
             raise ValueError("SECRET_KEY must be a unique value of at least 32 characters")
+        if self.database_url == LOCAL_DATABASE_URL or self.database_url.startswith("sqlite"):
+            raise ValueError("DATABASE_URL must be the production PostgreSQL URL")
+        origins = self.cors_origin_list
+        if not origins:
+            raise ValueError("CORS_ORIGINS must list the production frontend origins")
+        for origin in origins:
+            if (
+                origin == "*"
+                or "localhost" in origin
+                or "127.0.0.1" in origin
+                or not origin.startswith("https://")
+            ):
+                raise ValueError("CORS_ORIGINS must be explicit https production origins")
         return self
 
 

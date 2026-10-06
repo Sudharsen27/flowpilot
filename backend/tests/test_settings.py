@@ -96,6 +96,58 @@ def test_settings_loads_env_file_when_cwd_differs(
     assert configured.groq_model == "openai/gpt-oss-20b"
 
 
+PRODUCTION_SECRET = "production-secret-value-with-32-chars"
+
+
+def _production(**kwargs: Any) -> Settings:
+    values: dict[str, Any] = {
+        "environment": "production",
+        "secret_key": PRODUCTION_SECRET,
+        "database_url": "postgresql+psycopg://db.internal:5432/app",
+        "cors_origins": "https://app.example.com",
+    }
+    values.update(kwargs)
+    return Settings(_env_file=None, **values)
+
+
+def test_production_accepts_explicit_configuration() -> None:
+    configured = _production(ai_provider="groq", groq_api_key=None)
+    assert configured.is_production is True
+    assert configured.cors_allow_origin_regex is None
+    assert configured.cors_origin_list == ["https://app.example.com"]
+    assert configured.groq_api_key is None
+
+
+def test_production_rejects_default_secret() -> None:
+    with pytest.raises(ValidationError, match="SECRET_KEY"):
+        Settings(
+            environment="production",
+            database_url="postgresql+psycopg://db.internal:5432/app",
+            cors_origins="https://app.example.com",
+            _env_file=None,
+        )
+
+
+def test_production_rejects_local_database() -> None:
+    with pytest.raises(ValidationError, match="DATABASE_URL"):
+        _production(database_url="postgresql+psycopg://app:app@localhost:5432/app")
+
+
+def test_production_rejects_localhost_and_wildcard_cors() -> None:
+    with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+        _production(cors_origins="http://localhost:3000")
+    with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+        _production(cors_origins="*")
+    with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+        _production(cors_origins="")
+
+
+def test_development_keeps_local_defaults() -> None:
+    configured = Settings(environment="development", _env_file=None)
+    assert configured.secret_key == "replace-with-a-long-random-local-secret"
+    assert "localhost" in configured.cors_origins
+
+
 def test_process_env_overrides_env_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

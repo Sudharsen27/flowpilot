@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiGet, apiPost } from "@/lib/api/client";
+import { apiGet, apiPost, resolveApiBaseUrl } from "@/lib/api/client";
 
 describe("API client", () => {
   beforeEach(() => {
@@ -75,6 +75,16 @@ describe("API client", () => {
       new Response(null, { status: 204 }),
     );
     await expect(apiPost("/api/v1/public/organizations/acme/enquiries")).resolves.toBeUndefined();
+  });
+
+  it("requires an explicit API URL in production and omits secrets", () => {
+    expect(resolveApiBaseUrl("https://api.example.com/", "production")).toBe(
+      "https://api.example.com",
+    );
+    expect(() => resolveApiBaseUrl("", "production")).toThrow(
+      "NEXT_PUBLIC_API_URL is required",
+    );
+    expect(resolveApiBaseUrl(undefined, "test")).toBe("http://localhost:8000");
   });
 
   it("attaches parsed JSON bodies to API errors", async () => {
