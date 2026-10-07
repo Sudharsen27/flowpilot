@@ -73,6 +73,44 @@ def test_runtime_configuration_reports_missing_providers(
     assert body["sender_status"] == "not_configured"
 
 
+def test_runtime_configuration_normalizes_inbound_domain(
+    client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "resend_inbound_domain", " USTAAZILAI.RESEND.APP ")
+    monkeypatch.setattr(settings, "resend_webhook_secret", SecretStr("whsec_test_secret"))
+    monkeypatch.setattr(settings, "resend_api_key", RESEND_KEY)
+    token = _token(client)
+    response = client.get(
+        "/api/v1/runtime/configuration",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["resend_inbound_domain"] == "ustaazilai.resend.app"
+    assert "whsec_test_secret" not in response.text
+    assert RESEND_KEY not in response.text
+
+
+def test_runtime_configuration_omits_empty_inbound_domain(
+    client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "resend_inbound_domain", "   ")
+    token = _token(client)
+    response = client.get(
+        "/api/v1/runtime/configuration",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["resend_inbound_domain"] is None
+
+    monkeypatch.setattr(settings, "resend_inbound_domain", None)
+    missing = client.get(
+        "/api/v1/runtime/configuration",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert missing.status_code == 200
+    assert missing.json()["resend_inbound_domain"] is None
+
+
 def test_runtime_configuration_requires_authentication(client: TestClient) -> None:
     response = client.get("/api/v1/runtime/configuration")
     assert response.status_code == 401

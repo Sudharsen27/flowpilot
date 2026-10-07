@@ -20,6 +20,11 @@ def _secret_present(value: SecretStr | None) -> bool:
     return _present(value.get_secret_value())
 
 
+def _inbound_domain(value: str | None) -> str | None:
+    domain = (value or "").strip().lower()
+    return domain or None
+
+
 def _sender_address(value: str | None) -> str | None:
     if not _present(value):
         return None
@@ -69,4 +74,5 @@ def build_runtime_configuration(configured: Settings) -> RuntimeConfigurationPub
             if sender is not None
             else RuntimeCheckStatus.NOT_CONFIGURED
         ),
+        resend_inbound_domain=_inbound_domain(configured.resend_inbound_domain),
     )

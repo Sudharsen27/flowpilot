@@ -25,3 +25,4 @@ class RuntimeConfigurationPublic(BaseModel):
     email_status: RuntimeCheckStatus
     sender_address: str | None
     sender_status: RuntimeCheckStatus
+    resend_inbound_domain: str | None
