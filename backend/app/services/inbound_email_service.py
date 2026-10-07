@@ -80,19 +80,37 @@ class InboundEmailService:
 
     def _organization_id(self, recipients: list[str]) -> str | None:
         domain = (settings.resend_inbound_domain or "").strip().lower()
-        if not domain:
-            return None
         matched: set[str] = set()
-        for recipient in recipients:
-            address = _email_address(recipient)
-            if address is None:
-                continue
-            local_part, separator, host = address.partition("@")
-            if separator != "@" or host != domain:
-                continue
-            organization = self.organizations.get_by_slug(local_part)
-            if organization is not None:
+        domain_matched = False
+        lookup_attempted = False
+        lookup_found = False
+        if domain:
+            for recipient in recipients:
+                address = _email_address(recipient)
+                if address is None:
+                    continue
+                local_part, separator, host = address.partition("@")
+                if separator != "@" or host != domain:
+                    continue
+                domain_matched = True
+                lookup_attempted = True
+                organization = self.organizations.get_by_slug(local_part)
+                if organization is None:
+                    continue
+                lookup_found = True
                 matched.add(organization.id)
+        lookup_result = "not_attempted"
+        if lookup_attempted:
+            lookup_result = "found" if lookup_found else "not_found"
+        logger.info(
+            "inbound email tenant resolution to_count=%s domain_matched=%s "
+            "lookup_attempted=%s lookup_result=%s matched_count=%s",
+            len(recipients),
+            str(domain_matched).lower(),
+            str(lookup_attempted).lower(),
+            lookup_result,
+            len(matched),
+        )
         if len(matched) != 1:
             return None
         return next(iter(matched))

@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.models.inbound_email import InboundEmail
 from app.repositories.inbound_email_repository import InboundEmailRepository
 from app.services.agent_orchestration_service import AgentOrchestrationService
+from app.services.inbound_email_service import InboundEmailService
 from app.services.lead_email_send_service import LeadEmailSendService
 from tests.conftest import register_payload
 
@@ -390,6 +391,78 @@ def test_database_uniqueness_conflict_does_not_create_a_second_row(
     assert "unique" not in response.text.lower()
     assert "IntegrityError" not in response.text
     assert len(_rows(db, created["organization"]["id"])) == 1
+
+
+def _resolution_log(caplog: pytest.LogCaptureFixture) -> str:
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("inbound email tenant resolution ")
+    ]
+    assert lines
+    return lines[-1]
+
+
+def test_tenant_resolution_log_keeps_a_valid_match(
+    client: TestClient,
+    db: Session,
+    configured: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    created = _register(client, "Acme")
+    recipient = f"acme@{DOMAIN}"
+    with caplog.at_level(logging.INFO, logger="app.services.inbound_email_service"):
+        response = _post(client, _event(data={"to": [recipient]}))
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    assert len(_rows(db, created["organization"]["id"])) == 1
+    logged = _resolution_log(caplog)
+    assert "to_count=1" in logged
+    assert "domain_matched=true" in logged
+    assert "lookup_attempted=true" in logged
+    assert "lookup_result=found" in logged
+    assert "matched_count=1" in logged
+    assert recipient not in logged
+    assert "acme" not in logged
+    assert created["organization"]["id"] not in logged
+
+
+def test_tenant_resolution_log_keeps_unresolved_results(
+    client: TestClient,
+    db: Session,
+    configured: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _register(client, "Acme")
+    with caplog.at_level(logging.INFO, logger="app.services.inbound_email_service"):
+        unknown_slug = _post(client, _event(data={"to": [f"missing@{DOMAIN}"]}))
+        unparsed = _post(client, _event(data={"to": ["not-an-address"]}))
+        service = InboundEmailService(db)
+        assert service._organization_id([]) is None
+    assert unknown_slug.status_code == 200
+    assert unknown_slug.json() == {"status": "ignored", "reason": "unresolved_tenant"}
+    assert unparsed.json() == {"status": "ignored", "reason": "unresolved_tenant"}
+    assert db.scalars(select(InboundEmail)).all() == []
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("inbound email tenant resolution ")
+    ]
+    assert len(lines) == 3
+    assert "domain_matched=true" in lines[0]
+    assert "lookup_attempted=true" in lines[0]
+    assert "lookup_result=not_found" in lines[0]
+    assert "matched_count=0" in lines[0]
+    assert "missing" not in lines[0]
+    assert DOMAIN not in lines[0]
+    assert "to_count=1" in lines[1]
+    assert "domain_matched=false" in lines[1]
+    assert "lookup_attempted=false" in lines[1]
+    assert "lookup_result=not_attempted" in lines[1]
+    assert "not-an-address" not in lines[1]
+    assert "to_count=0" in lines[2]
+    assert "lookup_attempted=false" in lines[2]
+    assert "matched_count=0" in lines[2]
 
 
 def test_integrity_conflict_is_treated_as_duplicate(
