@@ -113,7 +113,7 @@ export default function LeadsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Leads"
-        description="Capture and manage enquiries for this organization. AI can analyze an enquiry and draft a reply. After human approval, an operator can send email. Chat is not implemented. CRM status does not change automatically."
+        description="Review enquiries, let an agent qualify them, and approve a draft before anyone sends it."
         primaryAction={
           <Button
             type="button"
@@ -193,7 +193,7 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Lead overview"
-          description="Counts come from saved leads in this organization."
+          description="Saved leads in this organization."
         />
         <LeadOverview summary={summary} loading={isLoading && page === null} />
       </section>
@@ -201,7 +201,7 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Lead directory"
-          description="Search and review leads stored for the current organization."
+          description="Search this organization’s leads, then open one to qualify or draft."
         />
         <LeadsToolbar
           query={query}

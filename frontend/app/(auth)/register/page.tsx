@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { AuthFrame } from "@/components/auth/auth-frame";
 import { FormField } from "@/components/forms/form-field";
 import { Input } from "@/components/forms/input";
 import { Button } from "@/components/ui/button";
@@ -39,13 +40,19 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
-      <p className="text-muted-foreground mt-2 text-sm">
-        This creates your user, organization, and owner membership. It is a
-        development sign-up form, not a finished onboarding flow.
-      </p>
-      <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
+    <AuthFrame
+      title="Create account"
+      description="This creates your user, your organization, and an owner membership. You approve customer messages before they are sent."
+      footer={
+        <>
+          Already registered?{" "}
+          <Link className="text-foreground underline underline-offset-4" href="/login">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <FormField label="Your name" htmlFor="name" required>
           <Input
             id="name"
@@ -100,16 +107,10 @@ export default function RegisterPage() {
             {error}
           </p>
         ) : null}
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" className="mt-1 h-10 w-full" disabled={pending}>
           {pending ? "Creating…" : "Create account"}
         </Button>
       </form>
-      <p className="text-muted-foreground mt-6 text-sm">
-        Already registered?{" "}
-        <Link className="text-foreground underline" href="/login">
-          Sign in
-        </Link>
-      </p>
-    </main>
+    </AuthFrame>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { AuthFrame } from "@/components/auth/auth-frame";
 import { FormField } from "@/components/forms/form-field";
 import { Input } from "@/components/forms/input";
 import { Button } from "@/components/ui/button";
@@ -37,18 +38,19 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-16">
-      <p className="text-primary text-sm font-semibold tracking-wide uppercase">
-        FlowPilot
-      </p>
-      <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-        Your AI sales workspace
-      </h1>
-      <p className="text-muted-foreground mt-2 text-sm">
-        Sign in to review qualified leads, approve personalized replies, and
-        keep follow-ups moving.
-      </p>
-      <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
+    <AuthFrame
+      title="Sign in"
+      description="Open your workspace to review what the agent prepared and approve anything that should be sent."
+      footer={
+        <>
+          Need an organization?{" "}
+          <Link className="text-foreground underline underline-offset-4" href="/register">
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <FormField label="Email" htmlFor="email" required>
           <Input
             id="email"
@@ -74,16 +76,10 @@ export default function LoginPage() {
             {error}
           </p>
         ) : null}
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" className="mt-1 h-10 w-full" disabled={pending}>
           {pending ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-      <p className="text-muted-foreground mt-6 text-sm">
-        Need an organization?{" "}
-        <Link className="text-foreground underline" href="/register">
-          Create an account
-        </Link>
-      </p>
-    </main>
+    </AuthFrame>
   );
 }

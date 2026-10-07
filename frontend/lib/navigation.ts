@@ -24,35 +24,46 @@ export type NavigationGroup = {
   items: readonly NavigationItem[];
 };
 
+export type SecondaryNavigationItem = NavigationItem & {
+  status: "available" | "planned";
+};
+
 export const NAV_GROUPS: readonly NavigationGroup[] = [
   {
     label: "Overview",
     items: [{ href: "/", label: "Command Center", icon: LayoutDashboard }],
   },
   {
-    label: "Automation",
-    items: [
-      { href: "/agents", label: "AI Agents", icon: Bot },
-      { href: "/workflows", label: "Workflows", icon: Workflow },
-    ],
-  },
-  {
-    label: "Operations",
+    label: "Work",
     items: [
       { href: "/leads", label: "Leads", icon: Users },
       { href: "/inbox", label: "AI Inbox", icon: Inbox },
-      { href: "/knowledge", label: "Knowledge", icon: LibraryBig },
       { href: "/approvals", label: "Approvals", icon: CheckCheck },
     ],
   },
   {
-    label: "Workspace",
-    items: [
-      { href: "/integrations", label: "Integrations", icon: Plug },
-      { href: "/analytics", label: "Analytics", icon: BarChart3 },
-      { href: "/activity", label: "Activity", icon: Activity },
-    ],
+    label: "Automation",
+    items: [{ href: "/agents", label: "AI Agents", icon: Bot }],
   },
+];
+
+/** Reachable routes that are not part of the daily sidebar. */
+export const SECONDARY_NAV_ITEMS: readonly SecondaryNavigationItem[] = [
+  { href: "/activity", label: "Activity", icon: Activity, status: "available" },
+  { href: "/workflows", label: "Workflows", icon: Workflow, status: "planned" },
+  {
+    href: "/knowledge",
+    label: "Knowledge",
+    icon: LibraryBig,
+    status: "planned",
+  },
+  {
+    href: "/integrations",
+    label: "Integrations",
+    icon: Plug,
+    status: "planned",
+  },
+  { href: "/analytics", label: "Analytics", icon: BarChart3, status: "planned" },
 ];
 
 export const SETTINGS_ITEM: NavigationItem = {
@@ -72,6 +83,10 @@ export function isNavigationItemActive(
 }
 
 export function getNavigationItemLabel(pathname: string): string {
-  const items = [...NAV_GROUPS.flatMap((group) => group.items), SETTINGS_ITEM];
+  const items = [
+    ...NAV_GROUPS.flatMap((group) => group.items),
+    ...SECONDARY_NAV_ITEMS,
+    SETTINGS_ITEM,
+  ];
   return items.find((item) => isNavigationItemActive(pathname, item.href))?.label ?? "FlowPilot";
 }

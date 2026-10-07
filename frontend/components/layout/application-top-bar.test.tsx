@@ -84,20 +84,17 @@ describe("authenticated application top bar", () => {
     expect(mockSignOut).toHaveBeenCalledOnce();
   });
 
-  it("exposes search access without presenting fake results", async () => {
+  it("opens a workspace command menu without fake record search", async () => {
     const user = userEvent.setup();
     renderTopBar();
 
-    await user.click(
-      screen.getByRole("button", { name: "Open global search" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open command menu" }));
 
-    expect(screen.getByRole("dialog", { name: "Global search" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Command menu" })).toBeVisible();
     expect(
-      screen.getByText(
-        /Search across your FlowPilot workspace is not available yet/,
-      ),
+      screen.getByText(/does not search lead or conversation records/),
     ).toBeVisible();
+    expect(screen.getByRole("button", { name: /Leads/ })).toBeVisible();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 });

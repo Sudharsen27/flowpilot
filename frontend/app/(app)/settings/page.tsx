@@ -24,6 +24,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { apiGet } from "@/lib/api/client";
+import { SECONDARY_NAV_ITEMS } from "@/lib/navigation";
 import type { MemberPublic, MembershipRole } from "@/types/api";
 
 const roleLabels: Record<MembershipRole, string> = {
@@ -267,6 +268,34 @@ export default function SettingsPage() {
                 </Card>
               </Link>
             </div>
+          </section>
+
+          <section className="grid gap-5" aria-label="More workspaces">
+            <SectionHeader
+              title="More workspaces"
+              description="Activity is available now. The other workspaces stay reachable while they are still being built."
+            />
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {SECONDARY_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className="border-border bg-card hover:bg-surface-subtle focus-visible:ring-ring flex min-h-16 items-center gap-3 rounded-lg border px-4 py-3 outline-none focus-visible:ring-2"
+                    >
+                      <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{item.label}</span>
+                        <span className="text-muted-foreground block text-xs">
+                          {item.status === "available" ? "Available" : "Planned"}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
 
           <section className="grid gap-5" aria-label="Account settings">

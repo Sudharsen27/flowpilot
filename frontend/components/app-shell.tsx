@@ -84,7 +84,7 @@ export function AppShell({ children }: AppShellProps) {
         >
           Skip to content
         </a>
-        <aside className="border-sidebar-border sticky top-0 hidden h-screen w-64 shrink-0 border-r lg:block">
+        <aside className="border-sidebar-border bg-sidebar sticky top-0 hidden h-screen w-60 shrink-0 border-r lg:block">
           <AppSidebar />
         </aside>
 

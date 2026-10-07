@@ -9,6 +9,7 @@ import { BusinessOverview } from "@/components/command-center/business-overview"
 import { NeedsAttention } from "@/components/command-center/needs-attention";
 import { QuickActions } from "@/components/command-center/quick-actions";
 import { RecentActivity } from "@/components/command-center/recent-activity";
+import { WorkspaceCommand } from "@/components/command-center/workspace-command";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -160,8 +161,10 @@ export default function CommandCenterPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Command Center"
-        description="An operational overview of your sales pipeline, AI workforce, and work that needs attention."
+        description="Run the sales workspace from one instruction, then review what still needs a person."
       />
+
+      <WorkspaceCommand loading={loading} agents={data?.agents ?? []} />
 
       {!loading && data ? <CommandCenterNextStep data={data} /> : null}
 

@@ -3,6 +3,7 @@
 import { Lightbulb, Play, RotateCcw, X } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import { AgentRunTrace } from "@/components/agents/agent-run-trace";
 import { AgentWorkspaceResult } from "@/components/agents/agent-workspace-result";
 import { FormField } from "@/components/forms/form-field";
 import { Textarea } from "@/components/forms/textarea";
@@ -220,18 +221,7 @@ export function AgentWorkspacePanel({
         </CardContent>
       </Card>
 
-      {isRunning ? (
-        <div
-          className="border-border bg-card shadow-card rounded-xl border p-5 sm:p-6"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-sm font-medium">Running your instruction…</p>
-          <p className="text-muted-foreground mt-1.5 text-sm leading-6">
-            Planning and executing the requested workflow.
-          </p>
-        </div>
-      ) : null}
+      {isRunning ? <AgentRunTrace /> : null}
 
       {requestError ? (
         <div className="flex flex-wrap items-center gap-3" role="alert">

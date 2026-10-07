@@ -1,11 +1,4 @@
-import {
-  ArrowUpRight,
-  Bot,
-  CheckCheck,
-  Inbox,
-  Users,
-  Workflow,
-} from "lucide-react";
+import { ArrowUpRight, Bot, CheckCheck, Inbox, Users } from "lucide-react";
 import Link from "next/link";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,17 +28,11 @@ const quickActions = [
     description: "Make the final call on AI-drafted replies.",
     icon: CheckCheck,
   },
-  {
-    href: "/workflows",
-    label: "Workflows",
-    description: "Explore planned workflow concepts; configuration and execution are unavailable.",
-    icon: Workflow,
-  },
 ] as const;
 
 export function QuickActions() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {quickActions.map((action) => {
         const Icon = action.icon;
         return (

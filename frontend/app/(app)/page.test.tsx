@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandCenterPage from "@/app/(app)/page";
-import { getAgents } from "@/lib/api/agents";
+import { getAgents, orchestrateAgent } from "@/lib/api/agents";
 import { getInbox } from "@/lib/api/inbox";
 import { listActivity } from "@/lib/api/activity";
 import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
@@ -17,6 +17,7 @@ vi.mock("@/lib/api/activity", () => ({
 
 vi.mock("@/lib/api/agents", () => ({
   getAgents: vi.fn(),
+  orchestrateAgent: vi.fn(),
 }));
 
 vi.mock("@/lib/api/inbox", () => ({
@@ -44,6 +45,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
 }));
 
 const getAgentsMock = vi.mocked(getAgents);
+const orchestrateAgentMock = vi.mocked(orchestrateAgent);
 const getInboxMock = vi.mocked(getInbox);
 const listActivityMock = vi.mocked(listActivity);
 const getLeadsMock = vi.mocked(getLeads);
@@ -96,6 +98,7 @@ function followUps(overdue: number): FollowUpOperationsResponse {
 describe("Command Center", () => {
   beforeEach(() => {
     getAgentsMock.mockReset();
+    orchestrateAgentMock.mockReset();
     getInboxMock.mockReset();
     listActivityMock.mockReset();
     getLeadsMock.mockReset();
@@ -146,6 +149,7 @@ describe("Command Center", () => {
       screen.getByRole("heading", { level: 1, name: "Command Center" }),
     ).toBeVisible();
     for (const heading of [
+      "Ask FlowPilot",
       "Pipeline at a glance",
       "AI workforce",
       "Needs attention",
@@ -162,16 +166,16 @@ describe("Command Center", () => {
     expect(await screen.findByText("Nothing waiting for review")).toBeVisible();
   });
 
-  it("displays zero leads as 0 and keeps conversations and appointments unavailable", async () => {
+  it("displays zero leads as 0 and omits unfinished modules from the glance", async () => {
     render(<CommandCenterPage />);
     expect(await screen.findAllByText("0")).not.toHaveLength(0);
     expect(screen.queryByText("Connect a lead source")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Conversation history is not available yet."),
-    ).toBeVisible();
+      screen.queryByText("Conversation history is not available yet."),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText("Appointment scheduling is not available yet."),
-    ).toBeVisible();
+      screen.queryByText("Appointment scheduling is not available yet."),
+    ).not.toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "No activity yet" }),
     ).toBeVisible();
@@ -181,11 +185,11 @@ describe("Command Center", () => {
     );
     expect(screen.queryByText("Example event")).not.toBeInTheDocument();
     const articles = screen.getAllByRole("article");
-    const conversations = articles.find((card) =>
-      within(card).queryByRole("heading", { name: "Conversations" }),
+    const leadsCard = articles.find((card) =>
+      within(card).queryByRole("heading", { name: "Leads" }),
     );
-    expect(conversations).toBeTruthy();
-    expect(within(conversations!).getByText("—")).toBeVisible();
+    expect(leadsCard).toBeTruthy();
+    expect(within(leadsCard!).getByText("0")).toBeVisible();
   });
 
   it("recommends creating a lead when the organization has no leads", async () => {
@@ -355,24 +359,47 @@ describe("Command Center", () => {
     expect(listActivityMock).toHaveBeenCalledWith({ limit: 8, offset: 0 });
   });
 
+  it("runs an instruction on a ready agent and keeps approval in the result", async () => {
+    const user = userEvent.setup();
+    getAgentsMock.mockResolvedValue([agent]);
+    orchestrateAgentMock.mockResolvedValue({
+      execution_id: "exec-1",
+      outcome: "APPROVAL_REQUIRED",
+      execution_status: "COMPLETED",
+      plan_id: "plan-1",
+      approval_required: true,
+      completed_step_count: 1,
+      total_step_count: 2,
+      stopped_at_step_id: "s2",
+      step_results: [],
+      failure_category: null,
+      error: null,
+      provider: "openai",
+      model: "test",
+    });
+    render(<CommandCenterPage />);
+
+    const instruction = await screen.findByPlaceholderText(/Qualify today’s new leads/);
+    await user.type(instruction, "Qualify the new website lead");
+    await user.click(screen.getByRole("button", { name: "Run instruction" }));
+
+    expect(orchestrateAgentMock).toHaveBeenCalledWith("agent-1", {
+      instruction: "Qualify the new website lead",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Human approval required" }),
+    ).toBeVisible();
+  });
+
   it("links quick actions only to valid product routes", () => {
     render(<CommandCenterPage />);
     const hrefs = screen
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"));
-    for (const href of [
-      "/agents",
-      "/leads",
-      "/inbox",
-      "/approvals",
-      "/workflows",
-      "/activity",
-    ]) {
+    for (const href of ["/agents", "/leads", "/inbox", "/approvals", "/activity"]) {
       expect(hrefs).toContain(href);
     }
+    expect(hrefs).not.toContain("/workflows");
     expect(hrefs.every((href) => href?.startsWith("/"))).toBe(true);
-    expect(
-      screen.getByText(/planned workflow concepts; configuration and execution are unavailable/i),
-    ).toBeVisible();
   });
 });

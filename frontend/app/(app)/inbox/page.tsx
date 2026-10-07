@@ -4,7 +4,6 @@ import { Suspense, useCallback, useState } from "react";
 
 import { InboxSummary } from "@/components/ai-inbox/inbox-summary";
 import { InboxWorkspace } from "@/components/ai-inbox/inbox-workspace";
-import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { InboxListResponse } from "@/types/api";
@@ -39,30 +38,18 @@ export default function InboxPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="AI Inbox"
-        description="Customer conversations and AI-assisted sales activity — with human approval where it matters."
+        description="See what the customer asked and what the agent prepared. Sending still happens from the lead, after approval."
       />
 
-      <section className="grid gap-4">
-        <SectionHeader
-          title="Attention overview"
-          description="What needs a person right now across this organization’s Inbox."
-        />
-        <InboxSummary
-          loading={loading && summary === null}
-          stateCounts={summary?.state_counts}
-          needsApprovalCount={summary?.needs_approval_count}
-        />
-      </section>
+      <InboxSummary
+        loading={loading && summary === null}
+        stateCounts={summary?.state_counts}
+        needsApprovalCount={summary?.needs_approval_count}
+      />
 
-      <section className="grid gap-4">
-        <SectionHeader
-          title="Workspace"
-          description="Review the customer, what FlowPilot prepared, and what still needs a human decision. Sending stays on Lead / Sales Agent."
-        />
-        <Suspense fallback={<InboxWorkspaceFallback />}>
-          <InboxWorkspace onSummary={onSummary} />
-        </Suspense>
-      </section>
+      <Suspense fallback={<InboxWorkspaceFallback />}>
+        <InboxWorkspace onSummary={onSummary} />
+      </Suspense>
     </div>
   );
 }

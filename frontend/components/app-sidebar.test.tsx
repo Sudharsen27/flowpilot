@@ -27,6 +27,31 @@ describe("application sidebar navigation", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
+  it("shows the daily workspaces and keeps unfinished modules out of the sidebar", () => {
+    render(<AppSidebar />);
+
+    for (const label of [
+      "Command Center",
+      "Leads",
+      "AI Inbox",
+      "Approvals",
+      "AI Agents",
+      "Settings",
+    ]) {
+      expect(screen.getByRole("link", { name: label })).toBeVisible();
+    }
+
+    for (const label of [
+      "Workflows",
+      "Knowledge",
+      "Integrations",
+      "Analytics",
+      "Activity",
+    ]) {
+      expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
+    }
+  });
+
   it("keeps the parent item active for a nested route", () => {
     pathname = "/agents/agent-id";
     render(<AppSidebar />);

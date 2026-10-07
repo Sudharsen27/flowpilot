@@ -117,6 +117,19 @@ describe("identity-backed settings", () => {
     expect(screen.getByText(/Hosted form for website visitors/)).toBeVisible();
     expect(screen.getByRole("region", { name: "Team settings" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Automation settings" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "More workspaces" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Activity/ })).toHaveAttribute(
+      "href",
+      "/activity",
+    );
+    expect(screen.getByRole("link", { name: /Workflows/ })).toHaveAttribute(
+      "href",
+      "/workflows",
+    );
+    expect(screen.getByRole("link", { name: /Analytics/ })).toHaveAttribute(
+      "href",
+      "/analytics",
+    );
     expect(screen.getByRole("region", { name: "Account settings" })).toBeVisible();
     expect(
       await screen.findByRole("switch", { name: "Start Sales Agent automatically" }),

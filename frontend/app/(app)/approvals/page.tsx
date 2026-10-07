@@ -58,13 +58,13 @@ export default function ApprovalsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Approvals"
-        description="What does FlowPilot need you to decide right now? Review AI responses before anything is sent."
+        description="Review the draft the agent prepared. Nothing is sent until you approve it."
       />
 
       <section className="grid gap-5">
         <SectionHeader
           title="Needs your review"
-          description="Counts come from the Approval Center API for the filter you have open."
+          description="Drafts waiting on a person in this organization."
         />
         <ApprovalSummary
           loading={loading}
@@ -76,7 +76,7 @@ export default function ApprovalsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Approval workspace"
-          description="Read the customer enquiry, review the AI-generated response, then approve, reject, edit, or send."
+          description="Read the enquiry and the draft, then approve, edit, reject, or send."
         />
         <Suspense fallback={<ApprovalsWorkspaceFallback />}>
           <ApprovalsWorkspace
@@ -89,7 +89,7 @@ export default function ApprovalsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Human control"
-          description="Customer email stays under human review. Approval never sends automatically."
+          description="Approving a draft does not send it. Sending is a separate decision."
         />
         <HumanControl decision={decision} />
       </section>

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { GlobalSearchEntry } from "@/components/layout/global-search-entry";
+import { CommandLauncher } from "@/components/layout/command-launcher";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { OrganizationContext } from "@/components/layout/organization-context";
 import { UserMenu } from "@/components/layout/user-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -22,7 +23,7 @@ export function ApplicationTopBar({
   const currentPageLabel = getNavigationItemLabel(pathname);
 
   return (
-    <header className="border-border bg-background sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4 sm:px-6 lg:px-8">
+    <header className="border-border bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4 backdrop-blur sm:px-6 lg:px-8">
       <div className="flex min-w-0 items-center gap-3">
         <div className="lg:hidden">{mobileNavigationTrigger}</div>
         <Link
@@ -45,7 +46,8 @@ export function ApplicationTopBar({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        <GlobalSearchEntry />
+        <CommandLauncher />
+        <ThemeToggle />
         {session ? (
           <UserMenu
             user={session.user}
