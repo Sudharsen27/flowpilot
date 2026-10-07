@@ -288,7 +288,9 @@ describe("Follow-up operations", () => {
       followUp({ status: "COMPLETED", is_overdue: false }),
     );
     render(<FollowUpOperations />);
-    await screen.findByRole("table");
+    await waitFor(() => {
+      expect(screen.queryByText("Loading records")).not.toBeInTheDocument();
+    });
     await user.click(screen.getAllByRole("button", { name: "Manage" })[0]);
     expect(await screen.findByRole("dialog")).toBeVisible();
     await user.click(await screen.findByRole("button", { name: "Complete" }));
@@ -333,7 +335,9 @@ describe("Follow-up operations", () => {
       total: 1,
     });
     render(<FollowUpOperations />);
-    await screen.findByRole("table");
+    await waitFor(() => {
+      expect(screen.queryByText("Loading records")).not.toBeInTheDocument();
+    });
     await user.click(screen.getAllByRole("button", { name: "History" })[0]);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Delivery history")).toBeVisible();
