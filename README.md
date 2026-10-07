@@ -94,3 +94,9 @@ npm run build
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md).
+
+## License
+
+FlowPilot is licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2026 [Sundar Digital](https://www.sundardigital.in/).
