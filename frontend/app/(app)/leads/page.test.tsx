@@ -28,6 +28,18 @@ import {
 import { getSalesRun, listLeadSalesRuns } from "@/lib/api/sales-runs";
 import type { Lead, LeadEmailSendResult, LeadListResponse, LeadResponseDraftResult } from "@/types/api";
 
+async function waitForSalesAgentDirectory() {
+  await waitFor(() => {
+    const directory = screen.getAllByRole("table").find((table) =>
+      within(table).queryByRole("columnheader", { name: "Sales Agent" }),
+    );
+    expect(directory).toBeTruthy();
+    expect(directory?.closest("[data-slot='data-table']")).not.toHaveAttribute(
+      "aria-busy",
+    );
+  });
+}
+
 async function chooseLeadAction(
   user: UserEvent,
   action: string | RegExp,
@@ -286,6 +298,7 @@ describe("Leads page", () => {
       ]),
     );
     const { unmount: unmountRunning } = render(<LeadsPage />);
+    await waitForSalesAgentDirectory();
     expect((await screen.findAllByText("Processing")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("New").length).toBeGreaterThan(0);
     unmountRunning();
@@ -306,6 +319,7 @@ describe("Leads page", () => {
       ]),
     );
     const { unmount: unmountWaiting } = render(<LeadsPage />);
+    await waitForSalesAgentDirectory();
     expect((await screen.findAllByText("Waiting for approval")).length).toBeGreaterThan(0);
     unmountWaiting();
 
@@ -332,6 +346,7 @@ describe("Leads page", () => {
       ]),
     );
     const { unmount: unmountDone } = render(<LeadsPage />);
+    await waitForSalesAgentDirectory();
     expect((await screen.findAllByText("Completed")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Email sent").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Follow-up pending").length).toBeGreaterThan(0);
@@ -353,6 +368,7 @@ describe("Leads page", () => {
       ]),
     );
     const { unmount: unmountFailed } = render(<LeadsPage />);
+    await waitForSalesAgentDirectory();
     expect((await screen.findAllByText("Failed")).length).toBeGreaterThan(0);
     unmountFailed();
 
@@ -372,6 +388,7 @@ describe("Leads page", () => {
       ]),
     );
     const { unmount: unmountCancelled } = render(<LeadsPage />);
+    await waitForSalesAgentDirectory();
     expect((await screen.findAllByText("Cancelled")).length).toBeGreaterThan(0);
     unmountCancelled();
 
@@ -395,6 +412,7 @@ describe("Leads page", () => {
       ]),
     );
     render(<LeadsPage />);
+    await waitForSalesAgentDirectory();
     expect((await screen.findAllByText("Follow-up overdue")).length).toBeGreaterThan(0);
   });
 
