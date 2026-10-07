@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { BrandLockup } from "@/components/brand-lockup";
 import { Separator } from "@/components/ui/separator";
 import {
   isNavigationItemActive,
@@ -66,19 +67,9 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
           href="/"
           onClick={onNavigate}
           aria-label="FlowPilot home"
-          className="focus-visible:ring-ring flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-2"
+          className="focus-visible:ring-ring rounded-md outline-none focus-visible:ring-2"
         >
-          <span className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md text-sm font-semibold">
-            F
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold tracking-tight">
-              FlowPilot
-            </span>
-            <span className="text-muted-foreground block text-[0.6875rem] leading-4">
-              AI sales workspace
-            </span>
-          </span>
+          <BrandLockup size="sm" />
         </Link>
       </div>
       <Separator />

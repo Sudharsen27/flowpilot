@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { BrandLockup } from "@/components/brand-lockup";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 const steps = ["Qualify", "Draft", "Approve"] as const;
@@ -27,15 +28,7 @@ export function AuthFrame({ title, description, children, footer }: AuthFramePro
         />
 
         <div className="relative flex flex-1 flex-col justify-center px-10 py-10 xl:px-14">
-          <div className="flex items-center gap-2.5">
-            <span className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md text-sm font-semibold shadow-card">
-              F
-            </span>
-            <span>
-              <span className="block text-sm font-semibold tracking-tight">FlowPilot</span>
-              <span className="text-muted-foreground block text-xs">AI sales workspace</span>
-            </span>
-          </div>
+          <BrandLockup />
 
           <p className="text-ai-text mt-10 text-xs font-medium tracking-wide uppercase">
             For teams selling today
@@ -87,12 +80,7 @@ export function AuthFrame({ title, description, children, footer }: AuthFramePro
 
       <div className="bg-background relative flex min-h-svh flex-col">
         <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2 lg:hidden">
-            <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md text-xs font-semibold">
-              F
-            </span>
-            <span className="text-sm font-semibold tracking-tight">FlowPilot</span>
-          </div>
+          <BrandLockup size="sm" className="lg:hidden" />
           <div className="ml-auto">
             <ThemeToggle />
           </div>
