@@ -843,6 +843,7 @@ export type InboxConversationState = "OPEN" | "NEEDS_APPROVAL" | "CLOSED";
 export type InboxTimelineKind =
   | "LEAD_CREATED"
   | "WEBSITE_ENQUIRY"
+  | "CUSTOMER_REPLY"
   | "LEAD_STATUS_CHANGED"
   | "QUALIFICATION_COMPLETED"
   | "DRAFT_GENERATED"

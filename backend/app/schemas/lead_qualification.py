@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.ai.provider import TokenUsage
 from app.models.lead_qualification import LeadAiQualification, LeadIntent
@@ -129,15 +129,24 @@ LEAD_QUALIFICATION_JSON_SCHEMA: dict[str, Any] = {
 class LeadQualifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enquiry: str = Field(min_length=1, max_length=8000)
+    enquiry: str | None = Field(default=None, max_length=8000)
+    inbound_email_id: str | None = Field(default=None, max_length=36)
 
-    @field_validator("enquiry")
+    @field_validator("enquiry", "inbound_email_id", mode="before")
     @classmethod
-    def strip_enquiry(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
+    def blank_to_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @model_validator(mode="after")
+    def one_qualification_source(self) -> Self:
+        if self.inbound_email_id and self.enquiry:
+            raise ValueError("Provide an enquiry or an inbound email, not both")
+        if self.inbound_email_id is None and not self.enquiry:
             raise ValueError("Enquiry is required")
-        return stripped
+        return self
 
 
 class LeadQualificationPublic(BaseModel):

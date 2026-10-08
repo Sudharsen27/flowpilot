@@ -12,6 +12,13 @@ class InboundEmailRepository:
         self.session.add(row)
         return row
 
+    def get_by_id(self, organization_id: str, inbound_email_id: str) -> InboundEmail | None:
+        statement = select(InboundEmail).where(
+            InboundEmail.organization_id == organization_id,
+            InboundEmail.id == inbound_email_id,
+        )
+        return self.session.scalars(statement).one_or_none()
+
     def get_by_provider_email_id(
         self,
         organization_id: str,
@@ -35,6 +42,21 @@ class InboundEmailRepository:
             InboundEmail.message_id == message_id,
         )
         return self.session.scalars(statement).one_or_none()
+
+    def get_for_lead(
+        self,
+        organization_id: str,
+        lead_id: str,
+        email_ids: list[str],
+    ) -> dict[str, InboundEmail]:
+        if not email_ids:
+            return {}
+        statement = select(InboundEmail).where(
+            InboundEmail.organization_id == organization_id,
+            InboundEmail.lead_id == lead_id,
+            InboundEmail.id.in_(email_ids),
+        )
+        return {row.id: row for row in self.session.scalars(statement)}
 
     def count_for_organization(self, organization_id: str) -> int:
         statement = select(InboundEmail).where(InboundEmail.organization_id == organization_id)

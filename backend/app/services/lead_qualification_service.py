@@ -4,23 +4,33 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.openai_provider import sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider, TokenUsage
 from app.ai.typesafe_provider import TypeSafeDecisionProvider
 from app.core.exceptions import (
+    ConflictError,
     NotFoundError,
     ProviderError,
     ProviderNotConfiguredError,
+    UnprocessableError,
 )
-from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
+from app.models.activity_event import (
+    ActivityActorType,
+    ActivityEntityType,
+    ActivityEvent,
+    ActivityEventType,
+)
 from app.models.agent_execution import ExecutionFailureCategory
 from app.models.lead import Lead
 from app.models.lead_qualification import (
     LeadQualification,
     LeadQualificationRecordStatus,
 )
+from app.repositories.activity_event_repository import ActivityEventRepository
+from app.repositories.inbound_email_repository import InboundEmailRepository
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.lead_qualification import (
@@ -41,6 +51,8 @@ _ESCALATION_POLICY = (
     "A true decision only flags the lead; it does not approve or send a response, "
     "change CRM status, or execute tools."
 )
+
+_INBOUND_CLAIM_STATUS = "CLAIMED"
 
 QUALIFICATION_SYSTEM_INSTRUCTIONS = """You analyze a single customer enquiry for a B2B sales team.
 
@@ -69,6 +81,8 @@ class LeadQualificationService:
         self.provider = provider
         self.leads = LeadRepository(session)
         self.qualifications = LeadQualificationRepository(session)
+        self.inbound_emails = InboundEmailRepository(session)
+        self.activities = ActivityEventRepository(session)
         self.human_attention = HumanAttentionService(session)
         self.human_escalation = human_escalation_service or HumanEscalationDecisionService(
             TypeSafeDecisionProvider()
@@ -89,6 +103,7 @@ class LeadQualificationService:
         lead_id: str,
         enquiry: str,
         initiated_by_user_id: str | None = None,
+        activity_dedupe_key: str | None = None,
     ) -> LeadQualification:
         lead = self.leads.get_by_id(organization_id, lead_id)
         if lead is None:
@@ -113,6 +128,7 @@ class LeadQualificationService:
                 "AI provider is not configured",
                 ExecutionFailureCategory.CONFIGURATION_ERROR,
                 configured=False,
+                activity_dedupe_key=activity_dedupe_key,
             )
 
         try:
@@ -137,7 +153,7 @@ class LeadQualificationService:
             row.provider = generated.provider
             row.model = generated.model
             row.completed_at = datetime.now(UTC)
-            ActivityService(self.session).record(
+            recorded = ActivityService(self.session).record(
                 organization_id=organization_id,
                 event_type=ActivityEventType.AI_ACTION,
                 actor_type=ActivityActorType.AGENT,
@@ -148,8 +164,18 @@ class LeadQualificationService:
                 lead_id=row.lead_id,
                 actor_user_id=initiated_by_user_id,
                 status=row.status,
-                dedupe_key=f"qualification:{row.id}:COMPLETED",
+                dedupe_key=activity_dedupe_key or f"qualification:{row.id}:COMPLETED",
             )
+            if activity_dedupe_key is not None:
+                recorded.type = ActivityEventType.AI_ACTION
+                recorded.actor_type = ActivityActorType.AGENT
+                recorded.actor_user_id = initiated_by_user_id
+                recorded.title = "Lead qualified"
+                recorded.summary = "AI completed enquiry qualification for this lead."
+                recorded.entity_type = ActivityEntityType.LEAD_QUALIFICATION
+                recorded.entity_id = row.id
+                recorded.lead_id = row.lead_id
+                recorded.status = row.status
             self.session.commit()
             self.session.refresh(row)
         except ProviderNotConfiguredError as exc:
@@ -158,6 +184,7 @@ class LeadQualificationService:
                 sanitize_provider_error(exc.detail),
                 ExecutionFailureCategory.CONFIGURATION_ERROR,
                 configured=False,
+                activity_dedupe_key=activity_dedupe_key,
             )
         except PydanticValidationError:
             return self._fail(
@@ -165,6 +192,7 @@ class LeadQualificationService:
                 "AI provider returned invalid structured output",
                 ExecutionFailureCategory.VALIDATION_ERROR,
                 configured=True,
+                activity_dedupe_key=activity_dedupe_key,
             )
         except ProviderError as exc:
             return self._fail(
@@ -172,6 +200,7 @@ class LeadQualificationService:
                 sanitize_provider_error(exc.detail),
                 ExecutionFailureCategory.PROVIDER_ERROR,
                 configured=True,
+                activity_dedupe_key=activity_dedupe_key,
             )
         except Exception:
             logger.exception(
@@ -183,10 +212,121 @@ class LeadQualificationService:
                 "AI provider request failed",
                 ExecutionFailureCategory.EXECUTION_ERROR,
                 configured=True,
+                activity_dedupe_key=activity_dedupe_key,
             )
 
         self._evaluate_human_attention(lead, row, analysis)
         return row
+
+    def qualify_inbound_email(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        inbound_email_id: str,
+        initiated_by_user_id: str | None = None,
+    ) -> LeadQualification:
+        lead = self.leads.get_by_id(organization_id, lead_id)
+        if lead is None:
+            raise NotFoundError("Lead not found")
+        inbound = self.inbound_emails.get_by_id(organization_id, inbound_email_id)
+        if inbound is None or inbound.lead_id != lead.id:
+            if inbound is not None and inbound.lead_id is None:
+                raise UnprocessableError("Inbound email is not matched to a lead")
+            if inbound is not None and inbound.lead_id != lead.id:
+                raise UnprocessableError("Inbound email belongs to another lead")
+            raise NotFoundError("Inbound email not found")
+        enquiry = (inbound.body_text or "").strip()
+        if not enquiry:
+            raise UnprocessableError("Inbound email has no text to qualify")
+        claimed = self._claim_inbound_qualification(
+            organization_id,
+            lead.id,
+            inbound.id,
+            initiated_by_user_id,
+        )
+        if claimed is not None:
+            return claimed
+        return self.qualify(
+            organization_id=organization_id,
+            lead_id=lead.id,
+            enquiry=enquiry,
+            initiated_by_user_id=initiated_by_user_id,
+            activity_dedupe_key=_inbound_qualified_key(inbound.id),
+        )
+
+    def _claim_inbound_qualification(
+        self,
+        organization_id: str,
+        lead_id: str,
+        inbound_email_id: str,
+        initiated_by_user_id: str | None,
+    ) -> LeadQualification | None:
+        """Commit the dedupe key before the provider call.
+
+        The unique (organization_id, dedupe_key) constraint lets one request
+        own the email. The claim is committed first so the provider call does
+        not hold that row lock. A failed qualification deletes the claim.
+        """
+        existing = self._existing_inbound_qualification(
+            organization_id,
+            lead_id,
+            inbound_email_id,
+        )
+        if existing is not None:
+            return existing
+        claim = ActivityEvent(
+            organization_id=organization_id,
+            type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            actor_user_id=initiated_by_user_id,
+            entity_type=ActivityEntityType.LEAD,
+            entity_id=lead_id,
+            lead_id=lead_id,
+            title="Inbound qualification started",
+            summary="Inbound email qualification is in progress.",
+            status=_INBOUND_CLAIM_STATUS,
+            dedupe_key=_inbound_qualified_key(inbound_email_id),
+        )
+        try:
+            with self.session.begin_nested():
+                self.session.add(claim)
+                self.session.flush()
+        except IntegrityError:
+            existing = self._existing_inbound_qualification(
+                organization_id,
+                lead_id,
+                inbound_email_id,
+            )
+            if existing is not None:
+                return existing
+            raise ConflictError("Inbound email qualification is already in progress") from None
+        self.session.commit()
+        return None
+
+    def _existing_inbound_qualification(
+        self,
+        organization_id: str,
+        lead_id: str,
+        inbound_email_id: str,
+    ) -> LeadQualification | None:
+        activity = self.activities.get_by_dedupe_key(
+            organization_id,
+            _inbound_qualified_key(inbound_email_id),
+        )
+        if activity is None:
+            return None
+        if activity.lead_id != lead_id:
+            raise NotFoundError("Qualification not found")
+        if (
+            activity.entity_type == ActivityEntityType.LEAD_QUALIFICATION
+            and activity.status == LeadQualificationRecordStatus.COMPLETED
+        ):
+            row = self.qualifications.get_by_id(organization_id, lead_id, activity.entity_id)
+            if row is None:
+                raise NotFoundError("Qualification not found")
+            return row
+        raise ConflictError("Inbound email qualification is already in progress")
 
     def _evaluate_human_attention(
         self,
@@ -253,6 +393,7 @@ class LeadQualificationService:
         category: ExecutionFailureCategory,
         *,
         configured: bool,
+        activity_dedupe_key: str | None = None,
     ) -> LeadQualification:
         error = sanitize_provider_error(error)
         row.status = LeadQualificationRecordStatus.FAILED
@@ -260,6 +401,10 @@ class LeadQualificationService:
         row.failure_category = category
         row.result = None
         row.completed_at = datetime.now(UTC)
+        if activity_dedupe_key is not None:
+            claim = self.activities.get_by_dedupe_key(row.organization_id, activity_dedupe_key)
+            if claim is not None and claim.status != LeadQualificationRecordStatus.COMPLETED:
+                self.session.delete(claim)
         self.session.commit()
         self.session.refresh(row)
         result_payload = {
@@ -274,6 +419,10 @@ class LeadQualificationService:
         if configured:
             raise ProviderError(error, content=result_payload)
         raise ProviderNotConfiguredError(error, content=result_payload)
+
+
+def _inbound_qualified_key(inbound_email_id: str) -> str:
+    return f"inbound_email:{inbound_email_id}:QUALIFIED"
 
 
 def _parse_analysis(output_text: str) -> LeadQualificationAnalysis:

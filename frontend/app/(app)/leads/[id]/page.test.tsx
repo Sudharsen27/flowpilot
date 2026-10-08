@@ -414,6 +414,50 @@ describe("Lead workspace", () => {
     expect(within(timeline).getByText("Needs your review")).toBeVisible();
   });
 
+  it("shows an inbound customer reply before a later outbound email", async () => {
+    getInboxConversationMock.mockResolvedValue(
+      emptyConversation({
+        items: [
+          timelineItem({
+            id: "evt-reply",
+            kind: "CUSTOMER_REPLY",
+            direction: "inbound",
+            occurred_at: "2026-09-17T09:30:00Z",
+            title: "Customer reply received",
+            summary: "An inbound customer email was linked to this lead.",
+            body: "I can talk Thursday.",
+            actor_type: "PUBLIC_VISITOR",
+          }),
+          timelineItem({
+            id: "evt-sent",
+            kind: "EMAIL_SENT",
+            direction: "outbound",
+            occurred_at: "2026-09-17T10:10:00Z",
+            body: "Sent reply body",
+            is_sent_message: true,
+            actor_type: "USER",
+            source_entity_type: "LEAD_EMAIL_SEND",
+            source_entity_id: "send-1",
+          }),
+        ],
+        total_items: 2,
+      }),
+    );
+    render(<LeadWorkspacePage />);
+    const timeline = await screen.findByRole("list", {
+      name: "Conversation timeline",
+    });
+    expect(within(timeline).getByRole("heading", { name: "Customer reply" })).toBeVisible();
+    expect(within(timeline).getByText("I can talk Thursday.")).toBeVisible();
+    expect(within(timeline).getByText("Sent reply body")).toBeVisible();
+    expect(within(timeline).getByText("Sent")).toBeVisible();
+    const headings = within(timeline).getAllByRole("heading");
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      "Customer reply",
+      "Email sent",
+    ]);
+  });
+
   it("shows latest Sales Agent status and AI insights without exposing enquiry", async () => {
     getLeadMock.mockResolvedValue({
       ...lead,

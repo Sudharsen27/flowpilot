@@ -44,8 +44,8 @@ export function Customer360Timeline({
               Conversation timeline
             </h2>
             <p className="text-muted-foreground text-xs">
-              Customer journey: enquiry, AI work, human decisions, and outbound
-              email.
+              Customer journey: enquiry, customer replies, AI work, human
+              decisions, and outbound email.
             </p>
           </div>
         </div>
@@ -84,7 +84,7 @@ export function Customer360Timeline({
           <ConversationTimeline
             items={items}
             emptyTitle="No conversation activity yet"
-            emptyDescription="Website enquiries, AI drafts, approvals, emails, and follow-ups will appear here as they are recorded."
+            emptyDescription="Website enquiries, customer replies, AI drafts, approvals, emails, and follow-ups will appear here as they are recorded."
           />
         )}
       </div>

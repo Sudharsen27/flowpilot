@@ -25,10 +25,13 @@ from app.core.exceptions import (
     ValidationError as AppValidationError,
 )
 from app.email.resend_webhook import verify_resend_signature
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.inbound_email import InboundEmail, InboundEmailStatus
 from app.repositories.inbound_email_repository import InboundEmailRepository
+from app.repositories.lead_repository import LeadRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.inbound_email import InboundAttachmentMeta, ResendInboundEvent
+from app.services.activity_service import ActivityService
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,7 @@ class InboundEmailService:
         self.session = session
         self.emails = InboundEmailRepository(session)
         self.organizations = OrganizationRepository(session)
+        self.leads = LeadRepository(session)
 
     def receive(
         self,
@@ -115,6 +119,40 @@ class InboundEmailService:
             return None
         return next(iter(matched))
 
+    def _matched_lead_id(self, organization_id: str, from_email: str) -> str | None:
+        """Link only when this organization has exactly one lead for the sender.
+
+        Outbound sends store a provider message id, not In-Reply-To or References,
+        so a thread header cannot identify a lead. Subject and body are ignored.
+        """
+        matches = self.leads.list_by_email(organization_id, from_email)
+        if len(matches) != 1:
+            logger.info(
+                "inbound email unmatched organization_id=%s result=%s",
+                organization_id,
+                "ambiguous" if len(matches) > 1 else "none",
+            )
+            return None
+        return matches[0].id
+
+    def _record_customer_reply(self, row: InboundEmail) -> None:
+        lead_id = row.lead_id
+        if lead_id is None:
+            return
+        ActivityService(self.session).record(
+            organization_id=row.organization_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.PUBLIC_VISITOR,
+            title="Customer reply received",
+            summary="An inbound customer email was linked to this lead.",
+            entity_type=ActivityEntityType.LEAD,
+            entity_id=lead_id,
+            lead_id=lead_id,
+            status=InboundEmailStatus.RECEIVED,
+            occurred_at=row.received_at,
+            dedupe_key=f"inbound_email:{row.id}:RECEIVED",
+        )
+
     def _store(self, organization_id: str, event: ResendInboundEvent) -> InboundEmailResult:
         data = event.data
         if "\x00" in data.email_id:
@@ -134,13 +172,15 @@ class InboundEmailService:
             )
             return InboundEmailResult(status="duplicate")
         received_at = data.created_at or event.created_at or datetime.now(UTC)
+        from_email = _sender(data.from_address)
+        lead_id = self._matched_lead_id(organization_id, from_email)
         row = InboundEmail(
             organization_id=organization_id,
-            lead_id=None,
+            lead_id=lead_id,
             provider="resend",
             provider_email_id=data.email_id,
             message_id=message_id,
-            from_email=_sender(data.from_address),
+            from_email=from_email,
             to_addresses=_address_json(data.to),
             cc_addresses=_address_json(data.cc),
             bcc_addresses=_address_json(data.bcc),
@@ -155,6 +195,8 @@ class InboundEmailService:
             with self.session.begin_nested():
                 self.emails.add(row)
                 self.session.flush()
+                if lead_id is not None:
+                    self._record_customer_reply(row)
         except IntegrityError:
             self.session.rollback()
             logger.info(

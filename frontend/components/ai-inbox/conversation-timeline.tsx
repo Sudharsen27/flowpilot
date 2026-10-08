@@ -36,6 +36,7 @@ type TimelineLane =
 const kindLabels: Record<InboxTimelineKind, string> = {
   LEAD_CREATED: "Lead created",
   WEBSITE_ENQUIRY: "Website enquiry",
+  CUSTOMER_REPLY: "Customer reply",
   LEAD_STATUS_CHANGED: "Lead status changed",
   QUALIFICATION_COMPLETED: "AI qualification",
   DRAFT_GENERATED: "AI-generated response",
@@ -73,7 +74,9 @@ function laneFor(item: InboxTimelineItem): TimelineLane {
   ) {
     return "attention";
   }
-  if (item.kind === "WEBSITE_ENQUIRY") return "customer";
+  if (item.kind === "WEBSITE_ENQUIRY" || item.kind === "CUSTOMER_REPLY") {
+    return "customer";
+  }
   if (
     item.kind === "EMAIL_SENT" ||
     item.kind === "EMAIL_FAILED" ||
@@ -152,7 +155,7 @@ const lanePresentation: Record<
 export function ConversationTimeline({
   items,
   emptyTitle = "No timeline events yet",
-  emptyDescription = "Activity for this lead will appear here as drafts, emails, Sales Runs, and follow-ups are recorded.",
+  emptyDescription = "Activity for this lead will appear here as customer replies, drafts, emails, Sales Runs, and follow-ups are recorded.",
 }: ConversationTimelineProps) {
   if (items.length === 0) {
     return (
@@ -237,7 +240,9 @@ export function ConversationTimeline({
 
               {item.actor_type ? (
                 <p className="text-muted-foreground mt-1 text-xs">
-                  {actorLabels[item.actor_type]}
+                  {item.kind === "CUSTOMER_REPLY"
+                    ? "Customer"
+                    : actorLabels[item.actor_type]}
                   {item.summary ? ` · ${item.summary}` : null}
                 </p>
               ) : item.summary ? (

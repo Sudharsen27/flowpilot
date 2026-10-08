@@ -8,6 +8,7 @@ from app.api.deps import (
     get_current_organization,
     get_email_provider,
 )
+from app.core.exceptions import ValidationError
 from app.db.session import get_db
 from app.email.provider import EmailProvider
 from app.models.lead import LeadSource, LeadStatus
@@ -153,12 +154,24 @@ def qualify_lead(
     db: Session = Depends(get_db),
     provider: AIProvider = Depends(get_ai_provider),
 ) -> LeadQualificationPublic:
-    row = LeadQualificationService(db, provider).qualify(
-        organization_id=organization.id,
-        lead_id=lead_id,
-        enquiry=payload.enquiry,
-        initiated_by_user_id=membership.user_id,
-    )
+    service = LeadQualificationService(db, provider)
+    if payload.inbound_email_id is not None:
+        row = service.qualify_inbound_email(
+            organization_id=organization.id,
+            lead_id=lead_id,
+            inbound_email_id=payload.inbound_email_id,
+            initiated_by_user_id=membership.user_id,
+        )
+    else:
+        enquiry = payload.enquiry
+        if enquiry is None:
+            raise ValidationError("Enquiry is required")
+        row = service.qualify(
+            organization_id=organization.id,
+            lead_id=lead_id,
+            enquiry=enquiry,
+            initiated_by_user_id=membership.user_id,
+        )
     return to_qualification_public(row)
 
 

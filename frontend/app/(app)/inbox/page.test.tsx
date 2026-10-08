@@ -101,6 +101,24 @@ const timelineItems: InboxTimelineItem[] = [
     is_sent_message: false,
   },
   {
+    id: "evt-reply",
+    kind: "CUSTOMER_REPLY",
+    direction: "inbound",
+    occurred_at: "2026-09-17T09:30:00Z",
+    title: "Customer reply received",
+    summary: "An inbound customer email was linked to this lead.",
+    body: "I can talk Thursday.",
+    status: "RECEIVED",
+    actor_type: "PUBLIC_VISITOR",
+    actor_user_id: null,
+    agent_id: null,
+    source_entity_type: "LEAD",
+    source_entity_id: "lead-1",
+    activity_id: "evt-reply",
+    is_draft: false,
+    is_sent_message: false,
+  },
+  {
     id: "evt-2",
     kind: "DRAFT_GENERATED",
     direction: "internal",
@@ -384,6 +402,12 @@ describe("AI Inbox page", () => {
     expect(
       screen.getByText(/Prepared by FlowPilot AI · Not sent to the customer/i),
     ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Customer reply" })).toBeVisible();
+    expect(screen.getByText("I can talk Thursday.")).toBeVisible();
+    const timeline = screen.getByRole("list", { name: "Conversation timeline" });
+    const headings = within(timeline).getAllByRole("heading");
+    const labels = headings.map((heading) => heading.textContent);
+    expect(labels.indexOf("Customer reply")).toBeLessThan(labels.indexOf("Email sent"));
     expect(screen.getByText("Email sent")).toBeVisible();
     expect(screen.getAllByText("Sent").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Email could not be delivered")).toBeVisible();

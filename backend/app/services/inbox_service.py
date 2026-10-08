@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, exists, func, or_, select
@@ -13,6 +14,7 @@ from app.models.activity_event import (
     ActivityEvent,
     ActivityEventType,
 )
+from app.models.inbound_email import InboundEmail
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend, LeadEmailSendStatus
 from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus
@@ -25,6 +27,7 @@ from app.models.lead_response_draft import (
 )
 from app.models.sales_run import SalesRun, SalesRunStatus
 from app.repositories.activity_event_repository import ActivityEventRepository
+from app.repositories.inbound_email_repository import InboundEmailRepository
 from app.repositories.lead_email_send_repository import LeadEmailSendRepository
 from app.repositories.lead_follow_up_execution_repository import (
     LeadFollowUpExecutionRepository,
@@ -66,6 +69,7 @@ _ActivityRows = list[ActivityEvent]
 _TITLE_KIND: dict[str, InboxTimelineKind] = {
     "Lead created": InboxTimelineKind.LEAD_CREATED,
     "Website enquiry received": InboxTimelineKind.WEBSITE_ENQUIRY,
+    "Customer reply received": InboxTimelineKind.CUSTOMER_REPLY,
     "Lead status changed": InboxTimelineKind.LEAD_STATUS_CHANGED,
     "Lead qualified": InboxTimelineKind.QUALIFICATION_COMPLETED,
     "Response draft generated": InboxTimelineKind.DRAFT_GENERATED,
@@ -99,7 +103,14 @@ _SENT_KINDS = {
     InboxTimelineKind.EMAIL_SENT,
     InboxTimelineKind.FOLLOW_UP_EXECUTION_SENT,
 }
-_INBOUND_KINDS = {InboxTimelineKind.WEBSITE_ENQUIRY}
+_INBOUND_KINDS = {
+    InboxTimelineKind.WEBSITE_ENQUIRY,
+    InboxTimelineKind.CUSTOMER_REPLY,
+}
+_INBOUND_REPLY_KEY = re.compile(
+    r"^inbound_email:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):RECEIVED$"
+)
 _OUTBOUND_KINDS = {
     InboxTimelineKind.EMAIL_SENT,
     InboxTimelineKind.EMAIL_FAILED,
@@ -113,6 +124,19 @@ def _sanitize_search(value: str | None) -> str | None:
         return None
     cleaned = "".join(ch for ch in value.strip() if ch not in {"%", "_"})
     return cleaned or None
+
+
+def _inbound_email_id_from_key(dedupe_key: str) -> str | None:
+    match = _INBOUND_REPLY_KEY.fullmatch(dedupe_key)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _inbound_email_id(event: ActivityEvent) -> str | None:
+    if event.title != "Customer reply received":
+        return None
+    return _inbound_email_id_from_key(event.dedupe_key)
 
 
 def _preview(text: str | None) -> str | None:
@@ -144,6 +168,7 @@ class InboxService:
         self.executions = LeadFollowUpExecutionRepository(session)
         self.sales_runs = SalesRunRepository(session)
         self.qualifications = LeadQualificationRepository(session)
+        self.inbound_emails = InboundEmailRepository(session)
 
     def list(
         self,
@@ -519,6 +544,16 @@ class InboxService:
             if qualification_ids
             else {}
         )
+        inbound_ids = [
+            email_id
+            for event in events
+            if (email_id := _inbound_email_id(event)) is not None
+        ]
+        inbound_emails = self.inbound_emails.get_for_lead(
+            organization_id,
+            lead.id,
+            inbound_ids,
+        )
 
         items: _TimelineItems = []
         for event in events:
@@ -533,6 +568,8 @@ class InboxService:
                 drafts=drafts,
                 sends=sends,
                 executions=executions,
+                inbound_emails=inbound_emails,
+                dedupe_key=event.dedupe_key,
             )
             draft_id = (
                 event.entity_id
@@ -608,9 +645,15 @@ class InboxService:
         drafts: dict[str, LeadResponseDraft],
         sends: dict[str, LeadEmailSend],
         executions: dict[str, LeadFollowUpExecution],
+        inbound_emails: dict[str, InboundEmail],
+        dedupe_key: str,
     ) -> str | None:
         if kind == InboxTimelineKind.WEBSITE_ENQUIRY:
             return lead.enquiry
+        if kind == InboxTimelineKind.CUSTOMER_REPLY:
+            email_id = _inbound_email_id_from_key(dedupe_key)
+            inbound = inbound_emails.get(email_id) if email_id is not None else None
+            return inbound.body_text if inbound is not None else None
         if kind in _DRAFT_KINDS:
             draft = drafts.get(entity_id)
             return draft.current_response if draft is not None else None
