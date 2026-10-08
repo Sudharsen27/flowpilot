@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getAgents } from "@/lib/api/agents";
 import { ApiError } from "@/lib/api/client";
 import { getInboxConversation } from "@/lib/api/inbox";
-import { getLead, getLeadQualification } from "@/lib/api/leads";
+import { getLead, getLeadQualification, qualifyLead } from "@/lib/api/leads";
 import { getSalesRun } from "@/lib/api/sales-runs";
 import { inboxSourceLabels } from "@/lib/inbox-labels";
 import type {
@@ -71,6 +71,13 @@ export default function LeadWorkspacePage() {
   const [conversationLoading, setConversationLoading] = useState(true);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [conversationRetryKey, setConversationRetryKey] = useState(0);
+  const [qualifyingInboundEmailId, setQualifyingInboundEmailId] = useState<
+    string | null
+  >(null);
+  const [qualifyError, setQualifyError] = useState<string | null>(null);
+  const [qualifyErrorInboundId, setQualifyErrorInboundId] = useState<
+    string | null
+  >(null);
   const [insightsDetailLoading, setInsightsDetailLoading] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,6 +180,34 @@ export default function LeadWorkspacePage() {
       cancelled = true;
     };
   }, [leadId, loading, errorKind, retryKey, conversationRetryKey]);
+
+  async function qualifyReply(inboundEmailId: string) {
+    if (!leadId || qualifyingInboundEmailId) return;
+    setQualifyingInboundEmailId(inboundEmailId);
+    setQualifyError(null);
+    setQualifyErrorInboundId(null);
+    try {
+      await qualifyLead(leadId, { inbound_email_id: inboundEmailId });
+      const [current, history] = await Promise.all([
+        getLead(leadId),
+        getInboxConversation(leadId),
+      ]);
+      setLead(current);
+      setConversation(history);
+      setConversationError(null);
+    } catch (cause: unknown) {
+      setQualifyErrorInboundId(inboundEmailId);
+      setQualifyError(
+        cause instanceof ApiError && cause.status === 409
+          ? "This reply is already being qualified."
+          : cause instanceof ApiError && cause.status === 503
+            ? "AI provider is not configured."
+            : "The reply could not be qualified. Please try again.",
+      );
+    } finally {
+      setQualifyingInboundEmailId(null);
+    }
+  }
 
   async function refreshConversation(nextLeadId: string) {
     setConversationLoading(true);
@@ -414,6 +449,10 @@ export default function LeadWorkspacePage() {
             loading={conversationLoading}
             error={conversationError}
             onRetry={retryConversation}
+            qualifyingInboundEmailId={qualifyingInboundEmailId}
+            qualifyError={qualifyError}
+            qualifyErrorInboundId={qualifyErrorInboundId}
+            onQualifyReply={qualifyReply}
           />
         </div>
 

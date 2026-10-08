@@ -11,6 +11,7 @@ import {
   getLeadFollowUps,
   resolveHumanAttention,
   getLeadQualification,
+  qualifyLead,
   getLeadResponseDraft,
   getLeadFollowUp,
 } from "@/lib/api/leads";
@@ -46,6 +47,7 @@ vi.mock("@/lib/api/leads", () => ({
   getLeadFollowUps: vi.fn(),
   getLeadFollowUp: vi.fn(),
   getLeadQualification: vi.fn(),
+  qualifyLead: vi.fn(),
   getLeadResponseDraft: vi.fn(),
   generateLeadResponseDraft: vi.fn(),
   updateLeadResponseDraft: vi.fn(),
@@ -73,6 +75,7 @@ const listLeadSalesRunsMock = vi.mocked(listLeadSalesRuns);
 const getLeadFollowUpsMock = vi.mocked(getLeadFollowUps);
 const getLeadResponseDraftMock = vi.mocked(getLeadResponseDraft);
 const getLeadQualificationMock = vi.mocked(getLeadQualification);
+const qualifyLeadMock = vi.mocked(qualifyLead);
 const getLeadFollowUpMock = vi.mocked(getLeadFollowUp);
 const getInboxConversationMock = vi.mocked(getInboxConversation);
 
@@ -192,6 +195,7 @@ describe("Lead workspace", () => {
     getLeadFollowUpsMock.mockReset();
     getLeadResponseDraftMock.mockReset();
     getLeadQualificationMock.mockReset();
+    qualifyLeadMock.mockReset();
     getLeadFollowUpMock.mockReset();
     getInboxConversationMock.mockReset();
     getLeadMock.mockResolvedValue(lead);
@@ -456,6 +460,76 @@ describe("Lead workspace", () => {
       "Customer reply",
       "Email sent",
     ]);
+  });
+
+  it("qualifies the inbound reply without starting a sales run", async () => {
+    const user = userEvent.setup();
+    getInboxConversationMock.mockResolvedValue(
+      emptyConversation({
+        items: [
+          timelineItem({
+            id: "evt-reply",
+            kind: "CUSTOMER_REPLY",
+            direction: "inbound",
+            title: "Customer reply received",
+            body: "I can talk Thursday.",
+            actor_type: "PUBLIC_VISITOR",
+            inbound_email_id: "email-1",
+          }),
+        ],
+        total_items: 1,
+      }),
+    );
+    qualifyLeadMock.mockResolvedValue({
+      id: "qual-1",
+      lead_id: "lead-1",
+      status: "COMPLETED",
+      enquiry: "I can talk Thursday.",
+      analysis: {
+        summary: "The customer wants a demo.",
+        intent: "REQUEST_DEMO",
+        qualification: "NEEDS_MORE_INFORMATION",
+        qualification_reasons: [],
+        confidence: 0.5,
+        extracted_contact: { name: null, email: null, phone: null },
+        extracted_company: { name: null },
+        buying_signals: ["Asked to schedule a demo"],
+        missing_information: [],
+      },
+      error: null,
+      failure_category: null,
+      provider: "fake",
+      model: "fake",
+      usage: null,
+      started_at: "2026-09-17T10:00:00Z",
+      completed_at: "2026-09-17T10:00:01Z",
+      created_at: "2026-09-17T10:00:00Z",
+      duration_ms: 10,
+    });
+    getInboxConversationMock.mockResolvedValueOnce(
+      emptyConversation({
+        items: [
+          timelineItem({
+            id: "evt-reply",
+            kind: "CUSTOMER_REPLY",
+            direction: "inbound",
+            title: "Customer reply received",
+            body: "I can talk Thursday.",
+            actor_type: "PUBLIC_VISITOR",
+            inbound_email_id: "email-1",
+          }),
+        ],
+        total_items: 1,
+      }),
+    );
+    render(<LeadWorkspacePage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Qualify this reply" }),
+    );
+    expect(qualifyLeadMock).toHaveBeenCalledWith("lead-1", {
+      inbound_email_id: "email-1",
+    });
+    expect(startLeadSalesRunMock).not.toHaveBeenCalled();
   });
 
   it("shows latest Sales Agent status and AI insights without exposing enquiry", async () => {

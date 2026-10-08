@@ -132,6 +132,10 @@ class InboxTimelineItem(BaseModel):
     follow_up_execution_id: str | None = None
     sales_run_id: str | None = None
     qualification_id: str | None = None
+    inbound_email_id: str | None = None
+    qualification_intent: str | None = None
+    qualification_outcome: str | None = None
+    buying_signals: list[str] = Field(default_factory=list)
 
 
 class InboxConversationResponse(BaseModel):

@@ -12,6 +12,10 @@ type Customer360TimelineProps = {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  qualifyingInboundEmailId?: string | null;
+  qualifyError?: string | null;
+  qualifyErrorInboundId?: string | null;
+  onQualifyReply?: (inboundEmailId: string) => void;
 };
 
 export function Customer360Timeline({
@@ -20,6 +24,10 @@ export function Customer360Timeline({
   loading = false,
   error = null,
   onRetry,
+  qualifyingInboundEmailId = null,
+  qualifyError = null,
+  qualifyErrorInboundId = null,
+  onQualifyReply,
 }: Customer360TimelineProps) {
   const count = totalItems ?? items.length;
 
@@ -85,6 +93,10 @@ export function Customer360Timeline({
             items={items}
             emptyTitle="No conversation activity yet"
             emptyDescription="Website enquiries, customer replies, AI drafts, approvals, emails, and follow-ups will appear here as they are recorded."
+            qualifyingInboundEmailId={qualifyingInboundEmailId}
+            qualifyError={qualifyError}
+            qualifyErrorInboundId={qualifyErrorInboundId}
+            onQualifyReply={onQualifyReply}
           />
         )}
       </div>

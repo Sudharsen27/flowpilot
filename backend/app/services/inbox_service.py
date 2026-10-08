@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -51,6 +52,7 @@ from app.schemas.inbox import (
     InboxTimelineItem,
     InboxTimelineKind,
 )
+from app.schemas.lead_qualification import LeadQualificationAnalysis
 from app.services.lead_follow_up_service import to_follow_up_public
 from app.services.lead_service import _draft_summary, _sales_run_summary
 
@@ -111,6 +113,10 @@ _INBOUND_REPLY_KEY = re.compile(
     r"^inbound_email:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):RECEIVED$"
 )
+_INBOUND_QUALIFIED_KEY = re.compile(
+    r"^inbound_email:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):QUALIFIED$"
+)
 _OUTBOUND_KINDS = {
     InboxTimelineKind.EMAIL_SENT,
     InboxTimelineKind.EMAIL_FAILED,
@@ -134,9 +140,25 @@ def _inbound_email_id_from_key(dedupe_key: str) -> str | None:
 
 
 def _inbound_email_id(event: ActivityEvent) -> str | None:
-    if event.title != "Customer reply received":
-        return None
-    return _inbound_email_id_from_key(event.dedupe_key)
+    if event.title == "Customer reply received":
+        return _inbound_email_id_from_key(event.dedupe_key)
+    if event.title == "Lead qualified":
+        match = _INBOUND_QUALIFIED_KEY.fullmatch(event.dedupe_key)
+        if match is not None:
+            return match.group(1)
+    return None
+
+
+def _qualification_highlights(
+    row: LeadQualification | None,
+) -> tuple[str | None, str | None, list[str]]:
+    if row is None or not isinstance(row.result, dict):
+        return None, None, []
+    try:
+        analysis = LeadQualificationAnalysis.model_validate(row.result)
+    except ValidationError:
+        return None, None, []
+    return analysis.intent.value, analysis.qualification.value, analysis.buying_signals[:8]
 
 
 def _preview(text: str | None) -> str | None:
@@ -394,6 +416,12 @@ class InboxService:
         follow_ups = self.follow_ups.latest_for_leads(organization_id, lead_ids)
         pending_follow_ups = self.follow_ups.pending_lead_ids(organization_id, lead_ids)
         activities = self.events.latest_for_leads(organization_id, lead_ids)
+        reply_ids = [
+            email_id
+            for activity in activities.values()
+            if (email_id := _inbound_email_id(activity)) is not None
+        ]
+        reply_emails = self.inbound_emails.get_by_ids(organization_id, reply_ids)
 
         run_send_ids = [row.email_send_id for row in runs.values() if row.email_send_id]
         run_follow_ids = [row.follow_up_id for row in runs.values() if row.follow_up_id]
@@ -441,7 +469,7 @@ class InboxService:
                     ActivityEventType(activity.type) if activity is not None else None
                 ),
                 last_activity_title=activity.title if activity is not None else None,
-                preview=self._item_preview(lead, draft, send),
+                preview=self._item_preview(lead, draft, send, activity, reply_emails),
                 latest_draft=_draft_summary(draft),
                 latest_email_status=(
                     LeadEmailSendStatus(send.status).value if send is not None else None
@@ -457,7 +485,18 @@ class InboxService:
         lead: Lead,
         draft: LeadResponseDraft | None,
         send: LeadEmailSend | None,
+        activity: ActivityEvent | None,
+        reply_emails: dict[str, InboundEmail],
     ) -> str | None:
+        if activity is not None:
+            email_id = _inbound_email_id(activity)
+            inbound = reply_emails.get(email_id) if email_id is not None else None
+            if (
+                inbound is not None
+                and inbound.lead_id == lead.id
+                and inbound.body_text
+            ):
+                return _preview(inbound.body_text)
         if send is not None and send.body_text:
             return _preview(send.body_text)
         if draft is not None and draft.current_response:
@@ -607,6 +646,10 @@ class InboxService:
                 and event.entity_id in qualifications
                 else None
             )
+            qualification = (
+                qualifications.get(qualification_id) if qualification_id is not None else None
+            )
+            intent, outcome, signals = _qualification_highlights(qualification)
             items.append(
                 InboxTimelineItem(
                     id=event.id,
@@ -631,6 +674,10 @@ class InboxService:
                     follow_up_execution_id=follow_up_execution_id,
                     sales_run_id=sales_run_id,
                     qualification_id=qualification_id,
+                    inbound_email_id=_inbound_email_id(event),
+                    qualification_intent=intent,
+                    qualification_outcome=outcome,
+                    buying_signals=signals,
                 )
             )
         items.sort(key=lambda row: (row.occurred_at, row.id))

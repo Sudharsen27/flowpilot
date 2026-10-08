@@ -34,6 +34,10 @@ type ConversationWorkspaceProps = {
   error?: string | null;
   onRetry?: () => void;
   onBack?: () => void;
+  qualifyingInboundEmailId?: string | null;
+  qualifyError?: string | null;
+  qualifyErrorInboundId?: string | null;
+  onQualifyReply?: (inboundEmailId: string) => void;
 };
 
 export function ConversationWorkspace({
@@ -42,6 +46,10 @@ export function ConversationWorkspace({
   error = null,
   onRetry,
   onBack,
+  qualifyingInboundEmailId = null,
+  qualifyError = null,
+  qualifyErrorInboundId = null,
+  onQualifyReply,
 }: ConversationWorkspaceProps) {
   const lead = conversation?.lead;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -184,7 +192,13 @@ export function ConversationWorkspace({
                 </p>
               </div>
             ) : (
-              <ConversationTimeline items={conversation.items} />
+              <ConversationTimeline
+                items={conversation.items}
+                qualifyingInboundEmailId={qualifyingInboundEmailId}
+                qualifyError={qualifyError}
+                qualifyErrorInboundId={qualifyErrorInboundId}
+                onQualifyReply={onQualifyReply}
+              />
             )}
           </section>
 

@@ -43,6 +43,19 @@ class InboundEmailRepository:
         )
         return self.session.scalars(statement).one_or_none()
 
+    def get_by_ids(
+        self,
+        organization_id: str,
+        email_ids: list[str],
+    ) -> dict[str, InboundEmail]:
+        if not email_ids:
+            return {}
+        statement = select(InboundEmail).where(
+            InboundEmail.organization_id == organization_id,
+            InboundEmail.id.in_(email_ids),
+        )
+        return {row.id: row for row in self.session.scalars(statement)}
+
     def get_for_lead(
         self,
         organization_id: str,

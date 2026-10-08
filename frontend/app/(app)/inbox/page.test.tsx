@@ -117,6 +117,7 @@ const timelineItems: InboxTimelineItem[] = [
     activity_id: "evt-reply",
     is_draft: false,
     is_sent_message: false,
+    inbound_email_id: "email-1",
   },
   {
     id: "evt-2",
@@ -403,6 +404,8 @@ describe("AI Inbox page", () => {
       screen.getByText(/Prepared by FlowPilot AI · Not sent to the customer/i),
     ).toBeVisible();
     expect(screen.getByRole("heading", { name: "Customer reply" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Qualify this reply" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send reply" })).toBeDisabled();
     expect(screen.getByText("I can talk Thursday.")).toBeVisible();
     const timeline = screen.getByRole("list", { name: "Conversation timeline" });
     const headings = within(timeline).getAllByRole("heading");

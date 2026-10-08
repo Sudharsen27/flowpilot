@@ -9,6 +9,7 @@ import {
 
 import { AiBadge } from "@/components/ai/ai-badge";
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
@@ -16,12 +17,32 @@ import type {
   ActivityActorType,
   InboxTimelineItem,
   InboxTimelineKind,
+  LeadAiQualification,
+  LeadIntent,
 } from "@/types/api";
 
 type ConversationTimelineProps = {
   items: InboxTimelineItem[];
   emptyTitle?: string;
   emptyDescription?: string;
+  qualifyingInboundEmailId?: string | null;
+  qualifyError?: string | null;
+  qualifyErrorInboundId?: string | null;
+  onQualifyReply?: (inboundEmailId: string) => void;
+};
+
+const intentLabels: Record<LeadIntent, string> = {
+  REQUEST_DEMO: "Demo request",
+  REQUEST_PRICING: "Pricing request",
+  GENERAL_ENQUIRY: "General enquiry",
+  SUPPORT_REQUEST: "Support request",
+  OTHER: "Other intent",
+};
+
+const outcomeLabels: Record<LeadAiQualification, string> = {
+  QUALIFIED: "Qualified",
+  UNQUALIFIED: "Unqualified",
+  NEEDS_MORE_INFORMATION: "Needs more information",
 };
 
 type TimelineLane =
@@ -156,7 +177,21 @@ export function ConversationTimeline({
   items,
   emptyTitle = "No timeline events yet",
   emptyDescription = "Activity for this lead will appear here as customer replies, drafts, emails, Sales Runs, and follow-ups are recorded.",
+  qualifyingInboundEmailId = null,
+  qualifyError = null,
+  qualifyErrorInboundId = null,
+  onQualifyReply,
 }: ConversationTimelineProps) {
+  const qualifiedReplyIds = new Set(
+    items
+      .filter(
+        (item) =>
+          item.kind === "QUALIFICATION_COMPLETED" &&
+          item.inbound_email_id &&
+          item.qualification_outcome,
+      )
+      .map((item) => item.inbound_email_id),
+  );
   if (items.length === 0) {
     return (
       <EmptyState
@@ -257,6 +292,26 @@ export function ConversationTimeline({
                 </p>
               ) : null}
 
+              {item.kind === "QUALIFICATION_COMPLETED" &&
+              item.qualification_outcome ? (
+                <div className="mt-3 grid gap-2">
+                  <p className="text-sm font-medium">
+                    {outcomeLabels[item.qualification_outcome] ??
+                      item.qualification_outcome}
+                    {item.qualification_intent
+                      ? ` · ${intentLabels[item.qualification_intent as LeadIntent] ?? item.qualification_intent}`
+                      : null}
+                  </p>
+                  {item.buying_signals && item.buying_signals.length > 0 ? (
+                    <ul className="text-muted-foreground grid gap-1 text-sm">
+                      {item.buying_signals.map((signal) => (
+                        <li key={signal}>{signal}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+
               {item.body ? (
                 <div
                   className={cn(
@@ -270,6 +325,37 @@ export function ConversationTimeline({
                 >
                   {item.body}
                 </div>
+              ) : null}
+
+              {item.kind === "CUSTOMER_REPLY" && item.inbound_email_id ? (
+                qualifiedReplyIds.has(item.inbound_email_id) ? (
+                  <p className="text-muted-foreground mt-3 text-xs">
+                    This reply has been qualified. No email was sent.
+                  </p>
+                ) : onQualifyReply ? (
+                  <div className="mt-3 grid justify-items-start gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={qualifyingInboundEmailId === item.inbound_email_id}
+                      onClick={() => {
+                        if (item.inbound_email_id) onQualifyReply(item.inbound_email_id);
+                      }}
+                    >
+                      {qualifyingInboundEmailId === item.inbound_email_id
+                        ? "Qualifying reply"
+                        : "Qualify this reply"}
+                    </Button>
+                    <p className="text-muted-foreground text-xs">
+                      Reads this reply only. It does not draft or send an email.
+                    </p>
+                    {qualifyError && qualifyErrorInboundId === item.inbound_email_id ? (
+                      <p className="text-destructive text-xs" role="alert">
+                        {qualifyError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null
               ) : null}
 
               {failed ? (

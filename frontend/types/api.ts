@@ -364,9 +364,9 @@ export type LeadQualificationResult = {
   duration_ms: number | null;
 };
 
-export type LeadQualifyRequest = {
-  enquiry: string;
-};
+export type LeadQualifyRequest =
+  | { enquiry: string }
+  | { inbound_email_id: string };
 
 export type LeadResponseDraftSummary = {
   id: string;
@@ -952,6 +952,10 @@ export type InboxTimelineItem = {
   follow_up_execution_id?: string | null;
   sales_run_id?: string | null;
   qualification_id?: string | null;
+  inbound_email_id?: string | null;
+  qualification_intent?: string | null;
+  qualification_outcome?: LeadAiQualification | null;
+  buying_signals?: string[];
 };
 
 export type InboxConversationResponse = {

@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { ConversationTimeline } from "@/components/ai-inbox/conversation-timeline";
 import type { InboxTimelineItem } from "@/types/api";
@@ -97,5 +98,62 @@ describe("Conversation timeline human attention", () => {
       "Customer reply",
       "Email sent",
     ]);
+  });
+
+  it("qualifies an unmatched reply and shows an existing qualification without sending", async () => {
+    const user = userEvent.setup();
+    const onQualifyReply = vi.fn();
+    const { rerender } = render(
+      <ConversationTimeline
+        items={[
+          item({
+            id: "evt-reply",
+            kind: "CUSTOMER_REPLY",
+            direction: "inbound",
+            title: "Customer reply received",
+            body: "I can talk Thursday.",
+            actor_type: "PUBLIC_VISITOR",
+            inbound_email_id: "email-1",
+          }),
+        ]}
+        onQualifyReply={onQualifyReply}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Qualify this reply" }));
+    expect(onQualifyReply).toHaveBeenCalledWith("email-1");
+    expect(screen.getByText("Reads this reply only. It does not draft or send an email.")).toBeVisible();
+
+    rerender(
+      <ConversationTimeline
+        items={[
+          item({
+            id: "evt-reply",
+            kind: "CUSTOMER_REPLY",
+            direction: "inbound",
+            title: "Customer reply received",
+            body: "I can talk Thursday.",
+            actor_type: "PUBLIC_VISITOR",
+            inbound_email_id: "email-1",
+          }),
+          item({
+            id: "evt-qualified",
+            kind: "QUALIFICATION_COMPLETED",
+            title: "Lead qualified",
+            actor_type: "AGENT",
+            inbound_email_id: "email-1",
+            qualification_intent: "REQUEST_DEMO",
+            qualification_outcome: "NEEDS_MORE_INFORMATION",
+            buying_signals: ["Asked to schedule a demo"],
+            occurred_at: "2026-09-17T10:00:00Z",
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Qualify this reply" })).not.toBeInTheDocument();
+    expect(screen.getByText("This reply has been qualified. No email was sent.")).toBeVisible();
+    expect(screen.getByText("Needs more information · Demo request")).toBeVisible();
+    expect(screen.getByText("Asked to schedule a demo")).toBeVisible();
   });
 });

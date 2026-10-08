@@ -16,6 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api/client";
 import { getInbox, getInboxConversation } from "@/lib/api/inbox";
+import { qualifyLead } from "@/lib/api/leads";
 import {
   INBOX_PAGE_SIZE,
   type InboxUrlState,
@@ -104,6 +105,13 @@ export function InboxWorkspace({ onSummary }: InboxWorkspaceProps) {
     useState<InboxConversationResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(Boolean(urlState.leadId));
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [qualifyingInboundEmailId, setQualifyingInboundEmailId] = useState<
+    string | null
+  >(null);
+  const [qualifyError, setQualifyError] = useState<string | null>(null);
+  const [qualifyErrorInboundId, setQualifyErrorInboundId] = useState<
+    string | null
+  >(null);
   const requestLeadRef = useRef<string | null>(urlState.leadId);
 
   if (urlState.q !== trackedUrlQuery) {
@@ -237,6 +245,29 @@ export function InboxWorkspace({ onSummary }: InboxWorkspaceProps) {
     setLoading(true);
     setError(null);
     setRetryKey((value) => value + 1);
+  }
+
+  async function qualifyReply(inboundEmailId: string) {
+    const leadId = urlState.leadId;
+    if (!leadId || qualifyingInboundEmailId) return;
+    setQualifyingInboundEmailId(inboundEmailId);
+    setQualifyError(null);
+    setQualifyErrorInboundId(null);
+    try {
+      await qualifyLead(leadId, { inbound_email_id: inboundEmailId });
+      setRetryKey((value) => value + 1);
+    } catch (cause: unknown) {
+      setQualifyErrorInboundId(inboundEmailId);
+      setQualifyError(
+        cause instanceof ApiError && cause.status === 409
+          ? "This reply is already being qualified."
+          : cause instanceof ApiError && cause.status === 503
+            ? "AI provider is not configured."
+            : "The reply could not be qualified. Please try again.",
+      );
+    } finally {
+      setQualifyingInboundEmailId(null);
+    }
   }
 
   function retryDetail() {
@@ -412,6 +443,10 @@ export function InboxWorkspace({ onSummary }: InboxWorkspaceProps) {
             error={activeDetailError}
             onRetry={selectedLeadId ? retryDetail : undefined}
             onBack={() => setMobileView("conversations")}
+            qualifyingInboundEmailId={qualifyingInboundEmailId}
+            qualifyError={qualifyError}
+            qualifyErrorInboundId={qualifyErrorInboundId}
+            onQualifyReply={selectedLeadId ? qualifyReply : undefined}
           />
         </div>
       </div>
