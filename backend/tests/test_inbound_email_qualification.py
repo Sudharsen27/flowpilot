@@ -1,24 +1,29 @@
 """Explicit qualification of one matched inbound reply. No Sales Run or draft."""
 
+import os
+import tempfile
 import threading
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.exceptions import ConflictError, ProviderError
+from app.db.base import Base
 from app.models.activity_event import ActivityEvent
 from app.models.inbound_email import InboundEmail, InboundEmailStatus
-from app.models.lead import Lead
+from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.lead_qualification import LeadQualification
 from app.models.lead_response_draft import LeadResponseDraft
+from app.models.organization import Organization
 from app.models.sales_run import SalesRun
 from app.services.human_escalation_decision_service import HumanEscalationDecisionService
 from app.services.lead_qualification_service import LeadQualificationService
-from tests.conftest import TestingSessionLocal
 from tests.test_agent_runtime import _headers
 from tests.test_lead_qualification import (
     ENQUIRY,
@@ -329,18 +334,51 @@ def test_enquiry_qualification_is_unchanged(client: TestClient, db: Session) -> 
     assert len(provider.requests) == 1
 
 
-def test_concurrent_inbound_qualification_calls_the_provider_once(
-    client: TestClient,
-    db: Session,
-) -> None:
-    created = _auth(client)
-    organization_id = created["organization"]["id"]
-    lead = _create(client, created["access_token"]).json()
-    inbound = _email(db, organization_id, lead_id=lead["id"])
+def test_concurrent_inbound_qualification_calls_the_provider_once() -> None:
+    # The suite engine is one shared SQLite connection, so two sessions cannot
+    # commit independent transactions. A file database gives each session its
+    # own connection. The busy timeout lets the loser wait out the short claim
+    # transaction and then lose the unique constraint, instead of failing with
+    # "database is locked" while that claim is still committing.
+    database_fd, database_name = tempfile.mkstemp(suffix=".sqlite")
+    os.close(database_fd)
+    database_path = Path(database_name)
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False, "timeout": 5},
+        poolclass=NullPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+    seed = session_factory()
+    organization = Organization(name="Acme", slug=f"acme-{uuid4().hex[:8]}")
+    seed.add(organization)
+    seed.flush()
+    lead = Lead(
+        organization_id=organization.id,
+        name="Ada Prospect",
+        email="ada@customer.example",
+        source=LeadSource.MANUAL,
+        status=LeadStatus.NEW,
+        enquiry="Stored enquiry",
+    )
+    seed.add(lead)
+    seed.flush()
+    inbound = _email(seed, organization.id, lead_id=lead.id)
+    organization_id = organization.id
+    lead_id = lead.id
+    inbound_id = inbound.id
+    seed.close()
     provider = FakeStructuredProvider()
     calls = 0
     calls_lock = threading.Lock()
     entered = threading.Event()
+    lost = threading.Event()
     release = threading.Event()
 
     def generate(request: object) -> object:
@@ -356,18 +394,19 @@ def test_concurrent_inbound_qualification_calls_the_provider_once(
     outcome_lock = threading.Lock()
 
     def attempt() -> None:
-        session = TestingSessionLocal()
+        session = session_factory()
         try:
             row = LeadQualificationService(session, provider).qualify_inbound_email(
                 organization_id=organization_id,
-                lead_id=lead["id"],
-                inbound_email_id=inbound.id,
+                lead_id=lead_id,
+                inbound_email_id=inbound_id,
             )
             with outcome_lock:
                 outcomes.append(row.id)
         except ConflictError:
             with outcome_lock:
                 outcomes.append("conflict")
+            lost.set()
         except Exception as exc:
             with outcome_lock:
                 outcomes.append(type(exc).__name__)
@@ -379,21 +418,33 @@ def test_concurrent_inbound_qualification_calls_the_provider_once(
     first.start()
     second.start()
     assert entered.wait(timeout=3)
+    assert lost.wait(timeout=3)
     release.set()
     first.join(timeout=3)
     second.join(timeout=3)
     assert calls == 1
     assert first.is_alive() is False
     assert second.is_alive() is False
-    assert "conflict" in outcomes
-    saved = [item for item in outcomes if item not in {"conflict", "PendingRollbackError"}]
-    if saved:
-        check = TestingSessionLocal()
-        try:
-            assert _qualification_count(check, organization_id) == 1
-            activities = _qualified_activities(check, organization_id)
-        finally:
-            check.close()
+    assert len(outcomes) == 2
+    assert outcomes.count("conflict") == 1
+    saved = [item for item in outcomes if item != "conflict"]
+    assert len(saved) == 1
+    check = session_factory()
+    try:
+        assert _qualification_count(check, organization_id) == 1
+        stored = check.scalar(
+            select(LeadQualification).where(LeadQualification.organization_id == organization_id)
+        )
+        assert stored is not None
+        assert stored.id == saved[0]
+        assert stored.status == "COMPLETED"
+        activities = _qualified_activities(check, organization_id)
         assert len(activities) == 1
-        assert activities[0].dedupe_key == f"inbound_email:{inbound.id}:QUALIFIED"
+        assert activities[0].dedupe_key == f"inbound_email:{inbound_id}:QUALIFIED"
         assert activities[0].title == "Lead qualified"
+        assert activities[0].status == "COMPLETED"
+    finally:
+        check.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+        database_path.unlink(missing_ok=True)
