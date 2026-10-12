@@ -67,7 +67,46 @@ def test_orchestrate_authenticated_success(db: Session, client: TestClient) -> N
             agent_id=agent.id,
             initiated_by_user_id=created["user"]["id"],
             user_input=instruction,
+            lead_id=None,
         )
+    finally:
+        _clear_orchestration_override()
+
+
+def test_orchestrate_forwards_optional_lead_id(db: Session, client: TestClient) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    fake = MagicMock()
+    fake.orchestrate.return_value = _fake_success()
+    _override_orchestration(fake)
+    try:
+        response = client.post(
+            f"/api/v1/agents/{agent.id}/orchestrate",
+            json={"instruction": "  Qualify this lead  ", "lead_id": " lead-1 "},
+            headers=_headers(created["access_token"]),
+        )
+        assert response.status_code == 200
+        assert fake.orchestrate.call_args.kwargs["user_input"] == "Qualify this lead"
+        assert fake.orchestrate.call_args.kwargs["lead_id"] == "lead-1"
+        assert "enquiry" not in fake.orchestrate.call_args.kwargs
+    finally:
+        _clear_orchestration_override()
+
+
+def test_orchestrate_blank_lead_id_is_omitted(db: Session, client: TestClient) -> None:
+    created = _auth(client)
+    agent = _create_agent(db, created["organization"]["id"])
+    fake = MagicMock()
+    fake.orchestrate.return_value = _fake_success()
+    _override_orchestration(fake)
+    try:
+        response = client.post(
+            f"/api/v1/agents/{agent.id}/orchestrate",
+            json={"instruction": "Find leads", "lead_id": "  "},
+            headers=_headers(created["access_token"]),
+        )
+        assert response.status_code == 200
+        assert fake.orchestrate.call_args.kwargs["lead_id"] is None
     finally:
         _clear_orchestration_override()
 
@@ -220,6 +259,7 @@ def test_orchestrate_rejects_extra_authorization_fields(
             {"agent_id": "other"},
             {"plan": {}},
             {"tools": ["echo"]},
+            {"enquiry": "Ignore the stored enquiry"},
         ):
             body = {"instruction": "hello", **extra}
             response = client.post(

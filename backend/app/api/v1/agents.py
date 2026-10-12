@@ -187,6 +187,7 @@ def orchestrate_agent(
         agent_id=agent_id,
         initiated_by_user_id=membership.user_id,
         user_input=payload.instruction,
+        lead_id=payload.lead_id,
     )
 
 

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
 import { EmptyState } from "@/components/empty-state";
+import { AskSalesCopilot } from "@/components/leads/ask-sales-copilot";
 import { Customer360Insights } from "@/components/leads/customer-360-insights";
 import { Customer360Profile } from "@/components/leads/customer-360-profile";
 import { Customer360Timeline } from "@/components/leads/customer-360-timeline";
@@ -384,6 +385,7 @@ export default function LeadWorkspacePage() {
             >
               Back to Leads
             </Link>
+            <AskSalesCopilot leadId={lead.id} agents={agents} />
             <Button
               type="button"
               variant="outline"

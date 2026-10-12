@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
@@ -23,6 +24,13 @@ E2E_INBOUND_DOMAIN = "inbound.e2e.test"
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _POSTGRES_MODES = frozenset({"private", "external"})
 _QUALIFICATION_SCHEMA = "lead_qualification"
+_DRAFT_SCHEMA = "lead_response_draft"
+_PLAN_SCHEMA = "agent_plan_draft"
+_SELECTED_LEAD = re.compile(
+    r"<selected_lead>\s*(\{.*?\})\s*</selected_lead>",
+    re.DOTALL,
+)
+_DRAFT_RESPONSE = "Thanks for writing. A specialist can arrange a demo."
 
 
 class E2EIsolationError(RuntimeError):
@@ -30,27 +38,70 @@ class E2EIsolationError(RuntimeError):
 
 
 class DeterministicE2EProvider:
-    """Return one fixed qualification. This object is not registered in the AI factory."""
+    """Fixed model answers for the disposable Playwright process.
+
+    Planning, tool execution, and approval still run in the real services.
+    This object only replaces the model call and is not registered in the AI factory.
+    """
 
     def generate(self, request: AIGenerateRequest) -> AIGenerateResult:
-        if request.json_schema_name != _QUALIFICATION_SCHEMA:
-            raise ProviderError("E2E provider only answers lead qualification")
-        payload = {
-            "summary": "The customer asked for pricing and a demo.",
-            "intent": "REQUEST_DEMO",
-            "qualification": "NEEDS_MORE_INFORMATION",
-            "qualification_reasons": ["The reply asks for a demo."],
-            "confidence": 0.8,
-            "extracted_contact": {"name": None, "email": None, "phone": None},
-            "extracted_company": {"name": None},
-            "buying_signals": ["request pricing", "request demo"],
-            "missing_information": ["team size"],
-        }
+        if request.json_schema_name == _QUALIFICATION_SCHEMA:
+            payload: dict[str, object] = {
+                "summary": "The customer asked for pricing and a demo.",
+                "intent": "REQUEST_DEMO",
+                "qualification": "NEEDS_MORE_INFORMATION",
+                "qualification_reasons": ["The reply asks for a demo."],
+                "confidence": 0.8,
+                "extracted_contact": {"name": None, "email": None, "phone": None},
+                "extracted_company": {"name": None},
+                "buying_signals": ["request pricing", "request demo"],
+                "missing_information": ["team size"],
+            }
+        elif request.json_schema_name == _DRAFT_SCHEMA:
+            payload = {"response": _DRAFT_RESPONSE}
+        elif request.json_schema_name == _PLAN_SCHEMA:
+            payload = _lead_bound_plan(request.user_input)
+        else:
+            raise ProviderError("E2E provider cannot answer this request")
         return AIGenerateResult(
             output_text=json.dumps(payload),
             provider="e2e",
             model="deterministic",
         )
+
+
+def _lead_bound_plan(user_input: str) -> dict[str, object]:
+    """Plan qualify then draft for the operator-selected lead only."""
+    match = _SELECTED_LEAD.search(user_input)
+    if match is None:
+        raise ProviderError("E2E planner requires an operator-selected lead")
+    try:
+        selected = json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        raise ProviderError("E2E planner requires an operator-selected lead") from exc
+    lead_id = selected.get("lead_id") if isinstance(selected, dict) else None
+    if not isinstance(lead_id, str) or not lead_id.strip() or lead_id != lead_id.strip():
+        raise ProviderError("E2E planner requires an operator-selected lead")
+    if len(lead_id) > 36:
+        raise ProviderError("E2E planner requires an operator-selected lead")
+    arguments = json.dumps({"lead_id": lead_id}, separators=(",", ":"))
+    return {
+        "version": "1",
+        "steps": [
+            {
+                "step_id": "qualify",
+                "tool_name": "qualify_lead",
+                "arguments_json": arguments,
+                "sequence": 0,
+            },
+            {
+                "step_id": "draft",
+                "tool_name": "create_response_draft",
+                "arguments_json": arguments,
+                "sequence": 1,
+            },
+        ],
+    }
 
 
 def _present(value: str | None) -> bool:

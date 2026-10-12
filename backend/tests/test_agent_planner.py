@@ -396,6 +396,51 @@ def test_agent_planner_satisfies_ai_provider_protocol() -> None:
     assert AgentPlanner(provider, registry).plan("p", _echo_defs(registry)).success
 
 
+def test_planner_passes_selected_lead_as_untrusted_data(db: Session) -> None:
+    from app.tools import build_default_tool_registry
+
+    registry = build_default_tool_registry(db)
+    provider = ScriptedPlannerProvider(
+        payloads=[
+            _draft_plan(_draft_step("s1", "qualify_lead", {"lead_id": "lead-1"}, 0))
+        ]
+    )
+    result = AgentPlanner(provider, registry).plan(
+        "Qualify this lead",
+        registry.list_available(),
+        PlannerContext(lead_id="lead-1"),
+    )
+    assert result.success is True
+    message = provider.calls[0].user_input
+    assert "<selected_lead>" in message
+    assert '"lead_id":"lead-1"' in message
+    assert "organization_id" not in message
+    assert "user_id" not in message
+    assert "role" not in message
+
+
+def test_planner_rejects_a_plan_that_switches_leads(db: Session) -> None:
+    from app.tools import build_default_tool_registry
+
+    registry = build_default_tool_registry(db)
+    provider = ScriptedPlannerProvider(
+        payloads=[
+            _draft_plan(
+                _draft_step("s1", "qualify_lead", {"lead_id": "lead-other"}, 0)
+            )
+        ]
+    )
+    result = AgentPlanner(provider, registry).plan(
+        "Qualify a different lead",
+        registry.list_available(),
+        PlannerContext(lead_id="lead-selected"),
+    )
+    assert result.success is False
+    assert result.failure_reason == PlannerFailureReason.VALIDATION_FAILED
+    assert result.plan is None
+    assert result.validation_errors[0].code == "LEAD_MISMATCH"
+
+
 def test_planner_does_not_pass_auth_context_into_prompt() -> None:
     registry = _echo_registry()
     provider = ScriptedPlannerProvider(

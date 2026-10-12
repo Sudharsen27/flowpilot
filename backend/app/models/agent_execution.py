@@ -52,6 +52,15 @@ class AgentExecution(Base):
             name="fk_agent_executions_agent_organization",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "lead_id"],
+            ["leads.organization_id", "leads.id"],
+            name="fk_agent_executions_lead_organization",
+            # SQLAlchemy accepts only the plain SET NULL phrase. PostgreSQL
+            # revision 028 narrows that action to lead_id so organization_id
+            # stays set when the lead is deleted.
+            ondelete="SET NULL",
+        ),
         CheckConstraint(
             "status IN ('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED')",
             name="ck_agent_executions_status",
@@ -79,6 +88,7 @@ class AgentExecution(Base):
         index=True,
     )
     agent_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    lead_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     initiated_by_user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="SET NULL"),

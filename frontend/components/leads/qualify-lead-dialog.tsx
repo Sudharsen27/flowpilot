@@ -50,7 +50,7 @@ export function QualifyLeadDialog({
   onOpenChange,
   onCompleted,
 }: QualifyLeadDialogProps) {
-  const [enquiry, setEnquiry] = useState(lead?.notes ?? "");
+  const [enquiry, setEnquiry] = useState(lead?.enquiry?.trim() ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LeadQualificationResult | null>(null);
@@ -81,7 +81,7 @@ export function QualifyLeadDialog({
           setResult(null);
           setError(null);
           setPending(false);
-          setEnquiry(lead?.notes ?? "");
+          setEnquiry(lead?.enquiry?.trim() ?? "");
         }
         onOpenChange(next);
       }}

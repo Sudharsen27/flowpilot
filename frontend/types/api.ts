@@ -109,6 +109,7 @@ export type AgentExecutionRequest = {
 
 export type AgentOrchestrateRequest = {
   instruction: string;
+  lead_id?: string;
 };
 
 export type OrchestrationOutcome =

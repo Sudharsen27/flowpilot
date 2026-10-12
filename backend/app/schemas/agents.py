@@ -45,11 +45,12 @@ class AgentExecutionRequest(BaseModel):
 
 
 class AgentOrchestrateRequest(BaseModel):
-    """Natural-language instruction only. Auth/tenant fields are server-side."""
+    """Instruction plus an optional lead selector. Auth stays server-side."""
 
     model_config = ConfigDict(extra="forbid")
 
     instruction: str = Field(min_length=1, max_length=8000)
+    lead_id: str | None = Field(default=None, min_length=1, max_length=36)
 
     @field_validator("instruction")
     @classmethod
@@ -58,6 +59,14 @@ class AgentOrchestrateRequest(BaseModel):
         if not stripped:
             raise ValueError("Instruction is required")
         return stripped
+
+    @field_validator("lead_id", mode="before")
+    @classmethod
+    def blank_lead_id(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
 
 
 class AgentExecutionCreated(BaseModel):

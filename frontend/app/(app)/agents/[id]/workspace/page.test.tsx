@@ -6,15 +6,23 @@ import AgentWorkspacePage from "@/app/(app)/agents/[id]/workspace/page";
 import { INSTRUCTION_MAX_LENGTH } from "@/components/agents/agent-workspace-panel";
 import { ApiError } from "@/lib/api/client";
 import { getAgent, orchestrateAgent } from "@/lib/api/agents";
-import type { Agent, OrchestrationResult } from "@/types/api";
+import { getLead } from "@/lib/api/leads";
+import type { Agent, Lead, OrchestrationResult } from "@/types/api";
+
+const search = vi.hoisted(() => ({ value: "" }));
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "agent-real-1" }),
+  useSearchParams: () => new URLSearchParams(search.value),
 }));
 
 vi.mock("@/lib/api/agents", () => ({
   getAgent: vi.fn(),
   orchestrateAgent: vi.fn(),
+}));
+
+vi.mock("@/lib/api/leads", () => ({
+  getLead: vi.fn(),
 }));
 
 const agent: Agent = {
@@ -30,6 +38,21 @@ const agent: Agent = {
 
 const getAgentMock = vi.mocked(getAgent);
 const orchestrateAgentMock = vi.mocked(orchestrateAgent);
+const getLeadMock = vi.mocked(getLead);
+
+const boundLead: Lead = {
+  id: "lead-42",
+  name: "Ada Prospect",
+  email: "ada@example.com",
+  phone: null,
+  company: "Acme",
+  source: "WEBSITE",
+  status: "NEW",
+  notes: "Internal note that is not the enquiry.",
+  enquiry: "We need an automation platform and would like a demo next week.",
+  created_at: "2026-09-01T10:00:00Z",
+  updated_at: "2026-09-10T10:00:00Z",
+};
 
 function successResult(
   overrides: Partial<OrchestrationResult> = {},
@@ -91,8 +114,10 @@ function successResult(
 
 describe("Agent Workspace page", () => {
   beforeEach(() => {
+    search.value = "";
     getAgentMock.mockReset();
     orchestrateAgentMock.mockReset();
+    getLeadMock.mockReset();
     getAgentMock.mockResolvedValue(agent);
   });
 
@@ -501,6 +526,37 @@ describe("Agent Workspace page", () => {
     await user.paste("x".repeat(INSTRUCTION_MAX_LENGTH + 1));
     expect(screen.getByRole("button", { name: "Run Agent" })).toBeDisabled();
     expect(orchestrateAgentMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the stored enquiry and submits the selected lead", async () => {
+    const user = userEvent.setup();
+    search.value = "lead=lead-42";
+    getLeadMock.mockResolvedValue(boundLead);
+    orchestrateAgentMock.mockResolvedValue(successResult());
+    render(<AgentWorkspacePage />);
+    const enquiry = await screen.findByRole("textbox", { name: "Enquiry" });
+    expect(enquiry).toHaveValue(boundLead.enquiry);
+    expect(enquiry).toHaveAttribute("readonly");
+    expect(
+      screen.queryByDisplayValue("Internal note that is not the enquiry."),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    await user.type(
+      screen.getByRole("textbox", { name: /What would you like me to do/i }),
+      "Draft a reply for this lead.",
+    );
+    await user.click(screen.getByRole("button", { name: "Run Agent" }));
+    await waitFor(() => expect(orchestrateAgentMock).toHaveBeenCalled());
+    expect(orchestrateAgentMock.mock.calls[0]?.[1]).toEqual({
+      instruction: "Draft a reply for this lead.",
+      lead_id: "lead-42",
+    });
+    expect(orchestrateAgentMock.mock.calls[0]?.[1]).not.toHaveProperty(
+      "enquiry",
+    );
+    expect(orchestrateAgentMock.mock.calls[0]?.[1]).not.toHaveProperty(
+      "organization_id",
+    );
   });
 
   it("shows agent not found", async () => {

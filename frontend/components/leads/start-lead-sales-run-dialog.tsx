@@ -66,7 +66,9 @@ export function StartLeadSalesRunDialog({
   onOpenChange,
   onCompleted,
 }: StartLeadSalesRunDialogProps) {
-  const [enquiry, setEnquiry] = useState(lead?.enquiry?.trim() ?? "");
+  const storedEnquiry = lead?.enquiry?.trim() ?? "";
+  const enquiryLocked = storedEnquiry.length > 0;
+  const [enquiry, setEnquiry] = useState(storedEnquiry);
   const [agentId, setAgentId] = useState("");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
@@ -114,7 +116,7 @@ export function StartLeadSalesRunDialog({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!lead || pending) return;
-    const trimmedEnquiry = enquiry.trim();
+    const trimmedEnquiry = enquiryLocked ? storedEnquiry : enquiry.trim();
     if (!trimmedEnquiry) {
       setFieldError("Enquiry is required.");
       return;
@@ -162,8 +164,8 @@ export function StartLeadSalesRunDialog({
             <AiBadge label="Agent" />
           </div>
           <DialogDescription>
-            This Sales Agent will qualify the enquiry and prepare a response for
-            review. It will not send the email.
+            This Sales Agent will qualify the enquiry stored on the lead and
+            prepare a response for review. It will not send the email.
           </DialogDescription>
         </DialogHeader>
         {agentsError ? (
@@ -218,9 +220,13 @@ export function StartLeadSalesRunDialog({
             >
               <Textarea
                 id="lead-sales-run-enquiry"
-                value={enquiry}
-                onChange={(event) => setEnquiry(event.target.value)}
+                value={enquiryLocked ? storedEnquiry : enquiry}
+                onChange={(event) => {
+                  if (!enquiryLocked) setEnquiry(event.target.value);
+                }}
                 maxLength={8000}
+                readOnly={enquiryLocked}
+                aria-readonly={enquiryLocked || undefined}
                 disabled={pending || agentsLoading}
                 aria-invalid={fieldError ? true : undefined}
               />

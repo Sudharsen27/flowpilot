@@ -118,6 +118,7 @@ class AgentExecutionService:
         agent_id: str,
         user_input: str,
         initiated_by_user_id: str | None = None,
+        lead_id: str | None = None,
     ) -> AgentExecutionCreated:
         agent = self.agents.get_by_id(organization_id, agent_id)
         if agent is None:
@@ -134,6 +135,7 @@ class AgentExecutionService:
         execution = AgentExecution(
             organization_id=organization_id,
             agent_id=agent.id,
+            lead_id=lead_id,
             initiated_by_user_id=initiated_by_user_id,
             status=AgentExecutionStatus.RUNNING,
             input={"text": user_input},

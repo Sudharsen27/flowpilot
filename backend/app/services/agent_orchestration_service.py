@@ -33,6 +33,7 @@ from app.services.agent_planner_service import (
     PlannerFailureReason,
     PlannerResult,
 )
+from app.services.lead_service import LeadService
 from app.services.plan_execution_service import PlanExecutionService
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools import build_default_tool_registry
@@ -140,6 +141,7 @@ class AgentOrchestrationService:
         initiated_by_user_id: str,
         user_input: str,
         correlation_id: str | None = None,
+        lead_id: str | None = None,
     ) -> OrchestrationResult:
         cleaned = user_input.strip()
         if not cleaned:
@@ -162,6 +164,11 @@ class AgentOrchestrationService:
             # Fail closed before any AgentExecution or planning.
             raise ForbiddenError("Not a member of this organization")
 
+        selected_lead_id = lead_id.strip() if lead_id and lead_id.strip() else None
+        if selected_lead_id is not None:
+            # 404 before an execution row exists. Tenant comes from the caller.
+            LeadService(self.session).get_or_raise(organization_id, selected_lead_id)
+
         if self.planner is None:
             return OrchestrationResult(
                 outcome=OrchestrationOutcome.PLANNING_FAILED,
@@ -175,6 +182,7 @@ class AgentOrchestrationService:
                 agent_id=agent_id,
                 user_input=cleaned,
                 initiated_by_user_id=initiated_by_user_id,
+                lead_id=selected_lead_id,
             )
         except (NotFoundError, ValidationError) as exc:
             return OrchestrationResult(
@@ -195,7 +203,7 @@ class AgentOrchestrationService:
         planner_result = self.planner.plan(
             cleaned,
             self.registry.list_available(),
-            PlannerContext(),
+            PlannerContext(lead_id=selected_lead_id),
         )
         if not planner_result.success or planner_result.plan is None:
             return self._finalize_planning_failure(

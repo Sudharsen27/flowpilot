@@ -582,5 +582,43 @@ describe("Agent API client", () => {
     expect(body).not.toHaveProperty("organization_id");
     expect(body).not.toHaveProperty("user_id");
     expect(body).not.toHaveProperty("role");
+    expect(body).not.toHaveProperty("lead_id");
+  });
+
+  it("posts orchestrate with the selected lead id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          execution_id: "exec-orch-2",
+          outcome: "SUCCESS",
+          execution_status: "COMPLETED",
+          plan_id: null,
+          approval_required: false,
+          completed_step_count: 0,
+          total_step_count: 0,
+          stopped_at_step_id: null,
+          step_results: [],
+          failure_category: null,
+          error: null,
+          provider: null,
+          model: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await orchestrateAgent("agent-1", {
+      instruction: "Qualify this lead",
+      lead_id: "lead-1",
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toEqual({
+      instruction: "Qualify this lead",
+      lead_id: "lead-1",
+    });
+    expect(body).not.toHaveProperty("enquiry");
+    expect(body).not.toHaveProperty("organization_id");
   });
 });

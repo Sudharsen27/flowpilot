@@ -124,7 +124,7 @@ export function DraftLeadResponseDialog({
   onOpenChange,
   onCompleted,
 }: DraftLeadResponseDialogProps) {
-  const [enquiry, setEnquiry] = useState(lead?.notes ?? "");
+  const [enquiry, setEnquiry] = useState(lead?.enquiry?.trim() ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LeadResponseDraftResult | null>(null);
@@ -288,7 +288,7 @@ export function DraftLeadResponseDialog({
           setConfirmingApprove(false);
           setConfirmingSend(false);
           setSending(false);
-          setEnquiry(lead?.notes ?? "");
+          setEnquiry(lead?.enquiry?.trim() ?? "");
         }
         onOpenChange(next);
       }}

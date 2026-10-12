@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
 
 from app.core.config import settings
+from app.tools.base import Tool
 from app.tools.plan import AgentPlan, AgentPlanStep
 from app.tools.registry import ToolRegistry
 
@@ -49,7 +50,9 @@ class PlanValidator:
             else settings.agent_plan_max_argument_bytes
         )
 
-    def validate(self, plan: AgentPlan) -> PlanValidationResult:
+    def validate(
+        self, plan: AgentPlan, *, bound_lead_id: str | None = None
+    ) -> PlanValidationResult:
         errors: list[PlanValidationIssue] = []
 
         if not plan.steps:
@@ -98,7 +101,7 @@ class PlanValidator:
             else:
                 sequences.add(step.sequence)
 
-            self._validate_step(step, errors)
+            self._validate_step(step, errors, bound_lead_id=bound_lead_id)
 
         if errors:
             return PlanValidationResult(valid=False, errors=errors)
@@ -123,7 +126,11 @@ class PlanValidator:
         return self.validate(plan)
 
     def _validate_step(
-        self, step: AgentPlanStep, errors: list[PlanValidationIssue]
+        self,
+        step: AgentPlanStep,
+        errors: list[PlanValidationIssue],
+        *,
+        bound_lead_id: str | None = None,
     ) -> None:
         try:
             encoded = json.dumps(step.arguments, default=str).encode("utf-8")
@@ -171,6 +178,34 @@ class PlanValidator:
                     step_id=step.step_id,
                 )
             )
+            return
+
+        if bound_lead_id and _tool_requires_lead_id(tool):
+            if step.arguments.get("lead_id") != bound_lead_id:
+                errors.append(
+                    PlanValidationIssue(
+                        code="LEAD_MISMATCH",
+                        message=(
+                            f"Tool '{step.tool_name}' must use the lead "
+                            "selected for this run"
+                        ),
+                        step_id=step.step_id,
+                    )
+                )
+
+
+def _tool_requires_lead_id(tool: Tool) -> bool:
+    schema = tool.definition().input_schema
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    required = schema.get("required")
+    return (
+        isinstance(properties, dict)
+        and "lead_id" in properties
+        and isinstance(required, list)
+        and "lead_id" in required
+    )
 
 
 def _first_pydantic_message(exc: PydanticValidationError) -> str:

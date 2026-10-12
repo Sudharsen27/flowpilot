@@ -86,7 +86,9 @@ class PlanExecutionService:
                 error=exc.detail,
             )
 
-        validation = self.validator.validate(plan)
+        validation = self.validator.validate(
+            plan, bound_lead_id=_bound_lead_id(self.executions, organization_id, execution_id)
+        )
         if not validation.valid:
             message = validation.errors[0].message if validation.errors else "Invalid plan"
             return PlanExecutionResult(
@@ -172,6 +174,18 @@ class PlanExecutionService:
             role=role,
             correlation_id=execution.id,
         )
+
+
+def _bound_lead_id(
+    executions: AgentExecutionRepository,
+    organization_id: str,
+    execution_id: str,
+) -> str | None:
+    """Lead selected for this run. Never read from the plan."""
+    execution = executions.get_by_id(organization_id, execution_id)
+    if execution is None:
+        return None
+    return execution.lead_id
 
 
 def _stop_reason_for_result(result: ToolResult) -> PlanStopReason | None:

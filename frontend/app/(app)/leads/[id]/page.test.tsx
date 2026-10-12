@@ -716,6 +716,7 @@ describe("Lead workspace", () => {
     await user.click(screen.getAllByRole("button", { name: "Start Sales Agent" })[0]!);
     expect(await screen.findByRole("heading", { name: "Start Sales Agent" })).toBeVisible();
     expect(screen.getByLabelText(/Enquiry/)).toHaveValue("We want a hosted demo");
+    expect(screen.getByLabelText(/Enquiry/)).toHaveAttribute("readonly");
     expect(screen.queryByText("lead-1")).not.toBeInTheDocument();
   });
 
@@ -835,5 +836,69 @@ describe("Lead workspace", () => {
       screen.getByRole("button", { name: "Resolve human attention" }),
     ).toBeEnabled();
     expect(screen.getByRole("heading", { name: "Human attention" })).toBeVisible();
+  });
+
+  it("opens the sales copilot for a ready sales agent", async () => {
+    render(<LeadWorkspacePage />);
+    expect(
+      await screen.findByRole("link", { name: "Ask Sales Copilot" }),
+    ).toHaveAttribute("href", "/agents/agent-1/workspace?lead=lead-1");
+  });
+
+  it("hides the sales copilot when no sales agent can run", async () => {
+    getAgentsMock.mockResolvedValue([
+      { ...salesAgent, status: "DRAFT" },
+      { ...salesAgent, id: "support-1", agent_type: "SUPPORT", status: "ACTIVE" },
+    ]);
+    render(<LeadWorkspacePage />);
+    expect(await screen.findByText("No Sales Agent is ready")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Ask Sales Copilot" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask Sales Copilot" })).toBeNull();
+  });
+
+  it("lets the operator choose among ready sales agents", async () => {
+    const user = userEvent.setup();
+    getAgentsMock.mockResolvedValue([
+      salesAgent,
+      { ...salesAgent, id: "agent-2", name: "Outbound qualifier" },
+    ]);
+    render(<LeadWorkspacePage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Ask Sales Copilot" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Ask Sales Copilot" }),
+    ).toBeVisible();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Sales Agent" }),
+      "agent-2",
+    );
+    expect(screen.getByRole("link", { name: "Continue" })).toHaveAttribute(
+      "href",
+      "/agents/agent-2/workspace?lead=lead-1",
+    );
+  });
+
+  it("seeds analyze and draft from the stored enquiry", async () => {
+    const user = userEvent.setup();
+    getLeadMock.mockResolvedValue({
+      ...lead,
+      notes: "Do not show this enquiry-like note in the header.",
+      enquiry: "We need a demo next week.",
+    });
+    render(<LeadWorkspacePage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Analyze with AI" }),
+    );
+    const analyze = screen.getByRole("textbox", { name: /^Customer enquiry/ });
+    expect(analyze).toHaveValue("We need a demo next week.");
+    expect(analyze).not.toHaveValue(
+      "Do not show this enquiry-like note in the header.",
+    );
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Draft response" }));
+    expect(
+      screen.getByRole("textbox", { name: /^Customer enquiry/ }),
+    ).toHaveValue("We need a demo next week.");
   });
 });

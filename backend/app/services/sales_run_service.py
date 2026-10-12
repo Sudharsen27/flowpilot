@@ -112,6 +112,7 @@ class SalesRunService:
             name=name,
             email=email,
         )
+        enquiry = self._canonical_enquiry(lead, enquiry)
         existing = self.sales_runs.find_open_for_lead(organization_id, lead.id)
         if existing is not None:
             raise ConflictError(
@@ -900,6 +901,26 @@ class SalesRunService:
                 "sales_run_follow_up_orphan_not_cancelled follow_up_id=%s",
                 follow_up_id,
             )
+
+    def _canonical_enquiry(self, lead: Lead, requested: str) -> str:
+        """Qualify and snapshot the enquiry stored on the lead.
+
+        A request may still send an enquiry. When the lead already has one,
+        a different value is rejected. When the lead has none, the request
+        becomes the stored enquiry before qualification starts.
+        """
+        stored = (lead.enquiry or "").strip()
+        supplied = requested.strip()
+        if stored:
+            if supplied != stored:
+                raise UnprocessableError(
+                    "Sales runs qualify the enquiry stored on the lead."
+                )
+            return stored
+        if not supplied:
+            raise UnprocessableError("Lead enquiry is required")
+        lead.enquiry = supplied
+        return supplied
 
     def _resolve_lead(
         self,
