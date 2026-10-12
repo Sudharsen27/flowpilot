@@ -201,7 +201,7 @@ export default function LeadsPage() {
       <section className="grid gap-5">
         <SectionHeader
           title="Lead directory"
-          description="Search this organization’s leads, then open one to qualify or draft."
+          description="Search this organization’s leads. Click a name to open its Customer 360."
         />
         <LeadsToolbar
           query={query}

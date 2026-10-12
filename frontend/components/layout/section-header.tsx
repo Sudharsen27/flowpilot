@@ -30,7 +30,7 @@ export function SectionHeader({
           {title}
         </h2>
         {description ? (
-          <p className="text-muted-foreground mt-1 text-sm leading-6">
+          <p className="text-muted-foreground mt-0.5 text-sm leading-6">
             {description}
           </p>
         ) : null}

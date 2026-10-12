@@ -49,14 +49,14 @@ export function MetricCard({
 
   return (
     <Card as="article" className={className} aria-busy={loading || undefined}>
-      <CardContent className="flex min-h-36 flex-col justify-between">
+      <CardContent className="flex h-full flex-col p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <Heading className="text-muted-foreground text-metric-label font-medium">
             {label}
           </Heading>
           {icon ? (
             <span
-              className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md [&_svg]:size-4"
+              className="text-muted-foreground flex shrink-0 items-center [&_svg]:size-4"
               aria-hidden="true"
             >
               {icon}
@@ -64,13 +64,13 @@ export function MetricCard({
           ) : null}
         </div>
         {loading ? (
-          <div className="mt-6" role="status">
+          <div className="mt-3" role="status">
             <Skeleton className="h-8 w-24" />
             <Skeleton className="mt-2 h-4 w-32" />
             <span className="sr-only">Loading {label}</span>
           </div>
         ) : (
-          <div className="mt-6">
+          <div className="mt-2">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p
                 className={cn(

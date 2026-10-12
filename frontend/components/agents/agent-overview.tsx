@@ -1,6 +1,7 @@
 import { Bot, CircleAlert, CircleCheck, FilePenLine } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MetricStrip } from "@/components/data-display/metric-strip";
 
 type AgentOverviewProps = {
   total: number;
@@ -25,7 +26,7 @@ export function AgentOverview({
   ] as const;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <MetricStrip className="sm:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => {
         const Icon = metric.icon;
         return (
@@ -40,6 +41,6 @@ export function AgentOverview({
           />
         );
       })}
-    </div>
+    </MetricStrip>
   );
 }

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MetricStrip } from "@/components/data-display/metric-strip";
 import type { AnalyticsSummary } from "@/types/api";
 
 type AnalyticsOverviewProps = {
@@ -51,7 +52,7 @@ export function AnalyticsOverview({ summary, loading }: AnalyticsOverviewProps) 
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <MetricStrip className="sm:grid-cols-2 xl:grid-cols-3">
       {metrics.map((metric) => {
         const Icon = metric.icon;
         return (
@@ -74,6 +75,6 @@ export function AnalyticsOverview({ summary, loading }: AnalyticsOverviewProps) 
         headingLevel={3}
         icon={<CalendarCheck />}
       />
-    </div>
+    </MetricStrip>
   );
 }

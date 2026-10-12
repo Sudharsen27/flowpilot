@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { BrandLockup } from "@/components/brand-lockup";
-import { Separator } from "@/components/ui/separator";
 import {
   isNavigationItemActive,
   NAV_GROUPS,
@@ -15,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type AppSidebarProps = {
+  organizationName?: string;
   onNavigate?: () => void;
 };
 
@@ -40,10 +39,10 @@ function SidebarLink({
       aria-label={comingSoon ? `${label} (coming soon)` : undefined}
       title={comingSoon ? `${label} is still being built` : undefined}
       className={cn(
-        "group flex min-h-9 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors outline-none",
+        "group flex h-8 items-center gap-2.5 rounded-md px-2 text-[0.8125rem] transition-colors outline-none",
         "focus-visible:ring-ring focus-visible:ring-2",
         active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-card font-medium"
+          ? "bg-sidebar-accent text-primary font-medium"
           : comingSoon
             ? "text-foreground-disabled hover:bg-sidebar-accent/70 hover:text-muted-foreground"
             : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground",
@@ -72,32 +71,41 @@ function SidebarLink({
   );
 }
 
-export function AppSidebar({ onNavigate }: AppSidebarProps) {
+export function AppSidebar({ organizationName, onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
 
   return (
     <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
-      <div className="px-4 py-4">
+      <div className="flex h-14 items-center px-3">
         <Link
           href="/"
           onClick={onNavigate}
           aria-label="FlowPilot home"
-          className="focus-visible:ring-ring rounded-md outline-none focus-visible:ring-2"
+          className="hover:bg-sidebar-accent focus-visible:ring-ring flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 outline-none focus-visible:ring-2"
         >
-          <BrandLockup size="sm" />
+          <span className="bg-foreground text-background flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold">
+            {(organizationName?.trim()[0] ?? "F").toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm leading-4 font-semibold">
+              {organizationName ?? "FlowPilot"}
+            </span>
+            <span className="text-muted-foreground block text-[0.6875rem] leading-4">
+              FlowPilot
+            </span>
+          </span>
         </Link>
       </div>
-      <Separator />
       <nav
         aria-label="Primary"
-        className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4"
+        className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pt-2 pb-4"
       >
         {NAV_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="text-muted-foreground mb-1.5 px-2.5 text-[0.6875rem] font-medium tracking-wide uppercase">
+            <p className="text-muted-foreground mb-1 px-2 text-xs font-medium">
               {group.label}
             </p>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-px">
               {group.items.map((item) => (
                 <SidebarLink
                   key={item.href}
@@ -111,10 +119,10 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         ))}
         {SECONDARY_NAV_ITEMS.length > 0 ? (
           <div>
-            <p className="text-muted-foreground mb-1.5 px-2.5 text-[0.6875rem] font-medium tracking-wide uppercase">
+            <p className="text-muted-foreground mb-1 px-2 text-xs font-medium">
               Coming soon
             </p>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-px">
               {SECONDARY_NAV_ITEMS.map((item) => (
                 <SidebarLink
                   key={item.href}
@@ -130,8 +138,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
           </div>
         ) : null}
       </nav>
-      <div className="px-3 py-3">
-        <Separator className="mb-3" />
+      <div className="border-sidebar-border border-t px-3 py-2">
         <SidebarLink
           {...SETTINGS_ITEM}
           active={isNavigationItemActive(pathname, SETTINGS_ITEM.href)}

@@ -258,6 +258,7 @@ describe("Lead workspace", () => {
       screen.getByText(/Approval does not send the email/),
     ).toBeVisible();
     expect(screen.getByText("No action required")).toBeVisible();
+    expect(screen.getByText("Customer 360")).toBeVisible();
     expect(await screen.findByText("No conversation activity yet")).toBeVisible();
     expect(screen.queryByText("SECRET ENQUIRY BODY")).not.toBeInTheDocument();
     expect(

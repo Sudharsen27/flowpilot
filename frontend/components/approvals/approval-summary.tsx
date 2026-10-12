@@ -1,6 +1,7 @@
 import { CircleCheck, CircleX, Clock3 } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MetricStrip } from "@/components/data-display/metric-strip";
 import type { ApprovalQueueStatus } from "@/types/api";
 
 type ApprovalSummaryProps = {
@@ -45,7 +46,7 @@ export function ApprovalSummary({
   totals,
 }: ApprovalSummaryProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <MetricStrip className="sm:grid-cols-3">
       {metrics.map((metric) => {
         const Icon = metric.icon;
         const value = totals[metric.status];
@@ -69,6 +70,6 @@ export function ApprovalSummary({
           />
         );
       })}
-    </div>
+    </MetricStrip>
   );
 }

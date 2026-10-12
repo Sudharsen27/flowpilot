@@ -370,6 +370,11 @@ export default function LeadWorkspacePage() {
       <PageHeader
         breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: lead.name }]}
         title={lead.name}
+        titleBadge={
+          <span className="border-border bg-surface-subtle text-muted-foreground inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium">
+            Customer 360
+          </span>
+        }
         description={`${lead.email || "No email"} · ${statusLabels[lead.status]} · ${inboxSourceLabels[lead.source]}`}
         secondaryActions={
           <div className="flex flex-wrap gap-2">

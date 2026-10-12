@@ -1,6 +1,7 @@
 import { Bot, CheckCheck, ListTree, UserRound } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MetricStrip } from "@/components/data-display/metric-strip";
 import type { ActivityEventType } from "@/types/api";
 
 type ActivitySummaryProps = {
@@ -15,7 +16,7 @@ export function ActivitySummary({
   typeCounts,
 }: ActivitySummaryProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <MetricStrip className="sm:grid-cols-2 xl:grid-cols-4">
       <MetricCard
         label="Events"
         value={total}
@@ -48,6 +49,6 @@ export function ActivitySummary({
         headingLevel={3}
         icon={<UserRound />}
       />
-    </div>
+    </MetricStrip>
   );
 }

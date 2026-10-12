@@ -57,6 +57,14 @@ describe("application sidebar navigation", () => {
     }
   });
 
+  it("shows the current organization at the top", () => {
+    render(<AppSidebar organizationName="Northstar Operations" />);
+
+    expect(
+      screen.getByRole("link", { name: "FlowPilot home" }),
+    ).toHaveTextContent("Northstar Operations");
+  });
+
   it("keeps the parent item active for a nested route", () => {
     pathname = "/agents/agent-id";
     render(<AppSidebar />);

@@ -13,12 +13,15 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ApplicationTopBar } from "@/components/layout/application-top-bar";
 import { PageContainer } from "@/components/layout/page-container";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 
 type AppShellProps = {
   children: ReactNode;
 };
 
 export function AppShell({ children }: AppShellProps) {
+  const { session } = useAuth();
+  const organizationName = session?.organization.name;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -84,8 +87,8 @@ export function AppShell({ children }: AppShellProps) {
         >
           Skip to content
         </a>
-        <aside className="border-sidebar-border bg-sidebar sticky top-0 hidden h-screen w-60 shrink-0 border-r lg:block">
-          <AppSidebar />
+        <aside className="border-sidebar-border bg-sidebar sticky top-0 hidden h-screen w-56 shrink-0 border-r lg:block">
+          <AppSidebar organizationName={organizationName} />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -104,7 +107,7 @@ export function AppShell({ children }: AppShellProps) {
               </Button>
             }
           />
-          <main id="main" className="flex-1 py-6 sm:py-8">
+          <main id="main" className="flex-1 py-5 sm:py-6">
             <PageContainer size="wide">{children}</PageContainer>
           </main>
         </div>
@@ -137,7 +140,7 @@ export function AppShell({ children }: AppShellProps) {
                 <X />
               </Button>
             </div>
-            <AppSidebar onNavigate={closeMobileNav} />
+            <AppSidebar organizationName={organizationName} onNavigate={closeMobileNav} />
           </aside>
         </div>
       ) : null}

@@ -47,11 +47,12 @@ function renderTopBar() {
 }
 
 describe("authenticated application top bar", () => {
-  it("renders real organization and user context", () => {
+  it("renders page search and the signed-in user", () => {
     renderTopBar();
 
-    expect(screen.getByText("Current organization")).toBeVisible();
-    expect(screen.getByText("Northstar Operations")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open command menu" }),
+    ).toBeVisible();
     expect(screen.getByText("Leads")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Open user menu for Alex Morgan" }),

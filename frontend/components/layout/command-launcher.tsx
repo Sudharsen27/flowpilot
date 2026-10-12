@@ -66,12 +66,12 @@ export function CommandLauncher() {
         type="button"
         variant="outline"
         aria-label="Open command menu"
-        className="text-muted-foreground h-8 w-9 justify-start px-2 sm:w-56"
+        className="text-muted-foreground bg-surface-subtle hover:bg-muted h-8 w-9 justify-start px-2 font-normal lg:w-full lg:max-w-md"
         onClick={() => setOpen(true)}
       >
         <Search aria-hidden="true" />
-        <span className="hidden flex-1 truncate text-left sm:inline">Go to a workspace</span>
-        <kbd className="border-border text-muted-foreground hidden rounded border px-1.5 py-0.5 font-mono text-[0.625rem] sm:inline">
+        <span className="hidden flex-1 truncate text-left lg:inline">Jump to a page…</span>
+        <kbd className="border-border bg-background text-muted-foreground hidden rounded border px-1.5 py-0.5 font-mono text-[0.625rem] lg:inline">
           ⌘K
         </kbd>
       </Button>

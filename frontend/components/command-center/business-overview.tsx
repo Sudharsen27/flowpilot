@@ -1,6 +1,7 @@
 import { ShieldCheck, Users } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MetricStrip } from "@/components/data-display/metric-strip";
 
 type BusinessOverviewProps = {
   loading?: boolean;
@@ -16,7 +17,7 @@ export function BusinessOverview({
   waitingApproval = null,
 }: BusinessOverviewProps) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <MetricStrip className="sm:grid-cols-2">
       <MetricCard
         label="Leads"
         value={leadTotal ?? undefined}
@@ -37,6 +38,6 @@ export function BusinessOverview({
         headingLevel={3}
         icon={<ShieldCheck />}
       />
-    </div>
+    </MetricStrip>
   );
 }

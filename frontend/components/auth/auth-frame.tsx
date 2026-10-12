@@ -17,14 +17,14 @@ type AuthFrameProps = {
 export function AuthFrame({ title, description, children, footer }: AuthFrameProps) {
   return (
     <div className="grid min-h-svh lg:grid-cols-[minmax(0,1.15fr)_minmax(24rem,34rem)]">
-      <aside className="relative hidden overflow-hidden border-r border-white/10 bg-[oklch(0.94_0.03_155)] lg:flex lg:flex-col dark:border-white/8 dark:bg-[oklch(0.2_0.04_165)]">
+      <aside className="border-border bg-surface-subtle relative hidden overflow-hidden border-r lg:flex lg:flex-col">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-28 -left-16 size-80 rounded-full bg-[oklch(0.72_0.12_160/0.45)] blur-3xl dark:bg-[oklch(0.55_0.1_165/0.35)]"
+          className="bg-primary/8 pointer-events-none absolute -top-28 -left-16 size-80 rounded-full blur-3xl"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute right-0 bottom-0 size-72 rounded-full bg-[oklch(0.85_0.06_90/0.7)] blur-3xl dark:bg-[oklch(0.35_0.05_170/0.4)]"
+          className="bg-chart-2/8 pointer-events-none absolute right-0 bottom-0 size-72 rounded-full blur-3xl"
         />
 
         <div className="relative flex flex-1 flex-col justify-center px-10 py-10 xl:px-14">

@@ -56,8 +56,8 @@ const leadColumns: DataTableColumn<Lead>[] = [
           <Link
             href={`/leads/${lead.id}`}
             aria-label={lead.name}
-            title={`Open ${lead.name}`}
-            className="text-foreground hover:text-foreground rounded-sm font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            title={`Open Customer 360 for ${lead.name}`}
+            className="text-foreground hover:text-foreground decoration-border-strong rounded-sm font-semibold underline underline-offset-4 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {lead.name}
           </Link>
@@ -197,7 +197,7 @@ function LeadRowActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuItem render={<Link href={`/leads/${lead.id}`} />}>
-          Open lead
+          Open Customer 360
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {onQualify ? (

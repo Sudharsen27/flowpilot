@@ -40,7 +40,7 @@ export function CardHeader({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "flex flex-col gap-1.5 px-5 pt-5 sm:px-6 sm:pt-6",
+        "flex flex-col gap-1 px-4 pt-4 sm:px-5 sm:pt-5",
         className,
       )}
       {...props}
@@ -72,7 +72,7 @@ export function CardContent({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="card-content"
-      className={cn("px-5 py-5 sm:px-6 sm:py-6", className)}
+      className={cn("px-4 py-4 sm:px-5", className)}
       {...props}
     />
   );
@@ -83,7 +83,7 @@ export function CardFooter({ className, ...props }: ComponentProps<"footer">) {
     <footer
       data-slot="card-footer"
       className={cn(
-        "border-border flex flex-wrap items-center gap-2 border-t px-5 py-4 sm:px-6",
+        "border-border flex flex-wrap items-center gap-2 border-t px-4 py-3 sm:px-5",
         className,
       )}
       {...props}

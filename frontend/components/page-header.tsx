@@ -10,6 +10,7 @@ export type BreadcrumbItem = {
 
 type PageHeaderProps = {
   title: string;
+  titleBadge?: ReactNode;
   description?: string;
   breadcrumbs?: BreadcrumbItem[];
   primaryAction?: ReactNode;
@@ -19,6 +20,7 @@ type PageHeaderProps = {
 
 export function PageHeader({
   title,
+  titleBadge,
   description,
   breadcrumbs,
   primaryAction,
@@ -29,7 +31,7 @@ export function PageHeader({
     <header
       data-slot="page-header"
       className={cn(
-        "flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between",
+        "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
         className,
       )}
     >
@@ -64,11 +66,20 @@ export function PageHeader({
             </ol>
           </nav>
         ) : null}
-        <h1 className="text-foreground text-page-title font-semibold tracking-tight">
-          {title}
-        </h1>
+        {titleBadge ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-foreground text-page-title font-semibold tracking-tight">
+              {title}
+            </h1>
+            {titleBadge}
+          </div>
+        ) : (
+          <h1 className="text-foreground text-page-title font-semibold tracking-tight">
+            {title}
+          </h1>
+        )}
         {description ? (
-          <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6">
+          <p className="text-muted-foreground mt-1 max-w-2xl text-sm leading-6">
             {description}
           </p>
         ) : null}

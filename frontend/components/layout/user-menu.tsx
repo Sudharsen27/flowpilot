@@ -57,7 +57,7 @@ export function UserMenu({
           />
         }
       >
-        <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md text-[0.6875rem] font-semibold">
+        <span className="bg-accent text-accent-foreground ring-border flex size-7 ring-1 items-center justify-center rounded-full text-[0.6875rem] font-semibold">
           {getInitials(user.name)}
         </span>
         <span className="hidden max-w-32 truncate text-sm font-medium md:block">

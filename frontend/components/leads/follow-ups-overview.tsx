@@ -1,6 +1,7 @@
 import { CalendarClock, CalendarDays, CheckCircle2, ClockAlert } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MetricStrip } from "@/components/data-display/metric-strip";
 import type { FollowUpOperationsSummary } from "@/types/api";
 
 type FollowUpsOverviewProps = {
@@ -17,7 +18,7 @@ export function FollowUpsOverview({
   loading = false,
 }: FollowUpsOverviewProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <MetricStrip className="sm:grid-cols-2 xl:grid-cols-4">
       <MetricCard
         label="Overdue"
         value={summary ? summary.overdue : undefined}
@@ -58,6 +59,6 @@ export function FollowUpsOverview({
         headingLevel={3}
         icon={<CheckCircle2 />}
       />
-    </div>
+    </MetricStrip>
   );
 }

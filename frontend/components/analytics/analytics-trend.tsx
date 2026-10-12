@@ -56,7 +56,7 @@ export function AnalyticsTrend({ daily, loading }: AnalyticsTrendProps) {
                 <div
                   key={point.date}
                   title={`${formatDay(point.date)}: ${point.leads_created} leads`}
-                  className="bg-primary/80 min-h-px flex-1 rounded-t-sm"
+                  className="bg-chart-1 hover:bg-chart-1/80 min-h-px flex-1 rounded-t-sm"
                   style={{ height: `${(point.leads_created / peak) * 100}%` }}
                 />
               ))}

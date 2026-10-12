@@ -1,3 +1,5 @@
+import { ToastProvider } from "@/components/ui/toast";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -36,7 +38,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Script id="flowpilot-theme" strategy="beforeInteractive">
           {`try{var t=localStorage.getItem('flowpilot-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}`}
         </Script>
-        <AuthProvider>{children}</AuthProvider>
+        <TooltipProvider delay={400}>
+          <ToastProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </ToastProvider>
+        </TooltipProvider>
       </body>
     </html>
   );

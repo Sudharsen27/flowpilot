@@ -4,6 +4,7 @@ import { Moon, Sun } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const STORAGE_KEY = "flowpilot-theme";
 
@@ -25,7 +26,11 @@ function subscribe(onStoreChange: () => void) {
 }
 
 export function ThemeToggle() {
-  const theme = useSyncExternalStore(subscribe, themeFromDocument, () => "light");
+  const theme = useSyncExternalStore(
+    subscribe,
+    themeFromDocument,
+    () => "light",
+  );
 
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";
@@ -34,16 +39,19 @@ export function ThemeToggle() {
   }
 
   const isDark = theme === "dark";
+  const label = isDark ? "Switch to light theme" : "Switch to dark theme";
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-      onClick={toggle}
-    >
-      {isDark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-    </Button>
+    <Tooltip content={label} side="bottom">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={label}
+        onClick={toggle}
+      >
+        {isDark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+      </Button>
+    </Tooltip>
   );
 }

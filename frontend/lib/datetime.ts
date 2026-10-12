@@ -1,23 +1,33 @@
+/** Accepts API timestamps such as `2026-09-25 12:31:24.220271+05:30` in every browser. */
+function parseTimestamp(value: string): Date {
+  const normalized = value.trim().replace(" ", "T").replace(/(\.\d{3})\d+/, "$1");
+  return new Date(normalized);
+}
+
 /** Absolute timestamps for titles/tooltips (UTC, stable for tests). */
 export function formatAbsoluteTimestamp(value: string | null | undefined): string | null {
   if (!value) return null;
-  return value
-    .replace("T", " ")
-    .replace(/\.\d+Z$/, " UTC")
-    .replace(/Z$/, " UTC");
+  const date = parseTimestamp(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.toISOString().slice(0, 19).replace("T", " ")} UTC`;
 }
+
+const calendarFormatter = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 /**
  * Human-friendly relative time. Pass `now` in tests for determinism.
- * Falls back to absolute when the delta is large or the value is invalid.
+ * Falls back to a calendar date when the delta is large, or the raw value when invalid.
  */
 export function formatRelativeTimestamp(
   value: string | null | undefined,
   now: Date = new Date(),
 ): string | null {
   if (!value) return null;
-  const then = new Date(value);
-  if (Number.isNaN(then.getTime())) return formatAbsoluteTimestamp(value);
+  const then = parseTimestamp(value);
+  if (Number.isNaN(then.getTime())) return value;
 
   const diffMs = then.getTime() - now.getTime();
   const absMs = Math.abs(diffMs);
@@ -42,5 +52,5 @@ export function formatRelativeTimestamp(
     return past ? `${days}d ago` : `in ${days}d`;
   }
 
-  return formatAbsoluteTimestamp(value);
+  return calendarFormatter.format(then);
 }
