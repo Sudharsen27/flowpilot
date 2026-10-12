@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
+from app.models.workflow import WorkflowTrigger
 from app.repositories.lead_repository import LeadRepository
 from app.services.activity_service import ActivityService
+from app.services.workflow_service import WorkflowService
 
 _ESCALATION_DEDUPE_SEGMENT = "human_attention:qualification:"
 
@@ -44,6 +46,14 @@ class HumanAttentionService:
                 status="REQUIRED",
                 dedupe_key=_escalation_dedupe_key(lead_id, qualification_id),
             )
+            lead = self.leads.get_by_id(organization_id, lead_id)
+            if lead is not None:
+                WorkflowService(self.session).enqueue(
+                    organization_id=organization_id,
+                    trigger=WorkflowTrigger.HUMAN_ATTENTION_REQUIRED,
+                    lead=lead,
+                    trigger_key=_escalation_dedupe_key(lead_id, qualification_id),
+                )
             self.session.commit()
             return True
         except Exception:

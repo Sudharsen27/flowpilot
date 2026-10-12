@@ -28,6 +28,7 @@ from app.repositories.lead_email_send_repository import LeadEmailSendRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.schemas.lead_email_send import LeadEmailSendPublic
+from app.services import webhook_events
 from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
 
@@ -168,6 +169,7 @@ class LeadEmailSendService:
             status=LeadEmailSendStatus.SENT,
             dedupe_key=f"email_send:{row.id}:SENT",
         )
+        webhook_events.email_sent(self.session, row)
         self.session.commit()
         self.session.refresh(row)
         return row

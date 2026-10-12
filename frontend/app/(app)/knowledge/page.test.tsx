@@ -1,224 +1,263 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import KnowledgePage from "@/app/(app)/knowledge/page";
 import {
-  KnowledgeSourceList,
-  type KnowledgeSourceListItem,
-} from "@/components/knowledge/knowledge-source-list";
+  createKnowledgeEntry,
+  deleteKnowledgeEntry,
+  listKnowledge,
+  updateKnowledgeEntry,
+} from "@/lib/api/knowledge";
+import type {
+  KnowledgeEntry,
+  KnowledgeListResponse,
+  MembershipRole,
+} from "@/types/api";
+
+const auth = vi.hoisted(() => ({ role: "OWNER" as MembershipRole }));
+
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({
+    session: {
+      user: { id: "user-1", email: "owner@example.com", name: "Owner" },
+      organization: { id: "org-1", name: "Acme", slug: "acme" },
+      membership: {
+        id: "membership-1",
+        organization_id: "org-1",
+        user_id: "user-1",
+        role: auth.role,
+      },
+    },
+  }),
+}));
+
+vi.mock("@/lib/api/knowledge", () => ({
+  listKnowledge: vi.fn(),
+  createKnowledgeEntry: vi.fn(),
+  updateKnowledgeEntry: vi.fn(),
+  deleteKnowledgeEntry: vi.fn(),
+}));
+
+const listMock = vi.mocked(listKnowledge);
+const createMock = vi.mocked(createKnowledgeEntry);
+const updateMock = vi.mocked(updateKnowledgeEntry);
+const deleteMock = vi.mocked(deleteKnowledgeEntry);
+
+const entry: KnowledgeEntry = {
+  id: "entry-1",
+  category: "PRODUCT",
+  title: "Pricing plans",
+  content: "Starter costs $49 per month.",
+  use_in_ai: true,
+  status: "ACTIVE",
+  revision: 2,
+  created_at: "2026-10-10T10:00:00Z",
+  updated_at: "2026-10-11T10:00:00Z",
+};
+
+function listOf(items: KnowledgeEntry[]): KnowledgeListResponse {
+  return {
+    items,
+    total: items.length,
+    category_counts: {
+      FAQ: 0,
+      PRODUCT: items.length,
+      POLICY: 0,
+      COMPANY: 0,
+      OTHER: 0,
+    },
+  };
+}
 
 describe("Knowledge page", () => {
-  it("renders the page hierarchy and honest unavailable overview", () => {
+  beforeEach(() => {
+    auth.role = "OWNER";
+    listMock.mockReset();
+    createMock.mockReset();
+    updateMock.mockReset();
+    deleteMock.mockReset();
+    listMock.mockResolvedValue(listOf([entry]));
+  });
+
+  it("lists active entries with visible actions for owners", async () => {
     render(<KnowledgePage />);
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Knowledge" }),
     ).toBeVisible();
-    for (const section of [
-      "Knowledge overview",
-      "Knowledge sources",
-      "Knowledge setup",
-      "AI agent connection",
-    ]) {
-      expect(
-        screen.getByRole("heading", { level: 2, name: section }),
-      ).toBeVisible();
-    }
-
-    const metricCards = screen.getAllByRole("article").slice(0, 4);
-    const metricLabels = [
-      "Knowledge sources",
-      "Documents",
-      "Indexed",
-      "Needs attention",
-    ];
-    expect(metricCards).toHaveLength(metricLabels.length);
-    metricLabels.forEach((label, index) => {
-      expect(
-        within(metricCards[index]).getByRole("heading", {
-          level: 3,
-          name: label,
-        }),
-      ).toBeVisible();
+    const card = await screen.findByRole("article", { name: "Pricing plans" });
+    expect(within(card).getByText("Product information")).toBeVisible();
+    expect(
+      within(card).getByRole("button", { name: "Edit Pricing plans" }),
+    ).toBeVisible();
+    expect(
+      within(card).getByRole("button", { name: "Archive Pricing plans" }),
+    ).toBeVisible();
+    expect(
+      within(card).getByRole("button", { name: "Delete Pricing plans" }),
+    ).toBeVisible();
+    expect(listMock).toHaveBeenCalledWith({
+      category: null,
+      status: "ACTIVE",
+      q: "",
     });
-    expect(screen.getAllByText("—")).toHaveLength(4);
   });
 
-  it("keeps adding knowledge sources honestly unavailable", () => {
+  it("guides an empty workspace to add the first entry", async () => {
+    const user = userEvent.setup();
+    listMock.mockResolvedValue(listOf([]));
+    createMock.mockResolvedValue({ ...entry, id: "entry-2", title: "Refunds" });
     render(<KnowledgePage />);
 
-    const addButton = screen.getByRole("button", { name: "Add source" });
-    expect(addButton).toBeDisabled();
-    expect(addButton).toHaveAccessibleDescription(
-      "Adding knowledge sources is not available yet.",
+    const empty = await screen.findByRole("heading", {
+      name: "Add your first knowledge entry",
+    });
+    expect(empty).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Add entry" })[0]!);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Add knowledge entry",
+    });
+    const save = within(dialog).getByRole("button", { name: "Add entry" });
+    expect(save).toBeDisabled();
+    await user.selectOptions(
+      within(dialog).getByLabelText(/Category/),
+      "POLICY",
+    );
+    await user.type(within(dialog).getByLabelText(/Title/), "Refunds");
+    await user.type(
+      within(dialog).getByLabelText(/Content/),
+      "Within 30 days.",
+    );
+    await user.click(
+      within(dialog).getByRole("switch", { name: "Use in AI replies" }),
+    );
+    await user.click(save);
+
+    await waitFor(() =>
+      expect(createMock).toHaveBeenCalledWith({
+        category: "POLICY",
+        title: "Refunds",
+        content: "Within 30 days.",
+        use_in_ai: false,
+      }),
+    );
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("edits with the current revision and explains conflicts", async () => {
+    const user = userEvent.setup();
+    const { ApiError } = await import("@/lib/api/client");
+    updateMock.mockRejectedValue(new ApiError("conflict", 409));
+    render(<KnowledgePage />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Edit Pricing plans" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit knowledge entry",
+    });
+    const title = within(dialog).getByLabelText(/Title/);
+    await user.clear(title);
+    await user.type(title, "Plans");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(
+        "entry-1",
+        expect.objectContaining({ expected_revision: 2, title: "Plans" }),
+      ),
+    );
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      /Someone else changed/,
     );
   });
 
-  it("provides an accessible local-only search field", async () => {
+  it("archives and deletes only after confirmation", async () => {
+    const user = userEvent.setup();
+    updateMock.mockResolvedValue({ ...entry, status: "ARCHIVED", revision: 3 });
+    deleteMock.mockResolvedValue(undefined);
+    render(<KnowledgePage />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Archive Pricing plans" }),
+    );
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith("entry-1", {
+        expected_revision: 2,
+        status: "ARCHIVED",
+      }),
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Delete Pricing plans" }),
+    );
+    expect(deleteMock).not.toHaveBeenCalled();
+    const confirm = await screen.findByRole("dialog", {
+      name: "Delete this entry?",
+    });
+    await user.click(
+      within(confirm).getByRole("button", { name: "Delete entry" }),
+    );
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("entry-1"));
+  });
+
+  it("searches and filters through the API", async () => {
     const user = userEvent.setup();
     render(<KnowledgePage />);
+    await screen.findByRole("article", { name: "Pricing plans" });
 
-    const search = screen.getByRole("searchbox", {
-      name: "Search knowledge sources",
-    });
-    expect(screen.getByText(/applies locally to supplied source rows/)).toBeVisible();
-
-    await user.type(search, "Example");
-    expect(search).toHaveValue("Example");
-    await user.click(screen.getByRole("button", { name: "Clear search" }));
-    expect(search).toHaveValue("");
-    expect(screen.getByRole("status")).toHaveTextContent("0 supplied sources.");
-  });
-
-  it("shows an honest setup state without fabricated sources", () => {
-    render(<KnowledgePage />);
-
-    expect(
-      screen.getByRole("heading", {
-        name: "No Knowledge sources connected",
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search knowledge" }),
+      "refund",
+    );
+    await waitFor(() =>
+      expect(listMock).toHaveBeenLastCalledWith({
+        category: null,
+        status: "ACTIVE",
+        q: "refund",
       }),
-    ).toBeVisible();
-    expect(screen.getByText(/source management is available/)).toBeVisible();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.queryByText("example.pdf")).not.toBeInTheDocument();
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Status" }),
+      "ARCHIVED",
+    );
+    await waitFor(() =>
+      expect(listMock).toHaveBeenLastCalledWith({
+        category: null,
+        status: "ARCHIVED",
+        q: "refund",
+      }),
+    );
   });
 
-  it("renders all planned source types as explicit concepts", () => {
+  it("shows members the entries without management actions", async () => {
+    auth.role = "MEMBER";
     render(<KnowledgePage />);
 
-    const concepts = screen.getByRole("list", {
-      name: "Knowledge source concepts",
-    });
-    for (const sourceType of [
-      "Documents",
-      "FAQs",
-      "Website",
-      "Product information",
-      "Policies",
-      "Company information",
-    ]) {
-      expect(
-        within(concepts).getByRole("heading", { name: sourceType }),
-      ).toBeVisible();
-    }
-    expect(within(concepts).getAllByText("Source concept")).toHaveLength(6);
-  });
-
-  it("presents conceptual indexing states and AI-agent connection", () => {
-    render(<KnowledgePage />);
-
-    const connection = screen.getByRole("list", {
-      name: "Conceptual knowledge connection",
-    });
-    expect(within(connection).getAllByRole("listitem")).toHaveLength(4);
-    for (const step of [
-      "Business knowledge",
-      "Knowledge retrieval",
-      "AI agent",
-      "Customer response / business action",
-    ]) {
-      expect(within(connection).getByText(step)).toBeVisible();
-    }
-
-    const statuses = screen.getByLabelText("Indexing status concepts");
-    for (const status of [
-      "Ready",
-      "Processing",
-      "Needs attention",
-      "Not indexed",
-    ]) {
-      expect(within(statuses).getByText(status)).toBeVisible();
-    }
-    expect(screen.getByText("Retrieval unavailable")).toBeVisible();
-  });
-
-  it("supports desktop table and mobile list representations for real sources", () => {
-    const source: KnowledgeSourceListItem = {
-      id: "source-1",
-      name: "Test source",
-      type: "document",
-      status: "setup",
-      indexingStatus: "not-indexed",
-    };
-
-    render(<KnowledgeSourceList sources={[source]} />);
-
-    expect(screen.getByRole("table")).toBeInTheDocument();
-    expect(screen.getByRole("list")).toBeInTheDocument();
-    expect(screen.getAllByText("Test source")).toHaveLength(2);
-    expect(screen.getAllByText("Document")).toHaveLength(2);
-    expect(screen.getAllByText("Not indexed")).toHaveLength(2);
-  });
-
-  it("filters supplied sources locally and shows a distinct no-results state", () => {
-    const sources: KnowledgeSourceListItem[] = [
-      {
-        id: "source-1",
-        name: "Support policy",
-        type: "policy",
-        status: "connected",
-        indexingStatus: "ready",
-      },
-      {
-        id: "source-2",
-        name: "Product FAQ",
-        type: "faq",
-        status: "setup",
-        indexingStatus: "not-indexed",
-      },
-    ];
-
-    const { rerender } = render(
-      <KnowledgeSourceList sources={sources} searchQuery="POLICY" />,
-    );
-    expect(screen.getAllByText("Support policy")).toHaveLength(2);
-    expect(screen.queryByText("Product FAQ")).not.toBeInTheDocument();
-
-    rerender(<KnowledgeSourceList sources={sources} searchQuery="missing" />);
-    expect(screen.getByRole("heading", { name: "No matching sources" })).toBeVisible();
-    expect(screen.getByText(/No supplied Knowledge sources match/)).toBeVisible();
-  });
-
-  it("renders loading and error states without fake source rows", () => {
-    const { rerender } = render(<KnowledgeSourceList sources={[]} loading />);
-    expect(screen.getByRole("status")).toBeVisible();
-    expect(screen.queryByText("Example source")).not.toBeInTheDocument();
-
-    rerender(
-      <KnowledgeSourceList
-        sources={[]}
-        error="The Knowledge source list is unavailable."
-      />,
-    );
+    await screen.findByRole("article", { name: "Pricing plans" });
     expect(
-      screen.getByRole("heading", { name: "Knowledge sources could not be loaded" }),
+      screen.getByText("Only owners and admins can add or change knowledge."),
     ).toBeVisible();
-    expect(screen.getByText("The Knowledge source list is unavailable.")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Add entry|Edit|Archive|Delete/ }),
+    ).toBeNull();
   });
 
-  it("keeps long names accessible and timestamps semantic", () => {
-    const longName = "A very long source name that should remain available to users";
-    render(
-      <KnowledgeSourceList
-        sources={[
-          {
-            id: "source-1",
-            name: longName,
-            type: "document",
-            status: "connected",
-            lastUpdated: "2026-09-25T10:00:00Z",
-            indexingStatus: "processing",
-          },
-        ]}
-      />,
-    );
+  it("offers a retry when loading fails", async () => {
+    const user = userEvent.setup();
+    listMock.mockRejectedValueOnce(new Error("offline"));
+    render(<KnowledgePage />);
 
-    expect(screen.getAllByTitle(longName)).toHaveLength(2);
-    expect(screen.getAllByRole("time")[0]).toHaveAttribute(
-      "dateTime",
-      "2026-09-25T10:00:00Z",
-    );
-    expect(screen.getAllByTitle("Planned concept, not live indexing telemetry")).toHaveLength(2);
+    expect(
+      await screen.findByText("Knowledge could not be loaded"),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByRole("article", { name: "Pricing plans" }),
+    ).toBeVisible();
   });
 });

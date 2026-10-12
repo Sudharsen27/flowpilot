@@ -94,6 +94,16 @@ class Settings(BaseSettings):
     sales_agent_auto_start_worker_enabled: bool = False
     sales_agent_auto_start_worker_poll_interval_seconds: float = Field(default=30, ge=1)
     sales_agent_auto_start_worker_batch_size: int = Field(default=10, ge=1, le=50)
+    # Workflow rules also run only in `python -m app.worker`. Disabled by default
+    # so enabling a rule never calls the model until an operator opts in.
+    workflow_worker_enabled: bool = False
+    workflow_worker_poll_interval_seconds: float = Field(default=30, ge=1)
+    workflow_worker_batch_size: int = Field(default=10, ge=1, le=50)
+    # Outgoing webhook deliveries also run only in `python -m app.worker`.
+    # Disabled by default so no event data leaves the server until opted in.
+    webhook_worker_enabled: bool = False
+    webhook_worker_poll_interval_seconds: float = Field(default=15, ge=1)
+    webhook_worker_batch_size: int = Field(default=20, ge=1, le=100)
     # In-process sliding window for public website capture. Single-instance only;
     # it is not shared across API processes and does not use Redis.
     website_capture_rate_limit_max: int = Field(default=5, ge=1)

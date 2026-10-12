@@ -21,6 +21,7 @@ type IntegrationConcept = {
   category: IntegrationCategory;
   description: string;
   status: IntegrationStatus;
+  setupNote?: string;
 };
 
 const categoryPresentation = {
@@ -30,83 +31,81 @@ const categoryPresentation = {
   developer: { label: "Automation / developer", icon: Code2 },
 } as const;
 
+const DEFAULT_SETUP_NOTE =
+  "Needs a FlowPilot app registration and credentials with this provider before it can be connected. Until then, use a webhook to send events to it through a tool like Zapier or Make.";
+
 const integrationConcepts: IntegrationConcept[] = [
   {
     id: "salesforce",
     name: "Salesforce",
     category: "crm",
-    description: "Planned CRM connection concept for approved business data.",
-    status: "coming-soon",
+    description: "Sync leads and outcomes with Salesforce.",
+    status: "needs-setup",
   },
   {
     id: "hubspot",
     name: "HubSpot",
     category: "crm",
-    description: "Planned CRM connection concept for approved business data.",
-    status: "coming-soon",
+    description: "Sync leads and outcomes with HubSpot.",
+    status: "needs-setup",
   },
   {
     id: "pipedrive",
     name: "Pipedrive",
     category: "crm",
-    description: "Planned CRM connection concept for approved business data.",
-    status: "coming-soon",
+    description: "Sync leads and deals with Pipedrive.",
+    status: "needs-setup",
   },
   {
     id: "gmail",
     name: "Gmail",
     category: "communication",
-    description: "Planned communication connection concept.",
-    status: "coming-soon",
+    description: "Send and receive lead email from a Gmail mailbox.",
+    status: "needs-setup",
   },
   {
     id: "outlook",
     name: "Outlook",
     category: "communication",
-    description: "Planned communication connection concept.",
-    status: "coming-soon",
+    description: "Send and receive lead email from an Outlook mailbox.",
+    status: "needs-setup",
   },
   {
     id: "slack",
     name: "Slack",
     category: "communication",
-    description: "Planned team communication connection concept.",
-    status: "coming-soon",
+    description: "Post lead alerts to a Slack channel.",
+    status: "needs-setup",
   },
   {
     id: "whatsapp",
     name: "WhatsApp",
     category: "communication",
-    description: "Planned messaging connection concept.",
-    status: "coming-soon",
+    description: "Reply to leads on WhatsApp Business.",
+    status: "needs-setup",
   },
   {
     id: "google-calendar",
     name: "Google Calendar",
     category: "calendar",
-    description: "Planned calendar connection concept for scheduling context.",
-    status: "coming-soon",
+    description: "Book meetings and count appointments from Google Calendar.",
+    status: "needs-setup",
   },
   {
     id: "microsoft-outlook-calendar",
     name: "Microsoft Outlook Calendar",
     category: "calendar",
-    description: "Planned calendar connection concept for scheduling context.",
-    status: "coming-soon",
-  },
-  {
-    id: "webhooks",
-    name: "Webhooks",
-    category: "developer",
-    description: "Planned developer connection concept for future events.",
-    status: "coming-soon",
+    description: "Book meetings and count appointments from Outlook Calendar.",
+    status: "needs-setup",
   },
   {
     id: "rest-api",
     name: "REST API",
     category: "developer",
-    description: "Planned developer connection concept for approved systems.",
-    status: "coming-soon",
+    description: "Read and write FlowPilot data from your own systems with an API key.",
+    status: "needs-setup",
+    setupNote:
+      "API keys for FlowPilot are not available yet. Use a webhook to receive events today.",
   },
 ];
 
@@ -183,7 +182,7 @@ export function IntegrationCatalog() {
           id="integration-filter-note"
           className="text-muted-foreground text-xs"
         >
-          Search and filters apply only to planned catalog concepts in this UI.
+          These tools need provider setup before they can be connected.
         </p>
       </div>
 
@@ -228,17 +227,17 @@ export function IntegrationCatalog() {
                     </p>
                     <div
                       className="border-border bg-background mt-5 grid gap-1.5 rounded-lg border px-3 py-2.5"
-                      title="Planned concept, not a live connection"
+                      title="Not connectable yet"
                       aria-describedby={descriptionId}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <IntegrationStatusBadge status={integration.status} />
                         <span className="text-muted-foreground text-xs">
-                          No action available
+                          Not connectable yet
                         </span>
                       </div>
                       <span id={descriptionId} className="text-muted-foreground text-xs leading-5">
-                        Planned concept only. Connections are coming soon.
+                        {integration.setupNote ?? DEFAULT_SETUP_NOTE}
                       </span>
                     </div>
                   </CardContent>

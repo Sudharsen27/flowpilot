@@ -1,9 +1,10 @@
 """Worker entrypoint: `python -m app.worker`.
 
-Runs as a separate process from the API. Follow-up sending and Sales Agent
-auto-start each have their own enable flag. Both can share this process.
-Disabled by default so a local checkout never emails customers or calls the
-model for website enquiries unexpectedly.
+Runs as a separate process from the API. Follow-up sending, Sales Agent
+auto-start, workflow runs and outgoing webhooks each have their own enable
+flag and can share this process. All are disabled by default so a local
+checkout never emails customers, calls the model, or sends event data out
+unexpectedly.
 """
 
 import logging
@@ -11,12 +12,30 @@ import signal
 import sys
 import threading
 from types import FrameType
+from typing import Protocol
 
 from app.core.config import settings
 from app.worker.follow_up_worker import FollowUpWorker
 from app.worker.sales_agent_auto_start_worker import SalesAgentAutoStartWorker
+from app.worker.webhook_worker import WebhookWorker
+from app.worker.workflow_worker import WorkflowWorker
 
 logger = logging.getLogger("app.worker")
+
+
+class PollingWorker(Protocol):
+    poll_interval_seconds: float
+
+    @property
+    def is_stopping(self) -> bool: ...
+
+    def request_stop(self) -> None: ...
+
+    def install_signal_handlers(self) -> None: ...
+
+    def run_forever(self) -> None: ...
+
+    def run_once(self) -> object: ...
 
 
 def main() -> int:
@@ -24,35 +43,32 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    follow_up_enabled = settings.follow_up_worker_enabled
-    auto_start_enabled = settings.sales_agent_auto_start_worker_enabled
-    if not follow_up_enabled and not auto_start_enabled:
+    workers: list[PollingWorker] = []
+    if settings.follow_up_worker_enabled:
+        workers.append(FollowUpWorker())
+    if settings.sales_agent_auto_start_worker_enabled:
+        workers.append(SalesAgentAutoStartWorker())
+    if settings.workflow_worker_enabled:
+        workers.append(WorkflowWorker())
+    if settings.webhook_worker_enabled:
+        workers.append(WebhookWorker())
+    if not workers:
         logger.info(
-            "no worker is enabled; set FOLLOW_UP_WORKER_ENABLED or "
-            "SALES_AGENT_AUTO_START_WORKER_ENABLED to run"
+            "no worker is enabled; set FOLLOW_UP_WORKER_ENABLED, "
+            "SALES_AGENT_AUTO_START_WORKER_ENABLED, WORKFLOW_WORKER_ENABLED or "
+            "WEBHOOK_WORKER_ENABLED to run"
         )
         return 0
-
-    follow_up = FollowUpWorker() if follow_up_enabled else None
-    auto_start = SalesAgentAutoStartWorker() if auto_start_enabled else None
-    if follow_up is not None and auto_start is None:
-        follow_up.install_signal_handlers()
-        follow_up.run_forever()
+    if len(workers) == 1:
+        workers[0].install_signal_handlers()
+        workers[0].run_forever()
         return 0
-    if auto_start is not None and follow_up is None:
-        auto_start.install_signal_handlers()
-        auto_start.run_forever()
-        return 0
-    assert follow_up is not None and auto_start is not None
-    run_combined_forever(follow_up, auto_start)
+    run_combined_forever(*workers)
     return 0
 
 
-def run_combined_forever(
-    follow_up: FollowUpWorker,
-    auto_start: SalesAgentAutoStartWorker,
-) -> None:
-    """Poll both workers in one process with a shared interruptible sleep."""
+def run_combined_forever(*workers: PollingWorker) -> None:
+    """Poll every enabled worker in one process with a shared interruptible sleep."""
     stop = threading.Event()
 
     def handle(signum: int, _frame: FrameType | None) -> None:
@@ -60,35 +76,32 @@ def run_combined_forever(
             "worker received signal, finishing current item signal=%s",
             signal.Signals(signum).name,
         )
-        follow_up.request_stop()
-        auto_start.request_stop()
+        for worker in workers:
+            worker.request_stop()
         stop.set()
+
+    def stopping() -> bool:
+        return stop.is_set() or any(worker.is_stopping for worker in workers)
 
     signal.signal(signal.SIGINT, handle)
     signal.signal(signal.SIGTERM, handle)
-    interval = min(follow_up.poll_interval_seconds, auto_start.poll_interval_seconds)
+    interval = min(worker.poll_interval_seconds for worker in workers)
     logger.info(
-        "combined worker started follow_up_poll_interval_seconds=%s "
-        "auto_start_poll_interval_seconds=%s shared_sleep_seconds=%s",
-        follow_up.poll_interval_seconds,
-        auto_start.poll_interval_seconds,
+        "combined worker started workers=%s shared_sleep_seconds=%s",
+        ",".join(type(worker).__name__ for worker in workers),
         interval,
     )
     try:
-        while not stop.is_set() and not follow_up.is_stopping and not auto_start.is_stopping:
-            try:
-                follow_up.run_once()
-            except Exception:
-                logger.exception("follow-up worker batch raised")
-            if stop.is_set() or follow_up.is_stopping or auto_start.is_stopping:
-                break
-            try:
-                auto_start.run_once()
-            except Exception:
-                logger.exception("sales-agent auto-start worker batch raised")
-            if stop.is_set() or follow_up.is_stopping or auto_start.is_stopping:
-                break
-            stop.wait(interval)
+        while not stopping():
+            for worker in workers:
+                try:
+                    worker.run_once()
+                except Exception:
+                    logger.exception("%s batch raised", type(worker).__name__)
+                if stopping():
+                    break
+            else:
+                stop.wait(interval)
     finally:
         logger.info("combined worker stopped")
 

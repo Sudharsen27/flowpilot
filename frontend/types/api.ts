@@ -290,6 +290,42 @@ export type LeadSource =
   | "API"
   | "IMPORT";
 
+export type AnalyticsRangeDays = 7 | 30 | 90;
+
+export type AnalyticsTotals = {
+  leads_created: number;
+  leads_qualified: number;
+  ai_analyses: number;
+  ai_drafts: number;
+  drafts_approved: number;
+  emails_sent: number;
+  customer_replies: number;
+  human_handoffs: number;
+  follow_ups_completed: number;
+};
+
+export type AnalyticsDailyPoint = {
+  date: string;
+  leads_created: number;
+  ai_analyses: number;
+  emails_sent: number;
+};
+
+export type AnalyticsSummary = {
+  range_days: AnalyticsRangeDays;
+  source: LeadSource | null;
+  start: string;
+  end: string;
+  totals: AnalyticsTotals;
+  daily: AnalyticsDailyPoint[];
+  leads_by_source: { source: LeadSource; count: number }[];
+  qualification_outcomes: {
+    qualified: number;
+    unqualified: number;
+    needs_more_information: number;
+  };
+};
+
 export type Lead = {
   id: string;
   name: string;
@@ -796,7 +832,147 @@ export type ActivityEntityType =
   | "LEAD_FOLLOW_UP"
   | "LEAD_FOLLOW_UP_EXECUTION"
   | "LEAD_RESPONSE_DRAFT"
-  | "LEAD_QUALIFICATION";
+  | "LEAD_QUALIFICATION"
+  | "KNOWLEDGE_ENTRY"
+  | "WORKFLOW_RULE"
+  | "WEBHOOK_ENDPOINT";
+
+export type WebhookEventType =
+  | "lead.created"
+  | "lead.qualified"
+  | "draft.approved"
+  | "email.sent"
+  | "webhook.test";
+
+export type WebhookDeliveryStatus = "PENDING" | "SENDING" | "DELIVERED" | "FAILED";
+
+export type WebhookEndpoint = {
+  id: string;
+  name: string;
+  url: string;
+  events: WebhookEventType[];
+  enabled: boolean;
+  secret_hint: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  delivery_counts: { pending: number; delivered: number; failed: number };
+  last_delivery_at: string | null;
+};
+
+export type WebhookEndpointWithSecret = {
+  endpoint: WebhookEndpoint;
+  secret: string;
+};
+
+export type WebhookEndpointInput = {
+  name: string;
+  url: string;
+  events: WebhookEventType[];
+};
+
+export type WebhookDelivery = {
+  id: string;
+  endpoint_id: string;
+  event_type: WebhookEventType;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  last_status_code: number | null;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  created_at: string;
+  last_attempt_at: string | null;
+  delivered_at: string | null;
+};
+
+export type WebhookDeliveryListResponse = {
+  items: WebhookDelivery[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type WorkflowTrigger =
+  | "LEAD_CREATED"
+  | "INBOUND_REPLY_RECEIVED"
+  | "HUMAN_ATTENTION_REQUIRED";
+
+export type WorkflowAction = "ANALYZE_LEAD" | "DRAFT_RESPONSE" | "CREATE_FOLLOW_UP";
+
+export type WorkflowRunStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "SKIPPED" | "FAILED";
+
+export type WorkflowRule = {
+  id: string;
+  name: string;
+  trigger: WorkflowTrigger;
+  action: WorkflowAction;
+  source_filter: LeadSource | null;
+  follow_up_delay_hours: number | null;
+  enabled: boolean;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  run_counts: { pending: number; succeeded: number; skipped: number; failed: number };
+  last_run_at: string | null;
+};
+
+export type WorkflowRuleInput = {
+  name: string;
+  trigger: WorkflowTrigger;
+  action: WorkflowAction;
+  source_filter: LeadSource | null;
+  follow_up_delay_hours: number | null;
+  enabled?: boolean;
+};
+
+export type WorkflowRun = {
+  id: string;
+  rule_id: string;
+  lead_id: string;
+  lead_name: string | null;
+  status: WorkflowRunStatus;
+  detail: string | null;
+  result_entity_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type WorkflowRunListResponse = {
+  items: WorkflowRun[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type KnowledgeCategory = "FAQ" | "PRODUCT" | "POLICY" | "COMPANY" | "OTHER";
+
+export type KnowledgeEntryStatus = "ACTIVE" | "ARCHIVED";
+
+export type KnowledgeEntry = {
+  id: string;
+  category: KnowledgeCategory;
+  title: string;
+  content: string;
+  use_in_ai: boolean;
+  status: KnowledgeEntryStatus;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeListResponse = {
+  items: KnowledgeEntry[];
+  total: number;
+  category_counts: Record<KnowledgeCategory, number>;
+};
+
+export type KnowledgeEntryInput = {
+  category: KnowledgeCategory;
+  title: string;
+  content: string;
+  use_in_ai: boolean;
+};
 
 export type ActivityEvent = {
   id: string;

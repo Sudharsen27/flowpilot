@@ -41,6 +41,7 @@ from app.schemas.lead_qualification import (
     ExtractedContact,
     LeadQualificationAnalysis,
 )
+from app.services import webhook_events
 from app.services.activity_service import ActivityService
 from app.services.human_attention_service import HumanAttentionService
 from app.services.human_escalation_decision_service import HumanEscalationDecisionService
@@ -180,6 +181,7 @@ class LeadQualificationService:
                 recorded.entity_id = row.id
                 recorded.lead_id = row.lead_id
                 recorded.status = row.status
+            webhook_events.lead_qualified(self.session, row)
             self.session.commit()
             self.session.refresh(row)
         except ProviderNotConfiguredError as exc:

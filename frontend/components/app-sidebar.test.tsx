@@ -33,25 +33,27 @@ describe("application sidebar navigation", () => {
     for (const label of [
       "Command Center",
       "Activity",
+      "Analytics",
       "Leads",
       "AI Inbox",
       "Approvals",
       "AI Agents",
+      "Workflows",
+      "Knowledge",
+      "Integrations",
       "Settings",
     ]) {
       expect(screen.getByRole("link", { name: label })).toBeVisible();
     }
   });
 
-  it("labels unfinished modules as coming soon", () => {
+  it("hides the coming soon group once every module is live", () => {
     render(<AppSidebar />);
 
-    expect(screen.getByText("Coming soon")).toBeVisible();
-    for (const label of ["Workflows", "Knowledge", "Integrations", "Analytics"]) {
-      expect(
-        screen.getByRole("link", { name: `${label} (coming soon)` }),
-      ).toBeVisible();
-      expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
+    expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /coming soon/ })).not.toBeInTheDocument();
+    for (const label of ["Workflows", "Integrations"]) {
+      expect(screen.getByRole("link", { name: label })).toBeVisible();
     }
   });
 

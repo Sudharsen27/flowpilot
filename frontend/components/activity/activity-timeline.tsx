@@ -26,6 +26,9 @@ export const entityLabels: Record<ActivityEvent["entity_type"], string> = {
   LEAD_FOLLOW_UP_EXECUTION: "Follow-up execution",
   LEAD_RESPONSE_DRAFT: "Response draft",
   LEAD_QUALIFICATION: "Qualification",
+  KNOWLEDGE_ENTRY: "Knowledge",
+  WORKFLOW_RULE: "Workflow",
+  WEBHOOK_ENDPOINT: "Webhook",
 };
 
 type ActivityTimelineProps = {

@@ -34,6 +34,7 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
     items: [
       { href: "/", label: "Command Center", icon: LayoutDashboard },
       { href: "/activity", label: "Activity", icon: Activity },
+      { href: "/analytics", label: "Analytics", icon: BarChart3 },
     ],
   },
   {
@@ -46,27 +47,18 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
   },
   {
     label: "Automation",
-    items: [{ href: "/agents", label: "AI Agents", icon: Bot }],
+    items: [
+      { href: "/agents", label: "AI Agents", icon: Bot },
+      { href: "/workflows", label: "Workflows", icon: Workflow },
+      { href: "/knowledge", label: "Knowledge", icon: LibraryBig },
+      { href: "/integrations", label: "Integrations", icon: Plug },
+    ],
   },
 ];
 
 /** Workspaces that are still being built; shown under "Coming soon". */
-export const SECONDARY_NAV_ITEMS: readonly SecondaryNavigationItem[] = [
-  { href: "/workflows", label: "Workflows", icon: Workflow, status: "planned" },
-  {
-    href: "/knowledge",
-    label: "Knowledge",
-    icon: LibraryBig,
-    status: "planned",
-  },
-  {
-    href: "/integrations",
-    label: "Integrations",
-    icon: Plug,
-    status: "planned",
-  },
-  { href: "/analytics", label: "Analytics", icon: BarChart3, status: "planned" },
-];
+export const SECONDARY_NAV_ITEMS: readonly SecondaryNavigationItem[] = [];
+
 export const SETTINGS_ITEM: NavigationItem = {
   href: "/settings",
   label: "Settings",

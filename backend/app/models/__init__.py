@@ -7,6 +7,7 @@ from app.models.activity_event import (
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.inbound_email import InboundEmail
+from app.models.knowledge_entry import KnowledgeEntry
 from app.models.lead import Lead, LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 from app.models.lead_email_send import LeadEmailSend
 from app.models.lead_follow_up import LeadFollowUp
@@ -18,6 +19,8 @@ from app.models.organization import Organization
 from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
 from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
+from app.models.webhook import WebhookDelivery, WebhookEndpoint
+from app.models.workflow import WorkflowRule, WorkflowRun
 
 __all__ = [
     "ActivityActorType",
@@ -30,6 +33,7 @@ __all__ = [
     "AgentStatus",
     "AgentType",
     "InboundEmail",
+    "KnowledgeEntry",
     "Lead",
     "LeadEmailSend",
     "LeadFollowUp",
@@ -47,4 +51,8 @@ __all__ = [
     "SalesRunStatus",
     "ToolInvocation",
     "User",
+    "WebhookDelivery",
+    "WebhookEndpoint",
+    "WorkflowRule",
+    "WorkflowRun",
 ]

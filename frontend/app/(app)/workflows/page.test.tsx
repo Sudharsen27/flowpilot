@@ -1,192 +1,253 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkflowsPage from "@/app/(app)/workflows/page";
 import {
-  WorkflowList,
-  type WorkflowListItem,
-} from "@/components/workflows/workflow-list";
-import { WorkflowStatusBadge } from "@/components/workflows/workflow-status-badge";
+  createWorkflow,
+  deleteWorkflow,
+  listWorkflowRuns,
+  listWorkflows,
+  updateWorkflow,
+} from "@/lib/api/workflows";
+import type { MembershipRole, WorkflowRule } from "@/types/api";
+
+const auth = vi.hoisted(() => ({ role: "OWNER" as MembershipRole }));
+
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({
+    session: {
+      user: { id: "user-1", email: "owner@example.com", name: "Owner" },
+      organization: { id: "org-1", name: "Acme", slug: "acme" },
+      membership: {
+        id: "membership-1",
+        organization_id: "org-1",
+        user_id: "user-1",
+        role: auth.role,
+      },
+    },
+  }),
+}));
+
+vi.mock("@/lib/api/workflows", () => ({
+  listWorkflows: vi.fn(),
+  createWorkflow: vi.fn(),
+  updateWorkflow: vi.fn(),
+  deleteWorkflow: vi.fn(),
+  listWorkflowRuns: vi.fn(),
+}));
+
+const listMock = vi.mocked(listWorkflows);
+const createMock = vi.mocked(createWorkflow);
+const updateMock = vi.mocked(updateWorkflow);
+const deleteMock = vi.mocked(deleteWorkflow);
+const runsMock = vi.mocked(listWorkflowRuns);
+
+const rule: WorkflowRule = {
+  id: "rule-1",
+  name: "Analyze website leads",
+  trigger: "LEAD_CREATED",
+  action: "ANALYZE_LEAD",
+  source_filter: "WEBSITE",
+  follow_up_delay_hours: null,
+  enabled: false,
+  revision: 3,
+  created_at: "2026-10-10T10:00:00Z",
+  updated_at: "2026-10-11T10:00:00Z",
+  run_counts: { pending: 0, succeeded: 2, skipped: 1, failed: 1 },
+  last_run_at: "2026-10-11T10:00:00Z",
+};
 
 describe("Workflows page", () => {
-  it("renders the page hierarchy and honest unavailable overview", () => {
-    render(<WorkflowsPage />);
+  beforeEach(() => {
+    auth.role = "OWNER";
+    for (const mock of [
+      listMock,
+      createMock,
+      updateMock,
+      deleteMock,
+      runsMock,
+    ]) {
+      mock.mockReset();
+    }
+    listMock.mockResolvedValue([rule]);
+    runsMock.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+  });
 
+  it("describes each rule in plain language with visible controls", async () => {
+    render(<WorkflowsPage />);
     expect(
       screen.getByRole("heading", { level: 1, name: "Workflows" }),
     ).toBeVisible();
-    for (const section of [
-      "Workflow overview",
-      "Configured workflows",
-      "Workflow blueprint",
-      "Configuration concepts",
-    ]) {
-      expect(
-        screen.getByRole("heading", { level: 2, name: section }),
-      ).toBeVisible();
-    }
-
-    const metricCards = screen.getAllByRole("article");
-    const metricLabels = [
-      "Total workflows",
-      "Active",
-      "Draft",
-      "Needs attention",
-    ];
-    expect(metricCards).toHaveLength(metricLabels.length);
-    metricLabels.forEach((label, index) => {
-      expect(
-        within(metricCards[index]).getByRole("heading", {
-          level: 3,
-          name: label,
-        }),
-      ).toBeVisible();
+    const card = await screen.findByRole("article", {
+      name: "Analyze website leads",
     });
-    expect(screen.getAllByText("—")).toHaveLength(4);
-  });
-
-  it("keeps workflow creation honestly unavailable", () => {
-    render(<WorkflowsPage />);
-
-    const createButton = screen.getByRole("button", {
-      name: "Create workflow",
-    });
-    expect(createButton).toBeDisabled();
-    expect(createButton).toHaveAccessibleDescription(
-      "Workflow creation is planned and is not available yet.",
+    expect(card).toHaveTextContent(
+      "When a new lead is added from Website, then analyze the lead with ai.",
     );
-  });
-
-  it("shows an honest setup state without fabricated workflows", () => {
-    render(<WorkflowsPage />);
-
+    expect(within(card).getByText("1 failed")).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: "No workflows configured" }),
+      within(card).getByRole("switch", {
+        name: "Turn on Analyze website leads",
+      }),
     ).toBeVisible();
     expect(
-      screen.getAllByText(/Workflow creation is planned and is not available yet/),
-    ).not.toHaveLength(0);
-    expect(
-      screen.getByRole("link", { name: /Review AI Agents/ }),
-    ).toHaveAttribute("href", "/agents");
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.queryByText("Test workflow")).not.toBeInTheDocument();
-  });
-
-  it("renders the conceptual workflow and planned agent connection", () => {
-    render(<WorkflowsPage />);
-
-    const steps = screen.getByRole("list", {
-      name: "Conceptual workflow steps",
-    });
-    expect(within(steps).getAllByRole("listitem")).toHaveLength(6);
-    for (const step of [
-      "Trigger",
-      "AI agent / action",
-      "Condition",
-      "Approval",
-      "Action",
-      "Outcome",
-    ]) {
-      expect(within(steps).getByRole("button", { name: new RegExp(step) })).toBeVisible();
-    }
-    expect(screen.getByText("Blueprint only")).toBeVisible();
-    expect(
-      screen.getByLabelText("Planned agent workflow example"),
+      within(card).getByRole("button", { name: "Edit Analyze website leads" }),
     ).toBeVisible();
-    expect(screen.getByText("Configuration concept")).toBeVisible();
+    expect(
+      within(card).getByRole("button", {
+        name: "Delete Analyze website leads",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText(/Workflows never send email/)).toBeVisible();
   });
 
-  it("labels trigger and action catalogs as non-functional concepts", () => {
+  it("turns a rule on with its current revision", async () => {
+    updateMock.mockResolvedValue({ ...rule, enabled: true, revision: 4 });
     render(<WorkflowsPage />);
-
-    const triggers = screen.getByRole("list", {
-      name: "Available trigger concepts",
-    });
-    const actions = screen.getByRole("list", {
-      name: "Available action concepts",
-    });
-
-    expect(within(triggers).getByText("New customer enquiry")).toBeVisible();
-    expect(within(triggers).getByText("External webhook")).toBeVisible();
-    expect(within(actions).getByText("Qualify lead")).toBeVisible();
-    expect(within(actions).getByText("Request human approval")).toBeVisible();
-    expect(screen.getAllByText("Planned")).toHaveLength(13);
-    expect(screen.getByText("Execution unavailable")).toBeVisible();
-  });
-
-  it("maps all planned workflow statuses to clear labels", () => {
-    render(
-      <>
-        <WorkflowStatusBadge status="draft" />
-        <WorkflowStatusBadge status="active" />
-        <WorkflowStatusBadge status="paused" />
-        <WorkflowStatusBadge status="needs-attention" />
-      </>,
+    await userEvent.click(
+      await screen.findByRole("switch", {
+        name: "Turn on Analyze website leads",
+      }),
     );
-
-    for (const label of ["Draft", "Active", "Paused", "Needs attention"]) {
-      expect(screen.getByText(label)).toBeVisible();
-    }
+    expect(updateMock).toHaveBeenCalledWith("rule-1", {
+      expected_revision: 3,
+      enabled: true,
+    });
+    expect(
+      await screen.findByRole("switch", {
+        name: "Turn off Analyze website leads",
+      }),
+    ).toBeVisible();
   });
 
-  it("selects blueprint steps and reveals related workspaces", async () => {
-    const user = userEvent.setup();
+  it("creates a follow-up workflow and limits actions for human attention", async () => {
+    listMock.mockResolvedValueOnce([]);
+    createMock.mockResolvedValue({ ...rule, id: "rule-2" });
     render(<WorkflowsPage />);
-
-    const steps = screen.getByRole("list", {
-      name: "Conceptual workflow steps",
+    await screen.findByText("Create your first workflow");
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "New workflow" })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(
+      within(dialog).getByLabelText(/Name/),
+      "Remind on escalation",
+    );
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText(/When/),
+      "HUMAN_ATTENTION_REQUIRED",
+    );
+    const action = within(dialog).getByLabelText(/Then/);
+    expect(
+      within(action)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Schedule a follow-up reminder"]);
+    expect(within(dialog).queryByLabelText(/Only for leads from/)).toBeNull();
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText(/Reminder due after/),
+      "4",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Create workflow" }),
+    );
+    expect(createMock).toHaveBeenCalledWith({
+      name: "Remind on escalation",
+      trigger: "HUMAN_ATTENTION_REQUIRED",
+      action: "CREATE_FOLLOW_UP",
+      source_filter: null,
+      follow_up_delay_hours: 4,
     });
-    const trigger = within(steps).getByRole("button", { name: /Trigger/ });
-    const approval = within(steps).getByRole("button", { name: /Approval/ });
-
-    expect(trigger).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "Trigger" })).toBeVisible();
-
-    await user.click(approval);
-    expect(approval).toHaveAttribute("aria-pressed", "true");
-    expect(trigger).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("heading", { name: "Approval" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open Approvals" })).toHaveAttribute(
-      "href",
-      "/approvals",
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Approval" })).toHaveFocus(),
-    );
   });
 
-  it("supports keyboard selection and keeps the detail region focused", async () => {
-    const user = userEvent.setup();
+  it("warns about overlap with Sales Agent auto-start", async () => {
+    listMock.mockResolvedValueOnce([]);
     render(<WorkflowsPage />);
-
-    const condition = screen.getByRole("button", { name: /Condition/ });
-    condition.focus();
-    await user.keyboard("{Enter}");
-
-    expect(condition).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "Condition" })).toBeVisible();
-    await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Condition" })).toHaveFocus(),
+    await screen.findByText("Create your first workflow");
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "New workflow" })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("note")).toHaveTextContent(
+      /Sales Agent auto-start/,
     );
   });
 
-  it("supports desktop table and mobile list representations for real rows", () => {
-    const workflow: WorkflowListItem = {
-      id: "workflow-1",
-      name: "Test workflow",
-      description: "Test workflow description",
-      trigger: "Test trigger",
-      status: "draft",
-    };
+  it("shows run history on request", async () => {
+    runsMock.mockResolvedValue({
+      items: [
+        {
+          id: "run-1",
+          rule_id: "rule-1",
+          lead_id: "lead-1",
+          lead_name: "Ada Prospect",
+          status: "SKIPPED",
+          detail: "The lead has no enquiry to analyze.",
+          result_entity_id: null,
+          created_at: "2026-10-11T10:00:00Z",
+          started_at: "2026-10-11T10:00:01Z",
+          completed_at: "2026-10-11T10:00:02Z",
+        },
+      ],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    });
+    render(<WorkflowsPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Show runs" }),
+    );
+    const runs = await screen.findByRole("list", {
+      name: "Recent runs of Analyze website leads",
+    });
+    expect(
+      within(runs).getByRole("link", { name: "Ada Prospect" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
+    expect(within(runs).getByText("Skipped")).toBeVisible();
+    expect(runsMock).toHaveBeenCalledWith("rule-1");
+  });
 
-    render(<WorkflowList workflows={[workflow]} />);
+  it("deletes only after confirmation", async () => {
+    deleteMock.mockResolvedValue(undefined);
+    render(<WorkflowsPage />);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Delete Analyze website leads",
+      }),
+    );
+    expect(deleteMock).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete workflow" }),
+    );
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("rule-1"));
+  });
 
-    expect(screen.getByRole("table")).toBeInTheDocument();
-    expect(screen.getByRole("list")).toBeInTheDocument();
-    expect(screen.getAllByText("Test workflow")).toHaveLength(2);
-    expect(screen.getAllByText("Draft")).toHaveLength(2);
-    expect(screen.getAllByText("Not connected")).toHaveLength(2);
+  it("is read-only for members", async () => {
+    auth.role = "MEMBER";
+    render(<WorkflowsPage />);
+    const card = await screen.findByRole("article", {
+      name: "Analyze website leads",
+    });
+    expect(within(card).queryByRole("switch")).toBeNull();
+    expect(within(card).queryByRole("button", { name: /Edit/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New workflow" })).toBeNull();
+    expect(
+      screen.getByText(
+        "Only owners and admins can create or change workflows.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(card).getByRole("button", { name: "Show runs" }),
+    ).toBeVisible();
+  });
+
+  it("offers a retry when loading fails", async () => {
+    listMock.mockRejectedValueOnce(new Error("offline"));
+    render(<WorkflowsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByRole("article", { name: "Analyze website leads" }),
+    ).toBeVisible();
   });
 });

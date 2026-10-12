@@ -1,72 +1,81 @@
-import { ChartColumn } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export type AnalyticsPanelRow = {
+  label: string;
+  value: string;
+  hint?: string;
+};
 
 type AnalyticsPanelProps = {
   title: string;
   description: string;
-  metrics: readonly string[];
   headingId: string;
+  rows: readonly AnalyticsPanelRow[];
+  loading?: boolean;
+  emptyMessage?: string;
 };
 
 export function AnalyticsPanel({
   title,
   description,
-  metrics,
   headingId,
+  rows,
+  loading = false,
+  emptyMessage = "Nothing recorded in this period.",
 }: AnalyticsPanelProps) {
   return (
     <Card
       as="section"
       aria-labelledby={headingId}
       aria-describedby={`${headingId}-description`}
+      aria-busy={loading || undefined}
       className="h-full"
     >
-      <CardContent className="flex h-full flex-col gap-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 id={headingId} className="text-base font-medium tracking-tight">
-              {title}
-            </h3>
-            <p
-              id={`${headingId}-description`}
-              className="text-muted-foreground mt-1 text-sm leading-6"
-            >
-              {description}
-            </p>
-          </div>
-          <StatusBadge status="draft" label="Planned" />
-        </div>
-
-        <div
-          className="border-border bg-surface-subtle flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center"
-        >
-          <ChartColumn
-            className="text-muted-foreground size-5"
-            aria-hidden="true"
-          />
-          <p className="mt-3 text-sm font-medium">Reporting is coming soon</p>
-          <p className="text-muted-foreground mt-1 max-w-sm text-xs leading-5">
-            No chart series, percentages, or trends are available yet.
+      <CardContent className="flex h-full flex-col gap-4">
+        <div>
+          <h3 id={headingId} className="text-base font-medium tracking-tight">
+            {title}
+          </h3>
+          <p
+            id={`${headingId}-description`}
+            className="text-muted-foreground mt-1 text-sm leading-6"
+          >
+            {description}
           </p>
         </div>
 
-        <ul
-          className="grid gap-2 sm:grid-cols-2"
-          aria-label={`${title} metric concepts`}
-        >
-          {metrics.map((metric) => (
-            <li
-              key={metric}
-              className="border-border bg-surface-subtle flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
-            >
-              <span>{metric}</span>
-              <span className="text-muted-foreground text-xs">Unavailable</span>
-            </li>
-          ))}
-        </ul>
+        {loading ? (
+          <div className="grid gap-2" role="status">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+            <span className="sr-only">Loading {title}</span>
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-muted-foreground border-border rounded-md border border-dashed px-3 py-6 text-center text-sm">
+            {emptyMessage}
+          </p>
+        ) : (
+          <dl className="grid gap-2">
+            {rows.map((row) => (
+              <div
+                key={row.label}
+                className="border-border bg-surface-subtle flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
+              >
+                <dt className="min-w-0">
+                  <span className="block">{row.label}</span>
+                  {row.hint ? (
+                    <span className="text-muted-foreground block text-xs">{row.hint}</span>
+                  ) : null}
+                </dt>
+                <dd className="font-medium tabular-nums">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </CardContent>
     </Card>
   );

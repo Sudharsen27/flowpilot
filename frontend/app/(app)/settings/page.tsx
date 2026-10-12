@@ -270,6 +270,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {SECONDARY_NAV_ITEMS.length > 0 ? (
           <section className="grid gap-5" aria-label="More workspaces">
             <SectionHeader
               title="More workspaces"
@@ -297,6 +298,7 @@ export default function SettingsPage() {
               })}
             </ul>
           </section>
+          ) : null}
 
           <section className="grid gap-5" aria-label="Account settings">
             <SectionHeader

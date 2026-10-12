@@ -85,6 +85,9 @@ export function ActivityToolbar({
           <option value="LEAD_FOLLOW_UP_EXECUTION">Follow-up execution</option>
           <option value="LEAD_RESPONSE_DRAFT">Response draft</option>
           <option value="LEAD_QUALIFICATION">Qualification</option>
+          <option value="KNOWLEDGE_ENTRY">Knowledge</option>
+          <option value="WORKFLOW_RULE">Workflows</option>
+          <option value="WEBHOOK_ENDPOINT">Webhooks</option>
           <option value="AGENT_EXECUTION">Agent execution</option>
         </Select>
       </div>

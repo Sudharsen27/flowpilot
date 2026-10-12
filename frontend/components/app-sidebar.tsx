@@ -109,24 +109,26 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
             </div>
           </div>
         ))}
-        <div>
-          <p className="text-muted-foreground mb-1.5 px-2.5 text-[0.6875rem] font-medium tracking-wide uppercase">
-            Coming soon
-          </p>
-          <div className="flex flex-col gap-0.5">
-            {SECONDARY_NAV_ITEMS.map((item) => (
-              <SidebarLink
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                icon={item.icon}
-                comingSoon
-                active={isNavigationItemActive(pathname, item.href)}
-                onNavigate={onNavigate}
-              />
-            ))}
+        {SECONDARY_NAV_ITEMS.length > 0 ? (
+          <div>
+            <p className="text-muted-foreground mb-1.5 px-2.5 text-[0.6875rem] font-medium tracking-wide uppercase">
+              Coming soon
+            </p>
+            <div className="flex flex-col gap-0.5">
+              {SECONDARY_NAV_ITEMS.map((item) => (
+                <SidebarLink
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  icon={item.icon}
+                  comingSoon
+                  active={isNavigationItemActive(pathname, item.href)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
       </nav>
       <div className="px-3 py-3">
         <Separator className="mb-3" />

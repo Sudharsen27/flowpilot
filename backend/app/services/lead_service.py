@@ -18,6 +18,7 @@ from app.models.lead_response_draft import (
     LeadResponseReviewStatus,
 )
 from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
+from app.models.workflow import WorkflowTrigger
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import (
     LEAD_LIST_DEFAULT_LIMIT,
@@ -38,10 +39,12 @@ from app.schemas.sales_run import (
     LeadLatestSalesRunFollowUpSummary,
     LeadLatestSalesRunSummary,
 )
+from app.services import webhook_events
 from app.services.activity_service import ActivityService
 from app.services.lead_follow_up_service import to_follow_up_public
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
+from app.services.workflow_service import WorkflowService
 
 
 def _sanitize_search(value: str | None) -> str | None:
@@ -120,6 +123,13 @@ class LeadService:
                 status=lead.status,
                 dedupe_key=f"lead:{lead.id}:CREATED",
             )
+        WorkflowService(self.session).enqueue(
+            organization_id=organization_id,
+            trigger=WorkflowTrigger.LEAD_CREATED,
+            lead=lead,
+            trigger_key=f"lead:{lead.id}:created",
+        )
+        webhook_events.lead_created(self.session, lead)
         self.session.commit()
         self.session.refresh(lead)
         return lead

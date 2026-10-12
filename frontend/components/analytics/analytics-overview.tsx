@@ -2,61 +2,78 @@ import {
   Bot,
   CalendarCheck,
   MessageSquareText,
+  UserCheck,
   UserRoundCheck,
   Users,
-  UserCheck,
 } from "lucide-react";
 
 import { MetricCard } from "@/components/data-display/metric-card";
+import type { AnalyticsSummary } from "@/types/api";
 
-const overviewMetrics = [
-  {
-    label: "Leads generated",
-    unavailableLabel: "Unavailable until analytics data is connected",
-    icon: Users,
-  },
-  {
-    label: "Qualified leads",
-    unavailableLabel: "Unavailable until analytics data is connected",
-    icon: UserCheck,
-  },
-  {
-    label: "Conversations",
-    unavailableLabel: "Unavailable until analytics data is connected",
-    icon: MessageSquareText,
-  },
-  {
-    label: "Appointments",
-    unavailableLabel: "Unavailable until analytics data is connected",
-    icon: CalendarCheck,
-  },
-  {
-    label: "AI handled",
-    unavailableLabel: "Unavailable until analytics data is connected",
-    icon: Bot,
-  },
-  {
-    label: "Human handoffs",
-    unavailableLabel: "Unavailable until analytics data is connected",
-    icon: UserRoundCheck,
-  },
-] as const;
+type AnalyticsOverviewProps = {
+  summary: AnalyticsSummary | null;
+  loading: boolean;
+};
 
-export function AnalyticsOverview() {
+export function AnalyticsOverview({ summary, loading }: AnalyticsOverviewProps) {
+  const totals = summary?.totals;
+  const metrics = [
+    {
+      label: "Leads created",
+      value: totals?.leads_created,
+      description: "New leads from every channel in this period.",
+      icon: Users,
+    },
+    {
+      label: "Qualified leads",
+      value: totals?.leads_qualified,
+      description: "Leads the AI assessed as qualified at least once.",
+      icon: UserCheck,
+    },
+    {
+      label: "Customer replies",
+      value: totals?.customer_replies,
+      description: "Inbound customer emails received.",
+      icon: MessageSquareText,
+    },
+    {
+      label: "AI handled",
+      value: totals ? totals.ai_analyses + totals.ai_drafts : undefined,
+      description: "AI analyses plus AI reply drafts completed.",
+      icon: Bot,
+    },
+    {
+      label: "Human handoffs",
+      value: totals?.human_handoffs,
+      description: "Times a lead was flagged for a person to review.",
+      icon: UserRoundCheck,
+    },
+  ];
+
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {overviewMetrics.map((metric) => {
+      {metrics.map((metric) => {
         const Icon = metric.icon;
         return (
           <MetricCard
             key={metric.label}
             label={metric.label}
-            unavailableLabel={metric.unavailableLabel}
+            value={metric.value?.toLocaleString()}
+            description={metric.description}
+            loading={loading}
+            unavailableLabel="Not available right now"
             headingLevel={3}
             icon={<Icon />}
           />
         );
       })}
+      <MetricCard
+        label="Appointments"
+        unavailableLabel="Needs a calendar integration. FlowPilot does not book appointments yet."
+        unavailableStatusLabel="Not connected"
+        headingLevel={3}
+        icon={<CalendarCheck />}
+      />
     </div>
   );
 }

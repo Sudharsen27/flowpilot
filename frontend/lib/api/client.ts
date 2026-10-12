@@ -28,7 +28,7 @@ export class ApiError extends Error {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   token?: string | null;
 };
@@ -88,6 +88,10 @@ export function apiPost<T>(
   options: { token?: string | null } = {},
 ): Promise<T> {
   return request<T>(path, { method: "POST", body, ...options });
+}
+
+export function apiDelete(path: string, options: { token?: string | null } = {}) {
+  return request<void>(path, { method: "DELETE", ...options });
 }
 
 export function apiPatch<T>(

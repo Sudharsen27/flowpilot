@@ -44,6 +44,9 @@ class ActivityEntityType(StrEnum):
     LEAD_FOLLOW_UP_EXECUTION = "LEAD_FOLLOW_UP_EXECUTION"
     LEAD_RESPONSE_DRAFT = "LEAD_RESPONSE_DRAFT"
     LEAD_QUALIFICATION = "LEAD_QUALIFICATION"
+    KNOWLEDGE_ENTRY = "KNOWLEDGE_ENTRY"
+    WORKFLOW_RULE = "WORKFLOW_RULE"
+    WEBHOOK_ENDPOINT = "WEBHOOK_ENDPOINT"
 
 
 class ActivityEvent(Base):
@@ -67,7 +70,8 @@ class ActivityEvent(Base):
             "entity_type IN ("
             "'LEAD', 'SALES_RUN', 'LEAD_EMAIL_SEND', 'AGENT_EXECUTION', "
             "'LEAD_FOLLOW_UP', 'LEAD_FOLLOW_UP_EXECUTION', "
-            "'LEAD_RESPONSE_DRAFT', 'LEAD_QUALIFICATION')",
+            "'LEAD_RESPONSE_DRAFT', 'LEAD_QUALIFICATION', 'KNOWLEDGE_ENTRY', "
+            "'WORKFLOW_RULE', 'WEBHOOK_ENDPOINT')",
             name="ck_activity_events_entity_type",
         ),
         Index(

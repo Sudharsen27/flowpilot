@@ -2,7 +2,11 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { statusPresentation } from "@/lib/status";
 
 export type IntegrationStatus =
-  "connected" | "not-connected" | "needs-attention" | "coming-soon";
+  | "connected"
+  | "not-connected"
+  | "needs-attention"
+  | "needs-setup"
+  | "coming-soon";
 
 type IntegrationStatusBadgeProps = {
   status: IntegrationStatus;
@@ -15,6 +19,7 @@ const integrationPresentation: Record<
   connected: { code: "CONNECTED", label: "Connected", fallback: "active" },
   "not-connected": { code: "DRAFT", label: "Not connected" },
   "needs-attention": { code: "NEEDS_ATTENTION", label: "Needs attention" },
+  "needs-setup": { code: "DRAFT", label: "Needs provider setup" },
   "coming-soon": { code: "DRAFT", label: "Coming soon" },
 };
 

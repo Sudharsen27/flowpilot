@@ -27,11 +27,13 @@ from app.core.exceptions import (
 from app.email.resend_webhook import verify_resend_signature
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.inbound_email import InboundEmail, InboundEmailStatus
+from app.models.workflow import WorkflowTrigger
 from app.repositories.inbound_email_repository import InboundEmailRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.inbound_email import InboundAttachmentMeta, ResendInboundEvent
 from app.services.activity_service import ActivityService
+from app.services.workflow_service import WorkflowService
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +154,15 @@ class InboundEmailService:
             occurred_at=row.received_at,
             dedupe_key=f"inbound_email:{row.id}:RECEIVED",
         )
+        lead = LeadRepository(self.session).get_by_id(row.organization_id, lead_id)
+        if lead is not None:
+            WorkflowService(self.session).enqueue(
+                organization_id=row.organization_id,
+                trigger=WorkflowTrigger.INBOUND_REPLY_RECEIVED,
+                lead=lead,
+                trigger_key=f"inbound:{row.id}",
+                inbound_email_id=row.id,
+            )
 
     def _store(self, organization_id: str, event: ResendInboundEvent) -> InboundEmailResult:
         data = event.data
