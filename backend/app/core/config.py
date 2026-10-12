@@ -9,6 +9,13 @@ LOCAL_DATABASE_URL = "postgresql+psycopg://app:app@localhost:5432/app"
 
 AiProviderName = Literal["openai", "groq"]
 
+# OpenAI SDK defaults used by OpenAIProvider and GroqProvider: two automatic
+# retries, each of which may first wait a server-directed Retry-After of up to
+# two minutes. One generate() call can therefore outlast the request timeout.
+_OPENAI_SDK_MAX_RETRIES = 2
+_OPENAI_SDK_MAX_RETRY_AFTER_SECONDS = 120
+_STALE_CLAIM_MARGIN_SECONDS = 60
+
 # Resolve .env from this file's location so loading does not depend on the
 # process cwd (uvicorn may be started from repo root or backend/).
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -72,6 +79,10 @@ class Settings(BaseSettings):
     # RUNNING sales runs older than this (and two provider-call floors) may be
     # recovered as FAILED. Qualification and drafting each call the provider.
     sales_run_stale_timeout_seconds: float = Field(default=300, ge=1)
+    # CLAIMED inbound qualification activities older than this (and the
+    # single-provider-call floor) may be taken over by an explicit retry.
+    # There is no heartbeat, so a live attempt must never look abandoned.
+    inbound_qualification_claim_stale_timeout_seconds: float = Field(default=600, ge=1)
     # The follow-up worker is a separate process (`python -m app.worker`). It is
     # never started by the API process, so this flag only guards that entrypoint.
     follow_up_worker_enabled: bool = False
@@ -101,6 +112,14 @@ class Settings(BaseSettings):
     def sales_run_stale_timeout_effective_seconds(self) -> float:
         floor = 2 * self.openai_request_timeout_seconds
         return max(self.sales_run_stale_timeout_seconds, floor)
+
+    def inbound_qualification_claim_stale_timeout_effective_seconds(self) -> float:
+        floor = (
+            (_OPENAI_SDK_MAX_RETRIES + 1) * self.openai_request_timeout_seconds
+            + _OPENAI_SDK_MAX_RETRIES * _OPENAI_SDK_MAX_RETRY_AFTER_SECONDS
+            + _STALE_CLAIM_MARGIN_SECONDS
+        )
+        return max(self.inbound_qualification_claim_stale_timeout_seconds, floor)
 
     @property
     def cors_origin_list(self) -> list[str]:

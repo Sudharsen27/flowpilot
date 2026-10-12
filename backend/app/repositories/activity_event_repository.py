@@ -1,4 +1,7 @@
-from sqlalchemy import func, or_, select
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -33,6 +36,93 @@ class ActivityEventRepository:
                 ActivityEvent.dedupe_key == dedupe_key,
             )
         )
+
+    def take_over_stale_claim(
+        self,
+        organization_id: str,
+        dedupe_key: str,
+        *,
+        claim_type: ActivityEventType,
+        claim_status: str,
+        lead_id: str,
+        stale_before: datetime,
+        values: dict[str, Any],
+    ) -> bool:
+        """Replace a stale claim's owner in one conditional UPDATE.
+
+        The predicate is re-checked by the database against the committed row,
+        so of several concurrent callers at most one sees a matching row.
+        """
+        result = self.session.execute(
+            update(ActivityEvent)
+            .where(
+                ActivityEvent.organization_id == organization_id,
+                ActivityEvent.dedupe_key == dedupe_key,
+                ActivityEvent.type == claim_type,
+                ActivityEvent.status == claim_status,
+                ActivityEvent.lead_id == lead_id,
+                ActivityEvent.occurred_at < stale_before,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
+    def update_owned_claim(
+        self,
+        organization_id: str,
+        dedupe_key: str,
+        *,
+        claim_status: str,
+        owner_entity_type: ActivityEntityType,
+        owner_entity_id: str,
+        values: dict[str, Any],
+    ) -> bool:
+        owned = self._owned_claim(
+            organization_id, dedupe_key, claim_status, owner_entity_type, owner_entity_id
+        )
+        result = self.session.execute(
+            update(ActivityEvent)
+            .where(*owned)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
+    def delete_owned_claim(
+        self,
+        organization_id: str,
+        dedupe_key: str,
+        *,
+        claim_status: str,
+        owner_entity_type: ActivityEntityType,
+        owner_entity_id: str,
+    ) -> bool:
+        owned = self._owned_claim(
+            organization_id, dedupe_key, claim_status, owner_entity_type, owner_entity_id
+        )
+        result = self.session.execute(
+            delete(ActivityEvent)
+            .where(*owned)
+            .execution_options(synchronize_session=False)
+        )
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
+    def _owned_claim(
+        self,
+        organization_id: str,
+        dedupe_key: str,
+        claim_status: str,
+        owner_entity_type: ActivityEntityType,
+        owner_entity_id: str,
+    ) -> list[ColumnElement[bool]]:
+        return [
+            ActivityEvent.organization_id == organization_id,
+            ActivityEvent.dedupe_key == dedupe_key,
+            ActivityEvent.status == claim_status,
+            ActivityEvent.entity_type == owner_entity_type,
+            ActivityEvent.entity_id == owner_entity_id,
+        ]
 
     def list_for_organization(
         self,

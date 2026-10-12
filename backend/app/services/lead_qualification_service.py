@@ -1,7 +1,8 @@
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.openai_provider import sanitize_provider_error
 from app.ai.provider import AIGenerateRequest, AIProvider, TokenUsage
 from app.ai.typesafe_provider import TypeSafeDecisionProvider
+from app.core.config import settings
 from app.core.exceptions import (
     ConflictError,
     NotFoundError,
@@ -76,9 +78,11 @@ class LeadQualificationService:
         session: Session,
         provider: AIProvider | None = None,
         human_escalation_service: HumanEscalationDecisionService | None = None,
+        claim_stale_timeout_seconds: float | None = None,
     ) -> None:
         self.session = session
         self.provider = provider
+        self._claim_stale_timeout_seconds = claim_stale_timeout_seconds
         self.leads = LeadRepository(session)
         self.qualifications = LeadQualificationRepository(session)
         self.inbound_emails = InboundEmailRepository(session)
@@ -246,11 +250,16 @@ class LeadQualificationService:
         # before the claim so this connection is not held across the provider.
         self.session.rollback()
 
+        # Ownership token for this attempt. It is also the id of the
+        # qualification this attempt saves, so a completed claim already
+        # points at its result.
+        attempt_id = str(uuid4())
         completed_id = self._claim_inbound_qualification(
             organization_id,
             resolved_lead_id,
             resolved_inbound_id,
             initiated_by_user_id,
+            attempt_id,
         )
         if completed_id is not None:
             return self._require_qualification(
@@ -266,15 +275,17 @@ class LeadQualificationService:
             return self._fail_inbound(
                 organization_id,
                 resolved_lead_id,
+                attempt_id,
                 enquiry,
                 initiated_by_user_id,
                 started,
                 "AI provider is not configured",
                 ExecutionFailureCategory.CONFIGURATION_ERROR,
                 configured=False,
-                dedupe_key=dedupe_key,
+                inbound_email_id=resolved_inbound_id,
             )
 
+        owned = False
         try:
             generated = provider.generate(
                 AIGenerateRequest(
@@ -291,6 +302,7 @@ class LeadQualificationService:
             if generated.usage is not None:
                 result["usage"] = generated.usage.model_dump(mode="json")
             row = LeadQualification(
+                id=attempt_id,
                 organization_id=organization_id,
                 lead_id=resolved_lead_id,
                 initiated_by_user_id=initiated_by_user_id,
@@ -306,51 +318,57 @@ class LeadQualificationService:
             )
             self.qualifications.add(row)
             self.session.flush()
-            self._finalize_inbound_activity(
+            owned = self._complete_inbound_claim(
                 organization_id=organization_id,
                 lead_id=resolved_lead_id,
-                qualification_id=row.id,
+                attempt_id=attempt_id,
                 initiated_by_user_id=initiated_by_user_id,
-                status=row.status,
                 dedupe_key=dedupe_key,
             )
-            self.session.commit()
-            self.session.refresh(row)
+            # Nothing after this commit may run inside the try: every handler
+            # below records a failure, which is wrong once the result is saved.
+            if owned:
+                self.session.commit()
+            else:
+                self.session.rollback()
         except ProviderNotConfiguredError as exc:
             return self._fail_inbound(
                 organization_id,
                 resolved_lead_id,
+                attempt_id,
                 enquiry,
                 initiated_by_user_id,
                 started,
                 sanitize_provider_error(exc.detail),
                 ExecutionFailureCategory.CONFIGURATION_ERROR,
                 configured=False,
-                dedupe_key=dedupe_key,
+                inbound_email_id=resolved_inbound_id,
             )
         except PydanticValidationError:
             return self._fail_inbound(
                 organization_id,
                 resolved_lead_id,
+                attempt_id,
                 enquiry,
                 initiated_by_user_id,
                 started,
                 "AI provider returned invalid structured output",
                 ExecutionFailureCategory.VALIDATION_ERROR,
                 configured=True,
-                dedupe_key=dedupe_key,
+                inbound_email_id=resolved_inbound_id,
             )
         except ProviderError as exc:
             return self._fail_inbound(
                 organization_id,
                 resolved_lead_id,
+                attempt_id,
                 enquiry,
                 initiated_by_user_id,
                 started,
                 sanitize_provider_error(exc.detail),
                 ExecutionFailureCategory.PROVIDER_ERROR,
                 configured=True,
-                dedupe_key=dedupe_key,
+                inbound_email_id=resolved_inbound_id,
             )
         except Exception:
             logger.exception(
@@ -360,15 +378,32 @@ class LeadQualificationService:
             return self._fail_inbound(
                 organization_id,
                 resolved_lead_id,
+                attempt_id,
                 enquiry,
                 initiated_by_user_id,
                 started,
                 "AI provider request failed",
                 ExecutionFailureCategory.EXECUTION_ERROR,
                 configured=True,
-                dedupe_key=dedupe_key,
+                inbound_email_id=resolved_inbound_id,
             )
 
+        if not owned:
+            # A newer attempt took over this claim while the provider ran. Its
+            # claim or result wins; this result is discarded unsaved.
+            logger.warning(
+                "Inbound qualification result discarded after claim takeover "
+                "lead_id=%s inbound_email_id=%s",
+                resolved_lead_id,
+                resolved_inbound_id,
+            )
+            return self._defer_to_current_owner(
+                organization_id,
+                resolved_lead_id,
+                resolved_inbound_id,
+            )
+
+        row = self._reload_committed(organization_id, resolved_lead_id, row)
         fresh_lead = self.leads.get_by_id(organization_id, resolved_lead_id)
         if fresh_lead is not None:
             self._evaluate_human_attention(fresh_lead, row, analysis)
@@ -380,13 +415,16 @@ class LeadQualificationService:
         lead_id: str,
         inbound_email_id: str,
         initiated_by_user_id: str | None,
+        attempt_id: str,
     ) -> str | None:
-        """Insert and commit the dedupe key in its own session.
+        """Claim the dedupe key for ``attempt_id`` in its own short session.
 
-        The request session is not used. The unique (organization_id, dedupe_key)
-        constraint decides the winner. This session is closed before the provider
-        runs, so the claim row lock is not held during the AI call. The loser
-        rolls this session back and does not call the provider.
+        Returns a completed qualification id to replay, or None when this
+        attempt owns the claim. The unique (organization_id, dedupe_key)
+        constraint decides the first claim. A CLAIMED row older than the stale
+        threshold is taken over by one conditional UPDATE, so concurrent
+        retries cannot both own it. The session is closed before the provider
+        runs, so no row lock is held during the AI call.
         """
         completed_id = self._lookup_inbound_qualification_id(
             organization_id,
@@ -395,31 +433,45 @@ class LeadQualificationService:
         )
         if completed_id is not None:
             return completed_id
+        dedupe_key = _inbound_qualified_key(inbound_email_id)
+        claimed_at = datetime.now(UTC)
+        fields = _claim_fields(lead_id, attempt_id, initiated_by_user_id, claimed_at)
         claim_session = self._open_bound_session()
-        lost_race = False
+        owned = False
         try:
             claim_session.add(
                 ActivityEvent(
                     organization_id=organization_id,
-                    type=ActivityEventType.SYSTEM_EVENT,
-                    actor_type=ActivityActorType.SYSTEM,
-                    actor_user_id=initiated_by_user_id,
-                    entity_type=ActivityEntityType.LEAD,
-                    entity_id=lead_id,
-                    lead_id=lead_id,
-                    title="Inbound qualification started",
-                    summary="Inbound email qualification is in progress.",
-                    status=_INBOUND_CLAIM_STATUS,
-                    dedupe_key=_inbound_qualified_key(inbound_email_id),
+                    dedupe_key=dedupe_key,
+                    **fields,
                 )
             )
-            claim_session.commit()
-        except IntegrityError:
-            claim_session.rollback()
-            lost_race = True
+            try:
+                claim_session.commit()
+                owned = True
+            except IntegrityError:
+                claim_session.rollback()
+                owned = ActivityEventRepository(claim_session).take_over_stale_claim(
+                    organization_id,
+                    dedupe_key,
+                    claim_type=ActivityEventType.SYSTEM_EVENT,
+                    claim_status=_INBOUND_CLAIM_STATUS,
+                    lead_id=lead_id,
+                    stale_before=claimed_at
+                    - timedelta(seconds=self._claim_stale_timeout_seconds_effective()),
+                    values=fields,
+                )
+                claim_session.commit()
+                if owned:
+                    logger.warning(
+                        "Stale inbound qualification claim taken over "
+                        "lead_id=%s inbound_email_id=%s",
+                        lead_id,
+                        inbound_email_id,
+                    )
         finally:
             claim_session.close()
-        if not lost_race:
+        if owned:
             return None
         completed_id = self._lookup_inbound_qualification_id(
             organization_id,
@@ -436,7 +488,10 @@ class LeadQualificationService:
         lead_id: str,
         inbound_email_id: str,
     ) -> str | None:
-        """Read the claim in a session that is closed before returning."""
+        """Return the completed qualification id, or None if not completed.
+
+        Reads in a session that is closed before returning.
+        """
         lookup = self._open_bound_session()
         try:
             activity = ActivityEventRepository(lookup).get_by_dedupe_key(
@@ -459,7 +514,7 @@ class LeadQualificationService:
                 if row is None:
                     raise NotFoundError("Qualification not found")
                 return row.id
-            raise ConflictError("Inbound email qualification is already in progress")
+            return None
         finally:
             lookup.rollback()
             lookup.close()
@@ -484,43 +539,90 @@ class LeadQualificationService:
             raise NotFoundError("Qualification not found")
         return row
 
-    def _finalize_inbound_activity(
+    def _defer_to_current_owner(
+        self,
+        organization_id: str,
+        lead_id: str,
+        inbound_email_id: str,
+    ) -> LeadQualification:
+        """Replay the completed result, or 409 while another attempt owns it."""
+        completed_id = self._lookup_inbound_qualification_id(
+            organization_id,
+            lead_id,
+            inbound_email_id,
+        )
+        if completed_id is not None:
+            return self._require_qualification(organization_id, lead_id, completed_id)
+        raise ConflictError("Inbound email qualification is already in progress")
+
+    def _reload_committed(
+        self,
+        organization_id: str,
+        lead_id: str,
+        row: LeadQualification,
+    ) -> LeadQualification:
+        """Reload a committed qualification without treating errors as failures.
+
+        A refresh error leaves the saved result intact, so it is retried as a
+        plain read. If that read also fails the error propagates unchanged, and
+        the next explicit request replays the saved result.
+        """
+        try:
+            self.session.refresh(row)
+            return row
+        except Exception:
+            logger.exception(
+                "Committed inbound qualification could not be refreshed "
+                "qualification_id=%s lead_id=%s",
+                row.id,
+                lead_id,
+            )
+            self.session.rollback()
+        return self._require_qualification(organization_id, lead_id, row.id)
+
+    def _claim_stale_timeout_seconds_effective(self) -> float:
+        if self._claim_stale_timeout_seconds is not None:
+            return self._claim_stale_timeout_seconds
+        return settings.inbound_qualification_claim_stale_timeout_effective_seconds()
+
+    def _complete_inbound_claim(
         self,
         *,
         organization_id: str,
         lead_id: str,
-        qualification_id: str,
+        attempt_id: str,
         initiated_by_user_id: str | None,
-        status: str,
         dedupe_key: str,
-    ) -> None:
-        recorded = ActivityService(self.session).record(
-            organization_id=organization_id,
-            event_type=ActivityEventType.AI_ACTION,
-            actor_type=ActivityActorType.AGENT,
-            title="Lead qualified",
-            summary="AI completed enquiry qualification for this lead.",
-            entity_type=ActivityEntityType.LEAD_QUALIFICATION,
-            entity_id=qualification_id,
-            lead_id=lead_id,
-            actor_user_id=initiated_by_user_id,
-            status=status,
-            dedupe_key=dedupe_key,
+    ) -> bool:
+        """Turn this attempt's claim into the completed activity.
+
+        Returns False, changing nothing, when the claim is no longer CLAIMED by
+        ``attempt_id``. The claim's occurred_at is kept.
+        """
+        return self.activities.update_owned_claim(
+            organization_id,
+            dedupe_key,
+            claim_status=_INBOUND_CLAIM_STATUS,
+            owner_entity_type=ActivityEntityType.LEAD_QUALIFICATION,
+            owner_entity_id=attempt_id,
+            values={
+                "type": ActivityEventType.AI_ACTION,
+                "actor_type": ActivityActorType.AGENT,
+                "actor_user_id": initiated_by_user_id,
+                "title": "Lead qualified",
+                "summary": "AI completed enquiry qualification for this lead.",
+                "entity_type": ActivityEntityType.LEAD_QUALIFICATION,
+                "entity_id": attempt_id,
+                "lead_id": lead_id,
+                "status": LeadQualificationRecordStatus.COMPLETED,
+            },
         )
-        recorded.type = ActivityEventType.AI_ACTION
-        recorded.actor_type = ActivityActorType.AGENT
-        recorded.actor_user_id = initiated_by_user_id
-        recorded.title = "Lead qualified"
-        recorded.summary = "AI completed enquiry qualification for this lead."
-        recorded.entity_type = ActivityEntityType.LEAD_QUALIFICATION
-        recorded.entity_id = qualification_id
-        recorded.lead_id = lead_id
-        recorded.status = status
 
     def _fail_inbound(
         self,
         organization_id: str,
         lead_id: str,
+        attempt_id: str,
         enquiry: str,
         initiated_by_user_id: str | None,
         started: datetime,
@@ -528,10 +630,34 @@ class LeadQualificationService:
         category: ExecutionFailureCategory,
         *,
         configured: bool,
-        dedupe_key: str,
+        inbound_email_id: str,
     ) -> LeadQualification:
         self.session.rollback()
+        # Release only this attempt's claim so a retry can start. The FAILED
+        # row is written in the same transaction, and only while this attempt
+        # still owns the claim.
+        released = self.activities.delete_owned_claim(
+            organization_id,
+            _inbound_qualified_key(inbound_email_id),
+            claim_status=_INBOUND_CLAIM_STATUS,
+            owner_entity_type=ActivityEntityType.LEAD_QUALIFICATION,
+            owner_entity_id=attempt_id,
+        )
+        if not released:
+            # A newer attempt owns the claim, or this attempt's own commit
+            # already completed it. Either way its state is the result; a
+            # FAILED row here could become the lead's latest qualification.
+            self.session.rollback()
+            logger.warning(
+                "Inbound qualification failure not recorded; claim no longer owned "
+                "lead_id=%s inbound_email_id=%s failure_category=%s",
+                lead_id,
+                inbound_email_id,
+                category.value,
+            )
+            return self._defer_to_current_owner(organization_id, lead_id, inbound_email_id)
         row = LeadQualification(
+            id=attempt_id,
             organization_id=organization_id,
             lead_id=lead_id,
             initiated_by_user_id=initiated_by_user_id,
@@ -546,7 +672,6 @@ class LeadQualificationService:
             error,
             category,
             configured=configured,
-            activity_dedupe_key=dedupe_key,
         )
 
     def _evaluate_human_attention(
@@ -644,6 +769,27 @@ class LeadQualificationService:
 
 def _inbound_qualified_key(inbound_email_id: str) -> str:
     return f"inbound_email:{inbound_email_id}:QUALIFIED"
+
+
+def _claim_fields(
+    lead_id: str,
+    attempt_id: str,
+    initiated_by_user_id: str | None,
+    claimed_at: datetime,
+) -> dict[str, Any]:
+    """Columns written by both a first claim and a stale-claim takeover."""
+    return {
+        "type": ActivityEventType.SYSTEM_EVENT,
+        "actor_type": ActivityActorType.SYSTEM,
+        "actor_user_id": initiated_by_user_id,
+        "entity_type": ActivityEntityType.LEAD_QUALIFICATION,
+        "entity_id": attempt_id,
+        "lead_id": lead_id,
+        "title": "Inbound qualification started",
+        "summary": "Inbound email qualification is in progress.",
+        "status": _INBOUND_CLAIM_STATUS,
+        "occurred_at": claimed_at,
+    }
 
 
 def _parse_analysis(output_text: str) -> LeadQualificationAnalysis:
