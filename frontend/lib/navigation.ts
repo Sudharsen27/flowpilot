@@ -31,7 +31,10 @@ export type SecondaryNavigationItem = NavigationItem & {
 export const NAV_GROUPS: readonly NavigationGroup[] = [
   {
     label: "Overview",
-    items: [{ href: "/", label: "Command Center", icon: LayoutDashboard }],
+    items: [
+      { href: "/", label: "Command Center", icon: LayoutDashboard },
+      { href: "/activity", label: "Activity", icon: Activity },
+    ],
   },
   {
     label: "Work",
@@ -47,9 +50,8 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
   },
 ];
 
-/** Reachable routes that are not part of the daily sidebar. */
+/** Workspaces that are still being built; shown under "Coming soon". */
 export const SECONDARY_NAV_ITEMS: readonly SecondaryNavigationItem[] = [
-  { href: "/activity", label: "Activity", icon: Activity, status: "available" },
   { href: "/workflows", label: "Workflows", icon: Workflow, status: "planned" },
   {
     href: "/knowledge",
@@ -65,7 +67,6 @@ export const SECONDARY_NAV_ITEMS: readonly SecondaryNavigationItem[] = [
   },
   { href: "/analytics", label: "Analytics", icon: BarChart3, status: "planned" },
 ];
-
 export const SETTINGS_ITEM: NavigationItem = {
   href: "/settings",
   label: "Settings",

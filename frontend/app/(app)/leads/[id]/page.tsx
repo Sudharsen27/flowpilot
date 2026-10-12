@@ -11,9 +11,11 @@ import { Customer360Profile } from "@/components/leads/customer-360-profile";
 import { Customer360Timeline } from "@/components/leads/customer-360-timeline";
 import { HumanAttentionNotice } from "@/components/leads/human-attention-notice";
 import { DraftLeadResponseDialog } from "@/components/leads/draft-lead-response-dialog";
+import { LeadActionBar } from "@/components/leads/lead-action-bar";
 import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadSalesAgentHistory } from "@/components/leads/lead-sales-agent-history";
+import { QualifyLeadDialog } from "@/components/leads/qualify-lead-dialog";
 import { StartLeadSalesRunDialog } from "@/components/leads/start-lead-sales-run-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -24,6 +26,7 @@ import { getInboxConversation } from "@/lib/api/inbox";
 import { getLead, getLeadQualification, qualifyLead } from "@/lib/api/leads";
 import { getSalesRun } from "@/lib/api/sales-runs";
 import { inboxSourceLabels } from "@/lib/inbox-labels";
+import { hasReviewableDraft } from "@/lib/lead-next-step";
 import type {
   Agent,
   InboxConversationResponse,
@@ -91,6 +94,10 @@ export default function LeadWorkspacePage() {
   const [followUpsOpen, setFollowUpsOpen] = useState(false);
   const [followUpsKey, setFollowUpsKey] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [draftKey, setDraftKey] = useState(0);
+  const [draftDialogId, setDraftDialogId] = useState<string | null>(null);
+  const [qualifyOpen, setQualifyOpen] = useState(false);
+  const [qualifyKey, setQualifyKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -316,42 +323,18 @@ export default function LeadWorkspacePage() {
     );
   }
 
-  const summary = lead.latest_sales_run;
   const openRun = hasOpenSalesRun(lead);
+  const reviewDraftId = canReviewDraft(latestRun)
+    ? latestRun?.response_draft_id ?? null
+    : hasReviewableDraft(lead)
+      ? lead.latest_response_draft?.id ?? null
+      : null;
 
-  const salesAgentActions = (
-    <>
-      {canReviewDraft(latestRun) ? (
-        <Button type="button" variant="outline" onClick={() => setReviewOpen(true)}>
-          Review draft
-        </Button>
-      ) : null}
-      {summary ? (
-        <>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setHistoryKey((value) => value + 1);
-              setHistoryOpen(true);
-            }}
-          >
-            Sales Agent history
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setFollowUpsKey((value) => value + 1);
-              setFollowUpsOpen(true);
-            }}
-          >
-            Follow-ups
-          </Button>
-        </>
-      ) : null}
-    </>
-  );
+  function openDraftDialog(draftId: string | null) {
+    setDraftDialogId(draftId);
+    setDraftKey((value) => value + 1);
+    setReviewOpen(true);
+  }
 
   const insightsEmptyState =
     eligibleAgents.length === 0 ? (
@@ -419,6 +402,26 @@ export default function LeadWorkspacePage() {
         }
       />
 
+      <LeadActionBar
+        lead={lead}
+        canReviewDraft={reviewDraftId !== null}
+        salesRunOpen={openRun}
+        onQualify={() => {
+          setQualifyKey((value) => value + 1);
+          setQualifyOpen(true);
+        }}
+        onDraftResponse={() => openDraftDialog(null)}
+        onReviewDraft={() => openDraftDialog(reviewDraftId)}
+        onFollowUps={() => {
+          setFollowUpsKey((value) => value + 1);
+          setFollowUpsOpen(true);
+        }}
+        onSalesAgentHistory={() => {
+          setHistoryKey((value) => value + 1);
+          setHistoryOpen(true);
+        }}
+      />
+
       {/* Mobile: Profile → Insights → Timeline. Desktop xl: Profile | Timeline | Insights */}
       <div className="grid gap-4 lg:gap-5 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)_minmax(16rem,20rem)] xl:items-start">
         <div className="order-1 min-w-0 xl:order-none">
@@ -465,9 +468,6 @@ export default function LeadWorkspacePage() {
             agentName={agentName}
             detailLoading={insightsDetailLoading}
             emptyState={insightsEmptyState}
-            actions={
-              summary || canReviewDraft(latestRun) ? salesAgentActions : null
-            }
           />
         </div>
       </div>
@@ -504,10 +504,20 @@ export default function LeadWorkspacePage() {
         lead={lead}
         onOpenChange={setFollowUpsOpen}
       />
+      <QualifyLeadDialog
+        key={`lead-qualify-${qualifyKey}`}
+        open={qualifyOpen}
+        lead={lead}
+        onOpenChange={setQualifyOpen}
+        onCompleted={() => {
+          reload();
+        }}
+      />
       <DraftLeadResponseDialog
+        key={`lead-draft-${draftKey}`}
         open={reviewOpen}
         lead={lead}
-        draftId={latestRun?.response_draft_id}
+        draftId={draftDialogId}
         onOpenChange={setReviewOpen}
         onCompleted={() => {
           reload();

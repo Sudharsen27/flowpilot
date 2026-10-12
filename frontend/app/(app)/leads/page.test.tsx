@@ -47,7 +47,7 @@ async function chooseLeadAction(
 ) {
   await user.click(
     screen.getAllByRole("button", {
-      name: `Open actions for ${leadName}`,
+      name: `More actions for ${leadName}`,
     })[0]!,
   );
   await user.click(await screen.findByRole("menuitem", { name: action }));

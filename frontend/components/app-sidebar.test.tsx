@@ -27,11 +27,12 @@ describe("application sidebar navigation", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
-  it("shows the daily workspaces and keeps unfinished modules out of the sidebar", () => {
+  it("shows the daily workspaces, including Activity", () => {
     render(<AppSidebar />);
 
     for (const label of [
       "Command Center",
+      "Activity",
       "Leads",
       "AI Inbox",
       "Approvals",
@@ -40,14 +41,16 @@ describe("application sidebar navigation", () => {
     ]) {
       expect(screen.getByRole("link", { name: label })).toBeVisible();
     }
+  });
 
-    for (const label of [
-      "Workflows",
-      "Knowledge",
-      "Integrations",
-      "Analytics",
-      "Activity",
-    ]) {
+  it("labels unfinished modules as coming soon", () => {
+    render(<AppSidebar />);
+
+    expect(screen.getByText("Coming soon")).toBeVisible();
+    for (const label of ["Workflows", "Knowledge", "Integrations", "Analytics"]) {
+      expect(
+        screen.getByRole("link", { name: `${label} (coming soon)` }),
+      ).toBeVisible();
       expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
     }
   });

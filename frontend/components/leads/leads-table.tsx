@@ -8,7 +8,7 @@ import {
 import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { QualificationStatus } from "@/components/leads/qualification-status";
 import { SalesAgentStatus } from "@/components/leads/sales-agent-status";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { leadNextStep } from "@/lib/lead-next-step";
 import type { Lead, LeadSource } from "@/types/api";
 
 function qualificationState(lead: Lead) {
@@ -147,21 +148,58 @@ function LeadRowActions({
   onFollowUps?: (lead: Lead) => void;
   onSalesAgentHistory?: (lead: Lead) => void;
 }) {
+  const next = leadNextStep(lead);
+  const nextHandler =
+    next.kind === "review-draft"
+      ? onReviewDraft
+      : next.kind === "analyze"
+        ? onQualify
+        : next.kind === "draft-response"
+          ? onDraftResponse
+          : undefined;
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={`Open actions for ${lead.name}`}
-          />
-        }
-      >
-        <MoreHorizontal aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
+    <div className="flex items-center justify-end gap-2">
+      {nextHandler ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          title={next.hint}
+          aria-label={`${next.label} for ${lead.name}`}
+          onClick={() => nextHandler(lead)}
+        >
+          {next.label}
+        </Button>
+      ) : (
+        <Link
+          href={`/leads/${lead.id}`}
+          title={next.hint}
+          aria-label={`${next.label}: ${lead.name}`}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          {next.label}
+        </Link>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`More actions for ${lead.name}`}
+            />
+          }
+        >
+          More
+          <MoreHorizontal aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-48">
+        <DropdownMenuItem render={<Link href={`/leads/${lead.id}`} />}>
+          Open lead
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         {onQualify ? (
           <DropdownMenuItem onClick={() => onQualify(lead)}>
             Analyze with AI
@@ -193,8 +231,9 @@ function LeadRowActions({
             <DropdownMenuItem onClick={() => onEdit(lead)}>Edit</DropdownMenuItem>
           </>
         ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 

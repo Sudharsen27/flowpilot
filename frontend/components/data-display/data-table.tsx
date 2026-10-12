@@ -79,9 +79,9 @@ export function DataTable<T>({
               {rowActions ? (
                 <th
                   scope="col"
-                  className="sticky right-0 bg-surface-subtle w-14 px-3 py-3 text-right"
+                  className="sticky right-0 bg-surface-subtle px-3 py-3 text-right text-xs font-medium whitespace-nowrap"
                 >
-                  <span className="sr-only">Actions</span>
+                  Actions
                 </th>
               ) : null}
             </tr>

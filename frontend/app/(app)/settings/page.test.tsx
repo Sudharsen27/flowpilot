@@ -118,10 +118,7 @@ describe("identity-backed settings", () => {
     expect(screen.getByRole("region", { name: "Team settings" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Automation settings" })).toBeVisible();
     expect(screen.getByRole("region", { name: "More workspaces" })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Activity/ })).toHaveAttribute(
-      "href",
-      "/activity",
-    );
+    expect(screen.queryByRole("link", { name: /Activity/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Workflows/ })).toHaveAttribute(
       "href",
       "/workflows",

@@ -273,7 +273,7 @@ export default function SettingsPage() {
           <section className="grid gap-5" aria-label="More workspaces">
             <SectionHeader
               title="More workspaces"
-              description="Activity is available now. The other workspaces stay reachable while they are still being built."
+              description="These workspaces are still being built. You can open them to see what is planned."
             />
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {SECONDARY_NAV_ITEMS.map((item) => {
