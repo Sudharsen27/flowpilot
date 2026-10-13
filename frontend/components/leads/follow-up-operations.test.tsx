@@ -249,7 +249,10 @@ describe("Follow-up operations", () => {
       ),
     );
     render(<FollowUpOperations />);
-    const table = await screen.findByRole("table");
+    await waitFor(() => {
+      expect(screen.queryByText("Loading records")).not.toBeInTheDocument();
+    });
+    const table = screen.getByRole("table");
     expect(within(table).getAllByText("Ada Prospect").length).toBeGreaterThan(0);
     expect(within(table).getByText("Overdue")).toBeVisible();
     expect(within(table).getByText("Completed")).toBeVisible();
@@ -266,7 +269,10 @@ describe("Follow-up operations", () => {
   it("does not imply an email was sent without a SENT execution", async () => {
     getFollowUpOperationsMock.mockResolvedValue(page([item()]));
     render(<FollowUpOperations />);
-    const table = await screen.findByRole("table");
+    await waitFor(() => {
+      expect(screen.queryByText("Loading records")).not.toBeInTheDocument();
+    });
+    const table = screen.getByRole("table");
     expect(within(table).getByText("Not sent yet")).toBeVisible();
     expect(within(table).queryByText("Sent")).not.toBeInTheDocument();
   });

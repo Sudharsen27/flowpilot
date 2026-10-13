@@ -983,9 +983,12 @@ def test_reload_failure_after_commit_is_not_recorded_as_a_provider_failure(
     _override_provider(client, provider)
 
     # Not a 502: the provider succeeded and the result is saved. The
-    # infrastructure error propagates unchanged.
-    with pytest.raises(RuntimeError, match="database unavailable"):
-        _qualify(client, token, lead["id"], inbound.id)
+    # infrastructure error is not a provider failure; CORS middleware turns
+    # the unhandled exception into a generic 500 without leaking details.
+    response = _qualify(client, token, lead["id"], inbound.id)
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert "database unavailable" not in response.text
     assert refreshed
     rows = db.scalars(select(LeadQualification)).all()
     assert [(row.id, row.status) for row in rows] == [(refreshed[0], "COMPLETED")]
