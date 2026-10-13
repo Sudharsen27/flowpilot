@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NeedsAttention } from "@/components/command-center/needs-attention";
+import { getApprovals } from "@/lib/api/approvals";
 import { ApiError } from "@/lib/api/client";
 import { getInbox } from "@/lib/api/inbox";
 import {
@@ -12,11 +13,12 @@ import {
   getLeadResponseDraft,
 } from "@/lib/api/leads";
 import {
-  cancelSalesRun,
   listOrganizationSalesRuns,
   sendSalesRun,
 } from "@/lib/api/sales-runs";
 import type {
+  ApprovalListResponse,
+  ApprovalQueueItem,
   FollowUpOperationsItem,
   FollowUpOperationsResponse,
   InboxItem,
@@ -24,13 +26,16 @@ import type {
   SalesRun,
 } from "@/types/api";
 
+vi.mock("@/lib/api/approvals", () => ({
+  getApprovals: vi.fn(),
+}));
+
 vi.mock("@/lib/api/inbox", () => ({
   getInbox: vi.fn(),
 }));
 
 vi.mock("@/lib/api/sales-runs", () => ({
   listOrganizationSalesRuns: vi.fn(),
-  cancelSalesRun: vi.fn(),
   sendSalesRun: vi.fn(),
 }));
 
@@ -50,8 +55,8 @@ vi.mock("@/lib/api/leads", () => ({
   cancelLeadFollowUp: vi.fn(),
 }));
 
+const getApprovalsMock = vi.mocked(getApprovals);
 const listOrganizationSalesRunsMock = vi.mocked(listOrganizationSalesRuns);
-const cancelSalesRunMock = vi.mocked(cancelSalesRun);
 const sendSalesRunMock = vi.mocked(sendSalesRun);
 const getFollowUpOperationsMock = vi.mocked(getFollowUpOperations);
 const getLeadMock = vi.mocked(getLead);
@@ -123,6 +128,53 @@ function salesPage(items: SalesRun[], total = items.length) {
   return { items, limit: 20, offset: 0, total };
 }
 
+function approvalItem(
+  overrides: Partial<ApprovalQueueItem> = {},
+): ApprovalQueueItem {
+  return {
+    draft_id: "draft-1",
+    lead_id: "lead-1",
+    lead: {
+      name: "Ada Prospect",
+      email: "ada@example.com",
+      company: null,
+      status: "NEW",
+      source: "WEBSITE",
+    },
+    enquiry: "SECRET ENQUIRY BODY",
+    draft: {
+      response: "SECRET DRAFT TEXT",
+      review_status: "GENERATED",
+      revision: 1,
+      created_at: "2026-09-11T10:00:00Z",
+      updated_at: "2026-09-11T10:00:01Z",
+    },
+    sales_run: {
+      id: "run-1",
+      status: "WAITING_APPROVAL",
+      stage: "AWAIT_APPROVAL",
+      agent_id: "agent-1",
+      agent_name: "Inbound qualifier",
+    },
+    email: null,
+    needs_approval: true,
+    can_approve: true,
+    can_reject: true,
+    can_edit: true,
+    can_send: false,
+    created_at: "2026-09-11T10:00:00Z",
+    updated_at: "2026-09-11T10:00:01Z",
+    ...overrides,
+  };
+}
+
+function approvalPage(
+  items: ApprovalQueueItem[],
+  total = items.length,
+): ApprovalListResponse {
+  return { items, limit: 20, offset: 0, total };
+}
+
 function followUpItem(
   overrides: Partial<FollowUpOperationsItem> = {},
 ): FollowUpOperationsItem {
@@ -175,8 +227,8 @@ function emptyFollowUps() {
 
 describe("NeedsAttention", () => {
   beforeEach(() => {
+    getApprovalsMock.mockReset();
     listOrganizationSalesRunsMock.mockReset();
-    cancelSalesRunMock.mockReset();
     sendSalesRunMock.mockReset();
     getFollowUpOperationsMock.mockReset();
     getInboxMock.mockReset();
@@ -215,8 +267,8 @@ describe("NeedsAttention", () => {
       duration_ms: 1000,
       latest_email_send: null,
     });
+    getApprovalsMock.mockResolvedValue(approvalPage([]));
     listOrganizationSalesRunsMock.mockImplementation(async (params = {}) => {
-      if (params.status === "WAITING_APPROVAL") return salesPage([]);
       if (params.status === "FAILED") return salesPage([]);
       return salesPage([]);
     });
@@ -240,32 +292,63 @@ describe("NeedsAttention", () => {
     ).toBeVisible();
   });
 
-  it("lists waiting runs and opens the existing draft dialog", async () => {
-    const user = userEvent.setup();
-    listOrganizationSalesRunsMock.mockImplementation(async (params = {}) => {
-      if (params.status === "WAITING_APPROVAL") return salesPage([run()]);
-      return salesPage([]);
-    });
+  it("lists standalone and sales-run drafts once and deep-links by draft_id", async () => {
+    getApprovalsMock.mockResolvedValue(
+      approvalPage(
+        [
+          approvalItem({
+            draft_id: "draft-standalone",
+            lead_id: "lead-2",
+            sales_run: null,
+            lead: {
+              name: "Bea Copilot",
+              email: "bea@example.com",
+              company: null,
+              status: "NEW",
+              source: "MANUAL",
+            },
+          }),
+          approvalItem(),
+          approvalItem({ draft_id: "draft-1", enquiry: "SECOND COPY" }),
+        ],
+        2,
+      ),
+    );
     render(<NeedsAttention />);
-    expect((await screen.findAllByText("Ada Prospect")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Generated").length).toBeGreaterThan(0);
+
+    const links = await screen.findAllByRole("link", { name: "Review draft" });
+    expect([...new Set(links.map((link) => link.getAttribute("href")))]).toEqual([
+      "/approvals?approval=draft-standalone",
+      "/approvals?approval=draft-1",
+    ]);
+    expect(screen.getAllByText("Bea Copilot").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Ada Prospect").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sales Copilot").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sales run").length).toBeGreaterThan(0);
+    expect(screen.getByText("2 waiting")).toBeVisible();
     expect(screen.queryByText("SECRET ENQUIRY BODY")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Send approved response" }),
-    ).not.toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: "Review draft" })[0]!);
-    expect(getLeadMock).toHaveBeenCalledWith("lead-1");
-    expect(await screen.findByText("Draft response")).toBeVisible();
+    expect(screen.queryByText("SECRET DRAFT TEXT")).not.toBeInTheDocument();
+    expect(screen.queryByText("SECOND COPY")).not.toBeInTheDocument();
+    expect(getApprovalsMock).toHaveBeenCalledWith({
+      status: "pending",
+      limit: 20,
+      offset: 0,
+    });
+    expect(listOrganizationSalesRunsMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "WAITING_APPROVAL" }),
+    );
   });
 
-  it("sends an approved waiting run after confirmation and refetches", async () => {
+  it("retries a failed send after confirmation and refetches", async () => {
     const user = userEvent.setup();
     const approved = run({
+      status: "FAILED",
+      stage: "SEND",
       response_draft: { id: "draft-1", status: "COMPLETED", review_status: "APPROVED" },
     });
     let sent = false;
     listOrganizationSalesRunsMock.mockImplementation(async (params = {}) => {
-      if (params.status === "WAITING_APPROVAL" && !sent) {
+      if (params.status === "FAILED" && params.stage === "SEND" && !sent) {
         return salesPage([approved]);
       }
       return salesPage([]);
@@ -275,9 +358,7 @@ describe("NeedsAttention", () => {
       return run({ status: "COMPLETED", stage: "DONE" });
     });
     render(<NeedsAttention />);
-    await user.click(
-      (await screen.findAllByRole("button", { name: "Send approved response" }))[0]!,
-    );
+    await user.click((await screen.findAllByRole("button", { name: "Retry send" }))[0]!);
     expect(await screen.findByText("Send approved response?")).toBeVisible();
     expect(await screen.findByText("Thanks for reaching out.")).toBeVisible();
     await user.click(
@@ -288,18 +369,21 @@ describe("NeedsAttention", () => {
         expected_revision: 2,
       }),
     );
-    await waitFor(() =>
-      expect(screen.getByText("Nothing waiting for review")).toBeVisible(),
-    );
+    await waitFor(() => expect(screen.getByText("No failed sends")).toBeVisible());
+    expect(screen.getByText("Nothing waiting for review")).toBeVisible();
   });
 
-  it("keeps a conflict visible and does not remove the row", async () => {
+  it("keeps a failed-send conflict visible and does not remove the row", async () => {
     const user = userEvent.setup();
     const approved = run({
+      status: "FAILED",
+      stage: "SEND",
       response_draft: { id: "draft-1", status: "COMPLETED", review_status: "APPROVED" },
     });
     listOrganizationSalesRunsMock.mockImplementation(async (params = {}) => {
-      if (params.status === "WAITING_APPROVAL") return salesPage([approved]);
+      if (params.status === "FAILED" && params.stage === "SEND") {
+        return salesPage([approved]);
+      }
       return salesPage([]);
     });
     sendSalesRunMock.mockRejectedValue(
@@ -308,9 +392,7 @@ describe("NeedsAttention", () => {
       }),
     );
     render(<NeedsAttention />);
-    await user.click(
-      (await screen.findAllByRole("button", { name: "Send approved response" }))[0]!,
-    );
+    await user.click((await screen.findAllByRole("button", { name: "Retry send" }))[0]!);
     expect(await screen.findByText("Thanks for reaching out.")).toBeVisible();
     await user.click(
       screen.getAllByRole("button", { name: "Send approved response" }).at(-1)!,
@@ -319,6 +401,7 @@ describe("NeedsAttention", () => {
       await screen.findByText("A send is already in progress for this draft."),
     ).toBeVisible();
     expect(screen.getAllByText("Ada Prospect").length).toBeGreaterThan(0);
+    expect(screen.getByText("Nothing waiting for review")).toBeVisible();
   });
 
   it("lists failed sends and omits AI qualification failures", async () => {
@@ -360,7 +443,6 @@ describe("NeedsAttention", () => {
   it("retries a failed queue independently of the others", async () => {
     const user = userEvent.setup();
     listOrganizationSalesRunsMock.mockImplementation(async (params = {}) => {
-      if (params.status === "WAITING_APPROVAL") return salesPage([]);
       if (params.status === "FAILED") {
         throw new ApiError("Down", 500, { detail: "unavailable" });
       }
@@ -384,30 +466,6 @@ describe("NeedsAttention", () => {
     expect(failedSection).toBeTruthy();
     await user.click(within(failedSection!).getByRole("button", { name: "Retry" }));
     expect((await screen.findAllByText("Provider timeout")).length).toBeGreaterThan(0);
-  });
-
-  it("cancels a waiting run after confirmation", async () => {
-    const user = userEvent.setup();
-    let cancelled = false;
-    listOrganizationSalesRunsMock.mockImplementation(async (params = {}) => {
-      if (params.status === "WAITING_APPROVAL" && !cancelled) {
-        return salesPage([run()]);
-      }
-      return salesPage([]);
-    });
-    cancelSalesRunMock.mockImplementation(async () => {
-      cancelled = true;
-      return run({ status: "CANCELLED" });
-    });
-    render(<NeedsAttention />);
-    await user.click((await screen.findAllByRole("button", { name: "Cancel run" }))[0]!);
-    expect(screen.getByText("Cancel sales run")).toBeVisible();
-    await user.click(screen.getAllByRole("button", { name: "Cancel run" }).at(-1)!);
-    await waitFor(() =>
-      expect(cancelSalesRunMock).toHaveBeenCalledWith("agent-1", "run-1", {
-        expected_revision: 2,
-      }),
-    );
   });
 
   it("lists leads that require human attention and opens the lead page", async () => {

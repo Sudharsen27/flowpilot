@@ -15,8 +15,8 @@ import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgents } from "@/lib/api/agents";
+import { getApprovals } from "@/lib/api/approvals";
 import { getLeads } from "@/lib/api/leads";
-import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
 import type { Agent } from "@/types/api";
 
 type DashboardData = {
@@ -175,15 +175,15 @@ export function CommandCenterPage() {
     Promise.all([
       getAgents(),
       getLeads({ limit: 1 }),
-      listOrganizationSalesRuns({ limit: 1 }),
+      getApprovals({ status: "pending", limit: 1 }),
     ])
-      .then(([agents, leads, salesRuns]) => {
+      .then(([agents, leads, approvals]) => {
         if (cancelled) return;
         setData({
           agents,
           leadTotal: leads.total,
           newLeads: leads.status_counts.NEW,
-          waitingApproval: salesRuns.status_counts?.WAITING_APPROVAL ?? 0,
+          waitingApproval: approvals.total,
         });
         setError(null);
       })

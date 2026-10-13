@@ -15,13 +15,17 @@ import {
 } from "@/components/leads/follow-up-status-badge";
 import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { SectionHeader } from "@/components/layout/section-header";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { getApprovals } from "@/lib/api/approvals";
 import { ApiError } from "@/lib/api/client";
 import { getInbox } from "@/lib/api/inbox";
 import { getFollowUpOperations, getLead, getLeadResponseDraft } from "@/lib/api/leads";
-import { cancelSalesRun, listOrganizationSalesRuns, sendSalesRun } from "@/lib/api/sales-runs";
+import { listOrganizationSalesRuns, sendSalesRun } from "@/lib/api/sales-runs";
+import { buildApprovalsHref } from "@/lib/approvals-url";
+import { dedupeReviewItemsByDraftId } from "@/lib/command-center-review";
 import type {
+  ApprovalQueueItem,
   FollowUpOperationsItem,
   InboxItem,
   Lead,
@@ -140,7 +144,10 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
   const [waitingKey, setWaitingKey] = useState(0);
   const [waitingLoading, setWaitingLoading] = useState(true);
   const [waitingError, setWaitingError] = useState<string | null>(null);
-  const [waiting, setWaiting] = useState<QueuePage<SalesRun>>({ items: [], total: 0 });
+  const [waiting, setWaiting] = useState<QueuePage<ApprovalQueueItem>>({
+    items: [],
+    total: 0,
+  });
 
   const [failedOffset, setFailedOffset] = useState(0);
   const [failedKey, setFailedKey] = useState(0);
@@ -166,9 +173,6 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
   });
 
   const [review, setReview] = useState<{ lead: Lead; draftId: string } | null>(null);
-  const [cancelTarget, setCancelTarget] = useState<SalesRun | null>(null);
-  const [cancelPending, setCancelPending] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
   const [sendTarget, setSendTarget] = useState<SalesRun | null>(null);
   const [sendDraft, setSendDraft] = useState<LeadResponseDraftResult | null>(null);
   const [sendPending, setSendPending] = useState(false);
@@ -180,18 +184,19 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void listOrganizationSalesRuns({
-      status: "WAITING_APPROVAL",
+    void getApprovals({
+      status: "pending",
       limit: PAGE_SIZE,
       offset: waitingOffset,
     })
       .then((page) => {
         if (cancelled) return;
-        if (page.items.length === 0 && waitingOffset > 0) {
+        const items = dedupeReviewItemsByDraftId(page.items);
+        if (items.length === 0 && waitingOffset > 0) {
           setWaitingOffset(Math.max(0, waitingOffset - PAGE_SIZE));
           return;
         }
-        setWaiting({ items: page.items, total: page.total });
+        setWaiting({ items, total: page.total });
         setWaitingError(null);
       })
       .catch((cause: unknown) => {
@@ -387,23 +392,6 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
     }
   }
 
-  async function confirmCancel() {
-    if (!cancelTarget || cancelPending) return;
-    setCancelPending(true);
-    setCancelError(null);
-    try {
-      await cancelSalesRun(cancelTarget.agent_id, cancelTarget.id, {
-        expected_revision: cancelTarget.revision,
-      });
-      setCancelTarget(null);
-      refreshWaiting();
-    } catch (cause) {
-      setCancelError(actionError(cause, "The sales run could not be cancelled."));
-    } finally {
-      setCancelPending(false);
-    }
-  }
-
   async function openManage(item: FollowUpOperationsItem) {
     setActionAlert(null);
     try {
@@ -416,24 +404,22 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
     }
   }
 
-  const waitingColumns: DataTableColumn<SalesRun>[] = [
+  const waitingColumns: DataTableColumn<ApprovalQueueItem>[] = [
     {
       key: "lead",
       header: "Lead",
-      cell: (row) => leadCell(row.lead?.name ?? row.lead_id, row.lead?.email),
+      cell: (row) => leadCell(row.lead.name, row.lead.email),
     },
     {
       key: "review",
       header: "Review status",
       cell: (row) =>
-        row.response_draft?.review_status
-          ? reviewLabels[row.response_draft.review_status]
-          : "—",
+        row.draft.review_status ? reviewLabels[row.draft.review_status] : "—",
     },
     {
-      key: "status",
-      header: "Status",
-      cell: (row) => <SalesRunStatusBadge status={row.status} />,
+      key: "source",
+      header: "Source",
+      cell: (row) => (row.sales_run ? "Sales run" : "Sales Copilot"),
     },
     {
       key: "updated",
@@ -587,45 +573,17 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
               className="max-w-none"
               columns={waitingColumns}
               rows={waiting.items}
-              getRowKey={(row) => row.id}
+              getRowKey={(row) => row.draft_id}
               loading={waitingLoading}
               emptyTitle="Nothing waiting for review"
-              emptyDescription="When a sales run has a draft ready, it will appear here for a person to review. Approval does not send the email."
+              emptyDescription="Completed drafts that still need a person will appear here, including Sales Copilot drafts with no sales run. Approval does not send the email."
               rowActions={(row) => (
-                <div className="flex flex-wrap gap-2">
-                  {row.response_draft_id ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void openReview(row)}
-                    >
-                      Review draft
-                    </Button>
-                  ) : null}
-                  {canSendApprovedResponse(row) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={sendPending && sendTarget?.id === row.id}
-                      onClick={() => void openSend(row)}
-                    >
-                      Send approved response
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={cancelPending && cancelTarget?.id === row.id}
-                    onClick={() => {
-                      setCancelError(null);
-                      setCancelTarget(row);
-                    }}
-                  >
-                    Cancel run
-                  </Button>
-                </div>
+                <Link
+                  href={buildApprovalsHref({ approvalId: row.draft_id })}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  Review draft
+                </Link>
               )}
             />
             <QueuePagination
@@ -789,24 +747,6 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
           refreshQueues();
         }}
       />
-      <ConfirmDialog
-        open={cancelTarget !== null}
-        onOpenChange={(next) => {
-          if (!next && !cancelPending) setCancelTarget(null);
-        }}
-        title="Cancel sales run"
-        description="This stops the sales run. It does not reject the draft or change the lead's CRM status."
-        confirmLabel={cancelPending ? "Cancelling…" : "Cancel run"}
-        variant="destructive"
-        confirmPending={cancelPending}
-        onConfirm={() => void confirmCancel()}
-      >
-        {cancelError ? (
-          <p className="text-danger-text text-sm" role="alert">
-            {cancelError}
-          </p>
-        ) : null}
-      </ConfirmDialog>
       <ConfirmDialog
         open={sendTarget !== null}
         onOpenChange={(next) => {

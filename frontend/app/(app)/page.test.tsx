@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandCenterPage from "@/app/(app)/dashboard/page";
 import { getAgents, orchestrateAgent } from "@/lib/api/agents";
+import { getApprovals } from "@/lib/api/approvals";
 import { getInbox } from "@/lib/api/inbox";
 import { listActivity } from "@/lib/api/activity";
 import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
 import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
 import type {
   Agent,
+  ApprovalListResponse,
   FollowUpOperationsResponse,
   LeadListResponse,
 } from "@/types/api";
@@ -22,6 +24,10 @@ vi.mock("@/lib/api/activity", () => ({
 vi.mock("@/lib/api/agents", () => ({
   getAgents: vi.fn(),
   orchestrateAgent: vi.fn(),
+}));
+
+vi.mock("@/lib/api/approvals", () => ({
+  getApprovals: vi.fn(),
 }));
 
 vi.mock("@/lib/api/inbox", () => ({
@@ -49,6 +55,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
 }));
 
 const getAgentsMock = vi.mocked(getAgents);
+const getApprovalsMock = vi.mocked(getApprovals);
 const orchestrateAgentMock = vi.mocked(orchestrateAgent);
 const getInboxMock = vi.mocked(getInbox);
 const listActivityMock = vi.mocked(listActivity);
@@ -83,6 +90,10 @@ function leads(total: number, newCount = total): LeadListResponse {
   };
 }
 
+function pendingApprovals(total: number): ApprovalListResponse {
+  return { items: [], limit: 1, offset: 0, total };
+}
+
 function followUps(overdue: number): FollowUpOperationsResponse {
   return {
     items: [],
@@ -102,6 +113,7 @@ function followUps(overdue: number): FollowUpOperationsResponse {
 describe("Command Center", () => {
   beforeEach(() => {
     getAgentsMock.mockReset();
+    getApprovalsMock.mockReset();
     orchestrateAgentMock.mockReset();
     getInboxMock.mockReset();
     listActivityMock.mockReset();
@@ -130,6 +142,7 @@ describe("Command Center", () => {
         SYSTEM_EVENT: 0,
       },
     });
+    getApprovalsMock.mockResolvedValue(pendingApprovals(0));
     getLeadsMock.mockResolvedValue(leads(0));
     getFollowUpOperationsMock.mockResolvedValue(followUps(0));
     listOrganizationSalesRunsMock.mockResolvedValue({
@@ -235,19 +248,7 @@ describe("Command Center", () => {
 
   it("prioritizes approval work as the next action", async () => {
     getLeadsMock.mockResolvedValue(leads(2, 1));
-    listOrganizationSalesRunsMock.mockResolvedValue({
-      items: [],
-      limit: 20,
-      offset: 0,
-      total: 1,
-      status_counts: {
-        RUNNING: 0,
-        WAITING_APPROVAL: 1,
-        COMPLETED: 0,
-        FAILED: 0,
-        CANCELLED: 0,
-      },
-    });
+    getApprovalsMock.mockResolvedValue(pendingApprovals(1));
     render(<CommandCenterPage />);
 
     expect(
@@ -256,6 +257,10 @@ describe("Command Center", () => {
     expect(
       screen.getByRole("link", { name: /Review Approvals/ }),
     ).toHaveAttribute("href", "/approvals");
+    expect(getApprovalsMock).toHaveBeenCalledWith({
+      status: "pending",
+      limit: 1,
+    });
   });
 
   it("offers optional website capture and qualification guidance without requiring capture", async () => {
@@ -275,6 +280,7 @@ describe("Command Center", () => {
     getAgentsMock.mockResolvedValue([agent]);
     getLeadsMock.mockResolvedValue(leads(4, 2));
     getFollowUpOperationsMock.mockResolvedValue(followUps(3));
+    getApprovalsMock.mockResolvedValue(pendingApprovals(5));
     listOrganizationSalesRunsMock.mockResolvedValue({
       items: [],
       limit: 20,
@@ -282,7 +288,7 @@ describe("Command Center", () => {
       total: 8,
       status_counts: {
         RUNNING: 0,
-        WAITING_APPROVAL: 5,
+        WAITING_APPROVAL: 99,
         COMPLETED: 2,
         FAILED: 1,
         CANCELLED: 0,
@@ -298,8 +304,9 @@ describe("Command Center", () => {
       screen.queryByText(/No live agent runtime is connected yet/),
     ).not.toBeInTheDocument();
     expect(screen.getByText("5")).toBeVisible();
+    expect(screen.queryByText("99")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Sales runs with a draft ready for review."),
+      screen.getByText("Drafts waiting for a person to review."),
     ).toBeVisible();
     expect(
       screen.queryByText(/2 completed \(email sent\)/),

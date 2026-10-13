@@ -33,7 +33,7 @@ export function BusinessOverview({
       <MetricCard
         label="Waiting for review"
         value={waitingApproval ?? undefined}
-        description="Sales runs with a draft ready for review."
+        description="Drafts waiting for a person to review."
         loading={loading}
         headingLevel={3}
         icon={<ShieldCheck />}
