@@ -71,6 +71,8 @@ describe("authentication route boundaries", () => {
     );
 
     expect(screen.queryByText("Sign in form")).not.toBeInTheDocument();
-    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/"));
+    await waitFor(() =>
+      expect(mocks.replace).toHaveBeenCalledWith("/dashboard"),
+    );
   });
 });

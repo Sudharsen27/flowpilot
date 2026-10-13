@@ -29,18 +29,27 @@ type DashboardData = {
 function CommandCenterNextStep({ data }: { data: DashboardData }) {
   if (data.waitingApproval > 0) {
     return (
-      <Card as="section" variant="information" aria-labelledby="next-step-heading">
+      <Card
+        as="section"
+        variant="information"
+        aria-labelledby="next-step-heading"
+      >
         <CardHeader>
           <CardTitle id="next-step-heading">Your next step</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-medium">Review the response waiting for approval.</p>
+            <p className="font-medium">
+              Review the response waiting for approval.
+            </p>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
               Approval is required before a response can be sent.
             </p>
           </div>
-          <Link href="/approvals" className={buttonVariants({ variant: "default" })}>
+          <Link
+            href="/approvals"
+            className={buttonVariants({ variant: "default" })}
+          >
             Review Approvals
             <CheckCheck aria-hidden="true" />
           </Link>
@@ -51,23 +60,37 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
 
   if (data.leadTotal === 0) {
     return (
-      <Card as="section" variant="information" aria-labelledby="next-step-heading">
+      <Card
+        as="section"
+        variant="information"
+        aria-labelledby="next-step-heading"
+      >
         <CardHeader>
           <CardTitle id="next-step-heading">Start with a lead</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-medium">Create your first lead to begin the sales flow.</p>
+            <p className="font-medium">
+              Create your first lead to begin the sales flow.
+            </p>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
-              You can create one here or optionally enable website enquiries in Settings. An AI Agent can qualify a lead and draft a response; a person reviews and approves it before sending.
+              You can create one here or optionally enable website enquiries in
+              Settings. An AI Agent can qualify a lead and draft a response; a
+              person reviews and approves it before sending.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/leads" className={buttonVariants({ variant: "default" })}>
+            <Link
+              href="/leads"
+              className={buttonVariants({ variant: "default" })}
+            >
               Open Leads
               <Users aria-hidden="true" />
             </Link>
-            <Link href="/settings" className={buttonVariants({ variant: "outline" })}>
+            <Link
+              href="/settings"
+              className={buttonVariants({ variant: "outline" })}
+            >
               Website enquiries (optional)
             </Link>
           </div>
@@ -78,7 +101,11 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
 
   if (data.agents.length === 0) {
     return (
-      <Card as="section" variant="information" aria-labelledby="next-step-heading">
+      <Card
+        as="section"
+        variant="information"
+        aria-labelledby="next-step-heading"
+      >
         <CardHeader>
           <CardTitle id="next-step-heading">Configure an AI Agent</CardTitle>
         </CardHeader>
@@ -86,10 +113,14 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
           <div>
             <p className="font-medium">Your leads are ready for an agent.</p>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
-              Configure an agent before asking FlowPilot to qualify leads or draft responses.
+              Configure an agent before asking FlowPilot to qualify leads or
+              draft responses.
             </p>
           </div>
-          <Link href="/agents" className={buttonVariants({ variant: "default" })}>
+          <Link
+            href="/agents"
+            className={buttonVariants({ variant: "default" })}
+          >
             Open AI Agents
             <Bot aria-hidden="true" />
           </Link>
@@ -100,18 +131,28 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
 
   if (data.newLeads > 0) {
     return (
-      <Card as="section" variant="information" aria-labelledby="next-step-heading">
+      <Card
+        as="section"
+        variant="information"
+        aria-labelledby="next-step-heading"
+      >
         <CardHeader>
           <CardTitle id="next-step-heading">Qualify a new lead</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-medium">There are {data.newLeads} leads with New status.</p>
+            <p className="font-medium">
+              There are {data.newLeads} leads with New status.
+            </p>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
-              Review a lead in Leads to run qualification and, when useful, generate a response draft for human approval.
+              Review a lead in Leads to run qualification and, when useful,
+              generate a response draft for human approval.
             </p>
           </div>
-          <Link href="/leads" className={buttonVariants({ variant: "default" })}>
+          <Link
+            href="/leads"
+            className={buttonVariants({ variant: "default" })}
+          >
             Open Leads
             <Users aria-hidden="true" />
           </Link>
@@ -123,7 +164,7 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
   return null;
 }
 
-export default function CommandCenterPage() {
+export function CommandCenterPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -168,7 +209,10 @@ export default function CommandCenterPage() {
 
       {!loading && data ? <CommandCenterNextStep data={data} /> : null}
 
-      <section className="grid gap-5" aria-labelledby="pipeline-at-a-glance-heading">
+      <section
+        className="grid gap-5"
+        aria-labelledby="pipeline-at-a-glance-heading"
+      >
         <SectionHeader
           id="pipeline-at-a-glance-heading"
           title="Pipeline at a glance"
@@ -178,7 +222,9 @@ export default function CommandCenterPage() {
           loading={loading}
           leadTotal={data ? data.leadTotal : loading ? undefined : 0}
           newLeads={data?.newLeads ?? null}
-          waitingApproval={data ? data.waitingApproval : loading ? undefined : 0}
+          waitingApproval={
+            data ? data.waitingApproval : loading ? undefined : 0
+          }
         />
         {error ? (
           <p className="text-danger-text text-sm" role="alert">

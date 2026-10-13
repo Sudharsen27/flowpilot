@@ -32,7 +32,7 @@ test("an owner can use Analytics, Knowledge, Workflows and Integrations", async 
   await page.getByRole("textbox", { name: "Email" }).fill(email);
   await page.getByRole("textbox", { name: "Password" }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL("**/");
+  await page.waitForURL("**/dashboard");
 
   const sidebar = page.getByRole("navigation").first();
   for (const label of ["Analytics", "Workflows", "Knowledge", "Integrations"]) {

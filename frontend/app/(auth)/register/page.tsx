@@ -27,7 +27,7 @@ export default function RegisterPage() {
     setPending(true);
     try {
       await signUp({ email, password, name, organizationName });
-      router.push("/");
+      router.push("/dashboard");
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 409
@@ -46,7 +46,10 @@ export default function RegisterPage() {
       footer={
         <>
           Already registered?{" "}
-          <Link className="text-foreground underline underline-offset-4" href="/login">
+          <Link
+            className="text-foreground underline underline-offset-4"
+            href="/login"
+          >
             Sign in
           </Link>
         </>

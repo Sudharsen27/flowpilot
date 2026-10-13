@@ -51,7 +51,9 @@ describe("application sidebar navigation", () => {
     render(<AppSidebar />);
 
     expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /coming soon/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /coming soon/ }),
+    ).not.toBeInTheDocument();
     for (const label of ["Workflows", "Integrations"]) {
       expect(screen.getByRole("link", { name: label })).toBeVisible();
     }
@@ -63,6 +65,9 @@ describe("application sidebar navigation", () => {
     expect(
       screen.getByRole("link", { name: "FlowPilot home" }),
     ).toHaveTextContent("Northstar Operations");
+    expect(
+      screen.getByRole("link", { name: "FlowPilot home" }),
+    ).toHaveAttribute("href", "/dashboard");
   });
 
   it("keeps the parent item active for a nested route", () => {

@@ -32,7 +32,7 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
   {
     label: "Overview",
     items: [
-      { href: "/", label: "Command Center", icon: LayoutDashboard },
+      { href: "/dashboard", label: "Command Center", icon: LayoutDashboard },
       { href: "/activity", label: "Activity", icon: Activity },
       { href: "/analytics", label: "Analytics", icon: BarChart3 },
     ],
@@ -69,9 +69,6 @@ export function isNavigationItemActive(
   pathname: string,
   href: string,
 ): boolean {
-  if (href === "/") {
-    return pathname === "/";
-  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -81,5 +78,8 @@ export function getNavigationItemLabel(pathname: string): string {
     ...SECONDARY_NAV_ITEMS,
     SETTINGS_ITEM,
   ];
-  return items.find((item) => isNavigationItemActive(pathname, item.href))?.label ?? "FlowPilot";
+  return (
+    items.find((item) => isNavigationItemActive(pathname, item.href))?.label ??
+    "FlowPilot"
+  );
 }

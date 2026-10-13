@@ -25,7 +25,7 @@ export default function LoginPage() {
     setPending(true);
     try {
       await signIn(email, password);
-      router.push("/");
+      router.push("/dashboard");
     } catch (cause) {
       setError(
         cause instanceof ApiError
@@ -44,7 +44,10 @@ export default function LoginPage() {
       footer={
         <>
           Need an organization?{" "}
-          <Link className="text-foreground underline underline-offset-4" href="/register">
+          <Link
+            className="text-foreground underline underline-offset-4"
+            href="/register"
+          >
             Create an account
           </Link>
         </>

@@ -78,7 +78,7 @@ export function AppSidebar({ organizationName, onNavigate }: AppSidebarProps) {
     <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
       <div className="flex h-14 items-center px-3">
         <Link
-          href="/"
+          href="/dashboard"
           onClick={onNavigate}
           aria-label="FlowPilot home"
           className="hover:bg-sidebar-accent focus-visible:ring-ring flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 outline-none focus-visible:ring-2"

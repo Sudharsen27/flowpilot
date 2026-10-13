@@ -2,13 +2,17 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import CommandCenterPage from "@/app/(app)/page";
+import CommandCenterPage from "@/app/(app)/dashboard/page";
 import { getAgents, orchestrateAgent } from "@/lib/api/agents";
 import { getInbox } from "@/lib/api/inbox";
 import { listActivity } from "@/lib/api/activity";
 import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
 import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
-import type { Agent, FollowUpOperationsResponse, LeadListResponse } from "@/types/api";
+import type {
+  Agent,
+  FollowUpOperationsResponse,
+  LeadListResponse,
+} from "@/types/api";
 
 vi.mock("@/lib/api/activity", () => ({
   listActivity: vi.fn(),
@@ -179,10 +183,9 @@ describe("Command Center", () => {
     expect(
       await screen.findByRole("heading", { name: "No activity yet" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "View all activity" })).toHaveAttribute(
-      "href",
-      "/activity",
-    );
+    expect(
+      screen.getByRole("link", { name: "View all activity" }),
+    ).toHaveAttribute("href", "/activity");
     expect(screen.queryByText("Example event")).not.toBeInTheDocument();
     const articles = screen.getAllByRole("article");
     const leadsCard = articles.find((card) =>
@@ -195,7 +198,9 @@ describe("Command Center", () => {
   it("recommends creating a lead when the organization has no leads", async () => {
     render(<CommandCenterPage />);
 
-    expect(await screen.findByRole("heading", { name: "Start with a lead" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Start with a lead" }),
+    ).toBeVisible();
     expect(screen.getByRole("link", { name: /Open Leads/ })).toHaveAttribute(
       "href",
       "/leads",
@@ -209,10 +214,9 @@ describe("Command Center", () => {
     expect(
       await screen.findByRole("heading", { name: "Configure an AI Agent" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: /Open AI Agents/ })).toHaveAttribute(
-      "href",
-      "/agents",
-    );
+    expect(
+      screen.getByRole("link", { name: /Open AI Agents/ }),
+    ).toHaveAttribute("href", "/agents");
   });
 
   it("recommends qualification when a configured agent and new leads exist", async () => {
@@ -220,7 +224,9 @@ describe("Command Center", () => {
     getLeadsMock.mockResolvedValue(leads(2, 1));
     render(<CommandCenterPage />);
 
-    expect(await screen.findByRole("heading", { name: "Qualify a new lead" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Qualify a new lead" }),
+    ).toBeVisible();
     expect(screen.getByRole("link", { name: /Open Leads/ })).toHaveAttribute(
       "href",
       "/leads",
@@ -244,21 +250,25 @@ describe("Command Center", () => {
     });
     render(<CommandCenterPage />);
 
-    expect(await screen.findByRole("heading", { name: "Your next step" })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Review Approvals/ })).toHaveAttribute(
-      "href",
-      "/approvals",
-    );
+    expect(
+      await screen.findByRole("heading", { name: "Your next step" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: /Review Approvals/ }),
+    ).toHaveAttribute("href", "/approvals");
   });
 
   it("offers optional website capture and qualification guidance without requiring capture", async () => {
     render(<CommandCenterPage />);
 
-    expect(await screen.findByRole("link", { name: "Website enquiries (optional)" })).toHaveAttribute(
-      "href",
-      "/settings",
-    );
-    expect(screen.getByText(/create one here or optionally enable website enquiries/i)).toBeVisible();
+    expect(
+      await screen.findByRole("link", { name: "Website enquiries (optional)" }),
+    ).toHaveAttribute("href", "/settings");
+    expect(
+      screen.getByText(
+        /create one here or optionally enable website enquiries/i,
+      ),
+    ).toBeVisible();
   });
 
   it("shows real agent count instead of not configured copy", async () => {
@@ -280,18 +290,24 @@ describe("Command Center", () => {
     });
     render(<CommandCenterPage />);
     expect(await screen.findByText(/1 configured agent/)).toBeVisible();
-    expect(screen.getByText(/1 configured agent in this organization.*1 ready/)).toBeVisible();
+    expect(
+      screen.getByText(/1 configured agent in this organization.*1 ready/),
+    ).toBeVisible();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
     expect(
       screen.queryByText(/No live agent runtime is connected yet/),
     ).not.toBeInTheDocument();
     expect(screen.getByText("5")).toBeVisible();
-    expect(screen.getByText("Sales runs with a draft ready for review.")).toBeVisible();
-    expect(screen.queryByText(/2 completed \(email sent\)/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/5 sales runs waiting for approval/)).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Completed work is not listed here/),
+      screen.getByText("Sales runs with a draft ready for review."),
     ).toBeVisible();
+    expect(
+      screen.queryByText(/2 completed \(email sent\)/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/5 sales runs waiting for approval/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Completed work is not listed here/)).toBeVisible();
   });
 
   it("shows recent activity error and retry", async () => {
@@ -315,7 +331,9 @@ describe("Command Center", () => {
       },
     });
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("heading", { name: "No activity yet" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "No activity yet" }),
+    ).toBeVisible();
   });
 
   it("renders live recent activity without fabricated rows", async () => {
@@ -355,7 +373,9 @@ describe("Command Center", () => {
     });
     render(<CommandCenterPage />);
     expect(await screen.findByText("Lead qualified")).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "No activity yet" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "No activity yet" }),
+    ).not.toBeInTheDocument();
     expect(listActivityMock).toHaveBeenCalledWith({ limit: 8, offset: 0 });
   });
 
@@ -379,7 +399,9 @@ describe("Command Center", () => {
     });
     render(<CommandCenterPage />);
 
-    const instruction = await screen.findByPlaceholderText(/Qualify today’s new leads/);
+    const instruction = await screen.findByPlaceholderText(
+      /Qualify today’s new leads/,
+    );
     await user.type(instruction, "Qualify the new website lead");
     await user.click(screen.getByRole("button", { name: "Run instruction" }));
 
@@ -396,7 +418,13 @@ describe("Command Center", () => {
     const hrefs = screen
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"));
-    for (const href of ["/agents", "/leads", "/inbox", "/approvals", "/activity"]) {
+    for (const href of [
+      "/agents",
+      "/leads",
+      "/inbox",
+      "/approvals",
+      "/activity",
+    ]) {
       expect(hrefs).toContain(href);
     }
     expect(hrefs).not.toContain("/workflows");

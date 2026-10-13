@@ -12,7 +12,7 @@ export function GuestRoute({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && session) {
-      router.replace("/");
+      router.replace("/dashboard");
     }
   }, [isLoading, router, session]);
 
