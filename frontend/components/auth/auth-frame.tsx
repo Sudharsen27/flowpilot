@@ -5,7 +5,20 @@ import type { ReactNode } from "react";
 import { BrandLockup } from "@/components/brand-lockup";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
-const steps = ["Qualify", "Draft", "Approve"] as const;
+const levels = [
+  {
+    name: "Organization",
+    copy: "The company shares one lead record, with roles and a visible activity history.",
+  },
+  {
+    name: "Preparation",
+    copy: "AI qualifies the stored enquiry and prepares a draft for that lead.",
+  },
+  {
+    name: "Control",
+    copy: "A person approves the wording. Sending stays a separate action.",
+  },
+] as const;
 
 type AuthFrameProps = {
   title: string;
@@ -31,21 +44,23 @@ export function AuthFrame({ title, description, children, footer }: AuthFramePro
           <BrandLockup />
 
           <p className="text-ai-text mt-10 text-xs font-medium tracking-wide uppercase">
-            For teams selling today
+            For the whole sales organization
           </p>
           <h2 className="mt-3 max-w-lg text-4xl leading-tight font-semibold tracking-tight text-balance">
-            New enquiries become replies your team can send.
+            One company workspace from the enquiry to the approved reply.
           </h2>
-          <ol className="mt-5 flex flex-wrap gap-2" aria-label="How FlowPilot works">
-            {steps.map((step, index) => (
-              <li
-                key={step}
-                className="border-border/80 bg-card/80 flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm shadow-card backdrop-blur-sm"
-              >
-                <span className="text-ai-text font-mono text-[0.6875rem]">
+          <ol className="mt-6 grid max-w-md gap-3" aria-label="How FlowPilot works">
+            {levels.map((level, index) => (
+              <li key={level.name} className="flex gap-3">
+                <span className="text-ai-text pt-0.5 font-mono text-xs">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                {step}
+                <span>
+                  <span className="block text-sm font-semibold">{level.name}</span>
+                  <span className="text-muted-foreground mt-1 block text-sm leading-6">
+                    {level.copy}
+                  </span>
+                </span>
               </li>
             ))}
           </ol>
@@ -72,7 +87,7 @@ export function AuthFrame({ title, description, children, footer }: AuthFramePro
               </p>
             </div>
             <p className="text-muted-foreground mt-3 text-xs leading-5">
-              Example. A person approves the send.
+              Example. Approval does not send the email.
             </p>
           </article>
         </div>
@@ -88,7 +103,7 @@ export function AuthFrame({ title, description, children, footer }: AuthFramePro
         <main className="flex flex-1 flex-col justify-center px-6 pb-12">
           <div className="mx-auto w-full max-w-sm">
             <p className="text-ai-text text-xs font-medium tracking-wide uppercase lg:hidden">
-              New enquiries become approved replies
+              One workspace from enquiry to approved reply
             </p>
             <h1 className="text-page-title mt-3 font-semibold tracking-tight lg:mt-0">
               {title}

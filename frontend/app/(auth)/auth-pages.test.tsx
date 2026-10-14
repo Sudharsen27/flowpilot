@@ -22,11 +22,13 @@ describe("auth pages", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
     expect(
       screen.getByRole("heading", {
-        name: "New enquiries become replies your team can send.",
+        name: "One company workspace from the enquiry to the approved reply.",
       }),
     ).toBeVisible();
-    expect(screen.getByText("Approve")).toBeVisible();
-    expect(screen.getByText("Example. A person approves the send.")).toBeVisible();
+    expect(screen.getByText("Organization")).toBeVisible();
+    expect(screen.getByText("Preparation")).toBeVisible();
+    expect(screen.getByText("Control")).toBeVisible();
+    expect(screen.getByText("Example. Approval does not send the email.")).toBeVisible();
     expect(screen.getByText("Example")).toBeVisible();
     expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute(
       "href",
