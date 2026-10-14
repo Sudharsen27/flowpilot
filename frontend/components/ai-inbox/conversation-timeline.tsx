@@ -79,6 +79,10 @@ const kindLabels: Record<InboxTimelineKind, string> = {
   SALES_RUN_FAILED: "Sales Run failed",
   HUMAN_ATTENTION_REQUIRED: "Human attention required",
   HUMAN_ATTENTION_RESOLVED: "Human attention resolved",
+  AGENT_EXECUTION_COMPLETED: "Agent execution completed",
+  AGENT_EXECUTION_FAILED: "Agent execution failed",
+  SALES_AGENT_AUTO_START_SKIPPED: "Sales Agent auto-start skipped",
+  SALES_AGENT_AUTO_START_FAILED: "Sales Agent auto-start failed",
 };
 
 const actorLabels: Record<ActivityActorType, string> = {
@@ -121,6 +125,18 @@ function laneFor(item: InboxTimelineItem): TimelineLane {
     item.kind === "LEAD_STATUS_CHANGED"
   ) {
     return "human";
+  }
+  if (
+    item.kind === "AGENT_EXECUTION_COMPLETED" ||
+    item.kind === "AGENT_EXECUTION_FAILED"
+  ) {
+    return "ai";
+  }
+  if (
+    item.kind === "SALES_AGENT_AUTO_START_SKIPPED" ||
+    item.kind === "SALES_AGENT_AUTO_START_FAILED"
+  ) {
+    return "system";
   }
   if (
     item.is_draft ||
@@ -217,6 +233,11 @@ export function ConversationTimeline({
         const failed =
           item.kind === "EMAIL_FAILED" ||
           item.kind === "FOLLOW_UP_EXECUTION_FAILED";
+        const executionFailed =
+          item.kind === "AGENT_EXECUTION_FAILED" ||
+          item.kind === "SALES_AGENT_AUTO_START_FAILED";
+        const executionSkipped = item.kind === "SALES_AGENT_AUTO_START_SKIPPED";
+        const executionCompleted = item.kind === "AGENT_EXECUTION_COMPLETED";
         const isDraft = item.is_draft;
         const isSent = item.is_sent_message;
 
@@ -232,7 +253,7 @@ export function ConversationTimeline({
               className={cn(
                 "border-border relative rounded-lg border border-l-4 p-4 shadow-none",
                 laneMeta.className,
-                failed && "border-l-destructive bg-destructive/5",
+                (failed || executionFailed) && "border-l-destructive bg-destructive/5",
                 isSent && "border-l-success",
               )}
             >
@@ -253,8 +274,14 @@ export function ConversationTimeline({
                   {isSent ? (
                     <StatusBadge status="success" label="Sent" />
                   ) : null}
-                  {failed ? (
+                  {failed || executionFailed ? (
                     <StatusBadge status="failed" label="Failed" />
+                  ) : null}
+                  {executionSkipped ? (
+                    <StatusBadge status="draft" label="Skipped" />
+                  ) : null}
+                  {executionCompleted ? (
+                    <StatusBadge status="success" label="Completed" />
                   ) : null}
                   {item.kind === "DRAFT_REJECTED" ? (
                     <StatusBadge status="failed" label="Rejected" />

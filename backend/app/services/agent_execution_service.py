@@ -67,6 +67,21 @@ from app.tools.schema import PolicyDecision, ToolContext, ToolResult, ToolRiskLe
 
 logger = logging.getLogger(__name__)
 
+
+def activity_lead_id(
+    leads: LeadRepository,
+    organization_id: str,
+    lead_id: str | None,
+) -> str | None:
+    """Return the lead id only when that lead belongs to the organization."""
+    if lead_id is None or not lead_id.strip():
+        return None
+    lead = leads.get_by_id(organization_id, lead_id)
+    if lead is None:
+        return None
+    return lead.id
+
+
 RUN_CLAIM_KEY = "claimed"
 CANCELLED_MESSAGE = "Execution was cancelled."
 STALE_EXECUTION_MESSAGE = "This execution did not finish and was marked failed."
@@ -318,7 +333,7 @@ class AgentExecutionService:
             entity_id=current.id,
             agent_id=current.agent_id,
             actor_user_id=current.initiated_by_user_id,
-            lead_id=current.lead_id,
+            lead_id=self._activity_lead_id(organization_id, current.lead_id),
             status=AgentExecutionStatus.CANCELLED,
             dedupe_key=f"agent_execution:{current.id}:CANCELLED",
         )
@@ -548,7 +563,7 @@ class AgentExecutionService:
             entity_id=current.id,
             agent_id=current.agent_id,
             actor_user_id=current.initiated_by_user_id,
-            lead_id=current.lead_id,
+            lead_id=self._activity_lead_id(current.organization_id, current.lead_id),
             status=AgentExecutionStatus.COMPLETED,
             dedupe_key=f"agent_execution:{current.id}:COMPLETED",
         )
@@ -599,7 +614,7 @@ class AgentExecutionService:
             entity_id=execution.id,
             agent_id=execution.agent_id,
             actor_user_id=execution.initiated_by_user_id,
-            lead_id=execution.lead_id,
+            lead_id=self._activity_lead_id(execution.organization_id, execution.lead_id),
             status=AgentExecutionStatus.FAILED,
             dedupe_key=f"agent_execution:{execution.id}:FAILED",
         )
@@ -740,6 +755,9 @@ class AgentExecutionService:
     def _require_lead(self, organization_id: str, lead_id: str) -> None:
         if self.leads.get_by_id(organization_id, lead_id) is None:
             raise NotFoundError("Lead not found")
+
+    def _activity_lead_id(self, organization_id: str, lead_id: str | None) -> str | None:
+        return activity_lead_id(self.leads, organization_id, lead_id)
 
 
 def _is_run_claimed(output: dict[str, Any] | None) -> bool:

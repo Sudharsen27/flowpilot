@@ -139,7 +139,9 @@ Organization comes from the membership JWT. Any org member may read. Missing lea
 
 Responses expose status, the stored orchestration `outcome` when present, approval and step counts, sanitized error, and an input preview or the stored instruction. They do not return the plan, step results, tool outputs, `tool_results`, or provider payloads. Executions with a null `lead_id` stay on the agent history APIs only.
 
-Completion, failure, and cancellation activity events copy `execution.lead_id` onto the existing `ActivityEvent`. There is no backfill. Reading these routes does not run the agent and does not recover stale `RUNNING` rows; that recovery remains on the agent-scoped execution operations.
+Completion, failure, and cancellation activity events copy `execution.lead_id` onto the existing `ActivityEvent` only when that lead still belongs to the execution's organization. A missing or cross-tenant lead leaves the event organization-level. There is no backfill. Reading these routes does not run the agent and does not recover stale `RUNNING` rows; that recovery remains on the agent-scoped execution operations.
+
+The lead conversation timeline recognizes `Agent execution completed`, `Agent execution failed`, `Sales Agent auto-start skipped`, and `Sales Agent auto-start failed`. Those items use the stored title and summary. They do not copy tool output or provider payloads, and they are not waiting-for-review items.
 
 ### Stuck RUNNING recovery (Phase 3L.3)
 

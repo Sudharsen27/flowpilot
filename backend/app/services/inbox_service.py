@@ -93,6 +93,10 @@ _TITLE_KIND: dict[str, InboxTimelineKind] = {
     "Sales Run failed": InboxTimelineKind.SALES_RUN_FAILED,
     "Human attention required": InboxTimelineKind.HUMAN_ATTENTION_REQUIRED,
     "Human attention resolved": InboxTimelineKind.HUMAN_ATTENTION_RESOLVED,
+    "Agent execution completed": InboxTimelineKind.AGENT_EXECUTION_COMPLETED,
+    "Agent execution failed": InboxTimelineKind.AGENT_EXECUTION_FAILED,
+    "Sales Agent auto-start skipped": InboxTimelineKind.SALES_AGENT_AUTO_START_SKIPPED,
+    "Sales Agent auto-start failed": InboxTimelineKind.SALES_AGENT_AUTO_START_FAILED,
 }
 
 _DRAFT_KINDS = {

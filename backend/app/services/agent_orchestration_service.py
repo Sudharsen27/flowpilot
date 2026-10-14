@@ -23,9 +23,10 @@ from app.models.agent_execution import (
     ExecutionFailureCategory,
 )
 from app.repositories.agent_execution_repository import AgentExecutionRepository
+from app.repositories.lead_repository import LeadRepository
 from app.repositories.membership_repository import MembershipRepository
 from app.services.activity_service import ActivityService
-from app.services.agent_execution_service import AgentExecutionService
+from app.services.agent_execution_service import AgentExecutionService, activity_lead_id
 from app.services.agent_planner_service import (
     AgentPlanner,
     PlannerContext,
@@ -391,7 +392,11 @@ class AgentOrchestrationService:
             entity_id=execution.id,
             agent_id=execution.agent_id,
             actor_user_id=execution.initiated_by_user_id,
-            lead_id=execution.lead_id,
+            lead_id=activity_lead_id(
+                LeadRepository(self.session),
+                execution.organization_id,
+                execution.lead_id,
+            ),
             status=status,
             dedupe_key=f"agent_execution:{execution.id}:{status.value}",
         )

@@ -157,3 +157,62 @@ describe("Conversation timeline human attention", () => {
     expect(screen.getByText("Asked to schedule a demo")).toBeVisible();
   });
 });
+
+describe("Conversation timeline execution outcomes", () => {
+  it("distinguishes completion, failure, and skipped auto-start from review", () => {
+    render(
+      <ConversationTimeline
+        items={[
+          item({
+            id: "evt-done",
+            kind: "AGENT_EXECUTION_COMPLETED",
+            title: "Agent execution completed",
+            summary: "An agent execution finished successfully.",
+            source_entity_type: "AGENT_EXECUTION",
+          }),
+          item({
+            id: "evt-failed",
+            kind: "AGENT_EXECUTION_FAILED",
+            title: "Agent execution failed",
+            summary: "An agent execution did not complete.",
+            source_entity_type: "AGENT_EXECUTION",
+          }),
+          item({
+            id: "evt-skipped",
+            kind: "SALES_AGENT_AUTO_START_SKIPPED",
+            title: "Sales Agent auto-start skipped",
+            summary: "The Sales Agent was not started automatically for this lead.",
+            actor_type: "SYSTEM",
+          }),
+          item({
+            id: "evt-auto-failed",
+            kind: "SALES_AGENT_AUTO_START_FAILED",
+            title: "Sales Agent auto-start failed",
+            summary: "The Sales Agent could not start automatically for this lead.",
+            actor_type: "SYSTEM",
+          }),
+          item({
+            id: "evt-review",
+            kind: "SALES_RUN_WAITING_APPROVAL",
+            title: "Waiting for review",
+            summary: "A draft is waiting for review.",
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Agent execution completed" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Agent execution failed" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Sales Agent auto-start skipped" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Sales Agent auto-start failed" }),
+    ).toBeVisible();
+    expect(screen.getByText("Completed")).toBeVisible();
+    expect(screen.getByText("Skipped")).toBeVisible();
+    expect(screen.getAllByText("Failed")).toHaveLength(2);
+    expect(screen.getAllByText("Needs your review")).toHaveLength(1);
+    expect(screen.queryByText("Email could not be delivered.")).not.toBeInTheDocument();
+  });
+});
