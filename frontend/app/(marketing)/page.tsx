@@ -26,26 +26,15 @@ import {
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingHeader } from "@/components/marketing/marketing-header";
 import { buttonVariants } from "@/components/ui/button";
+import { marketingPageMetadata } from "@/lib/marketing-metadata";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = marketingPageMetadata({
   title: "AI Sales Operations Platform",
   description:
     "Capture leads, qualify enquiries with AI, prepare personalized responses, and coordinate follow-ups with human approval built in.",
-  openGraph: {
-    title: "FlowPilot — AI Sales Operations Platform",
-    description:
-      "Turn new enquiries into coordinated, human-approved sales conversations.",
-    type: "website",
-    siteName: "FlowPilot",
-  },
-  twitter: {
-    card: "summary",
-    title: "FlowPilot — AI Sales Operations Platform",
-    description:
-      "Turn new enquiries into coordinated, human-approved sales conversations.",
-  },
-};
+  path: "/",
+});
 
 const workflowSteps = [
   {

@@ -11,7 +11,7 @@ import { marketingPageMetadata } from "@/lib/marketing-metadata";
 export const metadata: Metadata = marketingPageMetadata({
   title: "Use cases",
   description:
-    "Example sales workflows in FlowPilot: new enquiries, consistent response drafts, human approval, follow-ups, and agent execution outcomes.",
+    "Practical FlowPilot examples for inbound sales teams: new enquiries, consistent drafts, human approval, overdue follow-ups, and agent execution outcomes.",
   path: "/use-cases",
 });
 

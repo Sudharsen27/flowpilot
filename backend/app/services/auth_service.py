@@ -15,6 +15,7 @@ from app.models.user import User
 from app.repositories.membership_repository import MembershipRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.user_repository import UserRepository
+from app.services.google_oauth_service import GoogleProfile
 
 
 @dataclass(frozen=True)
@@ -83,13 +84,74 @@ class AuthService:
 
     def login(self, *, email: str, password: str) -> AuthResult:
         user = self.users.get_by_email(email.strip().lower())
-        if user is None or not verify_password(password, user.password_hash):
+        if (
+            user is None
+            or user.password_hash is None
+            or not verify_password(password, user.password_hash)
+        ):
             raise UnauthorizedError("Invalid email or password")
+        return self._session_for_user(user)
 
+    def login_with_google(self, profile: GoogleProfile) -> AuthResult:
+        user = self.users.get_by_google_sub(profile.sub)
+        if user is None:
+            user = self.users.get_by_email(profile.email)
+            if user is None:
+                return self._register_google_user(profile)
+            if user.google_sub and user.google_sub != profile.sub:
+                raise ConflictError("This Google account cannot be linked to that email")
+            user.google_sub = profile.sub
+            if not user.name.strip():
+                user.name = profile.name
+            try:
+                self.session.commit()
+            except IntegrityError as exc:
+                self.session.rollback()
+                raise ConflictError("Google account could not be linked") from exc
+            self.session.refresh(user)
+            return self._session_for_user(user)
+        if user.email != profile.email:
+            # Keep the stored email as the account identity; Google email changes
+            # are ignored after the first link.
+            pass
+        return self._session_for_user(user)
+
+    def _register_google_user(self, profile: GoogleProfile) -> AuthResult:
+        organization_name = f"{profile.name}'s workspace"[:200]
+        user = User(
+            email=profile.email,
+            name=profile.name,
+            password_hash=None,
+            google_sub=profile.sub,
+        )
+        organization = Organization(
+            name=organization_name,
+            slug=self._unique_slug(organization_name),
+        )
+        membership = Membership(
+            organization=organization,
+            user=user,
+            role=MembershipRole.OWNER,
+        )
+        self.users.add(user)
+        self.organizations.add(organization)
+        self.memberships.add(membership)
+        try:
+            self.session.commit()
+        except IntegrityError as exc:
+            self.session.rollback()
+            raise ConflictError(
+                "Account could not be created because of a uniqueness conflict"
+            ) from exc
+        self.session.refresh(user)
+        self.session.refresh(organization)
+        self.session.refresh(membership)
+        return self._to_result(user, organization, membership)
+
+    def _session_for_user(self, user: User) -> AuthResult:
         memberships = self.memberships.list_for_user(user.id)
         if not memberships:
             raise UnauthorizedError("Invalid email or password")
-
         membership = min(memberships, key=lambda item: item.created_at)
         organization = self.organizations.get_by_id(membership.organization_id)
         if organization is None:

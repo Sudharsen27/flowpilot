@@ -42,6 +42,7 @@ type AuthContextValue = {
     name: string;
     organizationName: string;
   }) => Promise<void>;
+  completeAuth: (auth: AuthResponse) => void;
   signOut: () => void;
 };
 
@@ -135,6 +136,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyAuth],
   );
 
+  const completeAuth = useCallback(
+    (auth: AuthResponse) => {
+      applyAuth(auth, auth.access_token);
+    },
+    [applyAuth],
+  );
+
   const signOut = useCallback(() => {
     setSession(null);
     clearAccessToken();
@@ -143,8 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const value = useMemo(
-    () => ({ session, isLoading, signIn, signUp, signOut }),
-    [session, isLoading, signIn, signUp, signOut],
+    () => ({ session, isLoading, signIn, signUp, completeAuth, signOut }),
+    [session, isLoading, signIn, signUp, completeAuth, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

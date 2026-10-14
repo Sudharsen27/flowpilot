@@ -12,6 +12,7 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
     signIn: vi.fn(),
     signUp: vi.fn(),
+    completeAuth: vi.fn(),
   }),
 }));
 
@@ -34,6 +35,7 @@ describe("auth pages", () => {
       "href",
       "/register",
     );
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
   });
 
@@ -44,6 +46,7 @@ describe("auth pages", () => {
     expect(screen.getByText(/owner membership/)).toBeVisible();
     expect(screen.queryByText(/development sign-up/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Create account" })).toBeVisible();
   });
 });

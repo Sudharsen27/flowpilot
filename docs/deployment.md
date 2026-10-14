@@ -13,6 +13,10 @@ The API process does not start the worker. Redis is present in local Compose and
 
 Set `NEXT_PUBLIC_API_URL` to the public Render API origin, including the scheme and without a trailing path. A production build fails when this variable is missing. Do not put backend secrets in frontend environment variables.
 
+Optional: set `NEXT_PUBLIC_SITE_URL` to the public marketing origin (scheme + host, no path) after the production hostname is known. The frontend uses it for canonical URLs, Open Graph page URLs, `robots.txt` sitemap, and `sitemap.xml`. Localhost and common preview hosts are rejected. Leave it unset rather than inventing a hostname.
+
+Optional Google sign-in: set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to the same OAuth Web client id used by the API. Authorized JavaScript origins in Google Cloud Console must include the Vercel origin. Do not put `GOOGLE_OAUTH_CLIENT_SECRET` in frontend env.
+
 ## API (Render web service)
 
 Root directory: repository root.
@@ -54,8 +58,9 @@ Required environment:
 - `TYPESAFE_API_KEY` when human decision calls should run
 - `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`, and `EMAIL_FROM_NAME` when email should send
 - The same Resend settings for `POST /api/v1/public/contact`. `EMAIL_FROM_ADDRESS` must be on a domain verified with Resend. Notifications go only to `hello.sundardigital@gmail.com`. `CONTACT_RATE_LIMIT_MAX` and `CONTACT_RATE_LIMIT_WINDOW_SECONDS` tune the in-process limit; they do not provide a shared limit across API instances.
+- Optional Google sign-in: `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` for `POST /api/v1/auth/google`. The API exchanges GIS popup codes with `redirect_uri=postmessage`. Missing values return 503 from that route only.
 
-Missing AI or email credentials do not stop the API. Settings shows those integrations as not configured. Missing `SECRET_KEY`, a local `DATABASE_URL`, or a non-HTTPS CORS origin prevents production startup.
+Missing AI, email, or Google OAuth credentials do not stop the API. Settings shows those integrations as not configured. Missing `SECRET_KEY`, a local `DATABASE_URL`, or a non-HTTPS CORS origin prevents production startup.
 
 Health:
 

@@ -26,6 +26,10 @@ describe("marketing navigation routes", () => {
       "href",
       "/use-cases",
     );
+    expect(screen.getAllByRole("link", { name: "Contact" })[0]).toHaveAttribute(
+      "href",
+      "/contact",
+    );
     expect(screen.getAllByRole("link", { name: "Pricing" })[0]).toHaveAttribute(
       "href",
       "/#pricing",
@@ -77,7 +81,7 @@ describe("product marketing page", () => {
 
   it("publishes unique metadata without a canonical URL when no site origin is configured", () => {
     expect(productMetadata.title).toBe("Product");
-    expect(productMetadata.description).toMatch(/human approval/i);
+    expect(productMetadata.description).toMatch(/explicit email sending/i);
     expect(productMetadata.openGraph).toMatchObject({
       title: "FlowPilot — Product",
       type: "website",
@@ -113,7 +117,7 @@ describe("how it works page", () => {
 
   it("uses its own title and description", () => {
     expect(howMetadata.title).toBe("How it works");
-    expect(howMetadata.description).toMatch(/explicit action/i);
+    expect(howMetadata.description).toMatch(/approve with a person/i);
     expect(howMetadata.title).not.toBe(productMetadata.title);
   });
 });
@@ -140,7 +144,7 @@ describe("use cases page", () => {
 
   it("uses its own title and description", () => {
     expect(useCasesMetadata.title).toBe("Use cases");
-    expect(useCasesMetadata.description).toMatch(/Example sales workflows/i);
+    expect(useCasesMetadata.description).toMatch(/Practical FlowPilot examples/i);
     expect(useCasesMetadata.alternates).toBeUndefined();
   });
 });

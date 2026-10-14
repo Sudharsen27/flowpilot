@@ -47,15 +47,16 @@ Do not authorize from a client-supplied organization id. Tenant context comes fr
 ### Models
 
 - **Organization** — `id`, `name`, unique `slug`, `website_capture_enabled` (default false), timestamps.
-- **User** — `id`, unique `email`, `name`, `password_hash`, timestamps. Users can belong to multiple organizations via memberships.
+- **User** — `id`, unique `email`, `name`, nullable `password_hash`, optional unique `google_sub`, timestamps. Users can belong to multiple organizations via memberships. Google-only accounts store `google_sub` and leave `password_hash` null.
 - **Membership** — `id`, `organization_id`, `user_id`, `role`, `created_at`. Unique on `(organization_id, user_id)`.
 
 Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `OWNER` membership.
 
 ### Authentication
 
-- Passwords are hashed with Argon2. `password_hash` is never returned by the API.
-- Access tokens are JWTs issued after register/login. Token handling lives in `app/core/security.py`.
+- Passwords are hashed with Argon2. `password_hash` is never returned by the API. Password login rejects Google-only users (null hash).
+- Optional Google sign-in: the frontend GIS popup returns an authorization code; `POST /api/v1/auth/google` exchanges it server-side (`redirect_uri=postmessage`), requires a verified email, then finds by `google_sub`, links an existing email account, or creates a new owner workspace named `{name}'s workspace`.
+- Access tokens are JWTs issued after register/login/Google. Token handling lives in `app/core/security.py`.
 - `SECRET_KEY` may use a development default only when `ENVIRONMENT` is `development` or `test`. Other environments require a unique secret of at least 32 characters.
 - Dependencies: `get_current_user`, `get_current_membership`, `get_current_organization`.
 - The frontend waits for `/api/v1/users/me` before rendering product routes. Guests are redirected to `/login`; authenticated users are redirected away from login and registration.
@@ -305,6 +306,10 @@ Abuse control is an **in-process sliding window** per slug + IP (`WEBSITE_CAPTUR
 Settings: `GET` / `PATCH /api/v1/organizations/current/website-capture`. `OWNER` and `ADMIN` may enable or disable. `MEMBER` may read. Hosted UI is `/capture/{slug}` (no AppShell). Authenticated lead APIs stay JWT-only and do not list leads on the public router.
 
 `Lead.enquiry` is optional text (max 8000). Authenticated create/update may set it; capture always persists it. Duplicate visitor emails still create additional leads.
+
+## Marketing SEO (Phase 7B.3)
+
+Public marketing pages share `marketingPageMetadata` for title, description, Open Graph, Twitter, and optional canonical URLs. Canonical and sitemap entries are emitted only when `NEXT_PUBLIC_SITE_URL` is a usable public origin. Localhost and common preview hosts are rejected. `app/robots.ts` allows the site and disallows authenticated app/auth routes. `app/sitemap.ts` lists `/`, `/product`, `/how-it-works`, `/use-cases`, and `/contact` only when that origin is set. Marketing layout injects Organization JSON-LD from verified repository facts; WebSite JSON-LD is added only when the site origin is configured.
 
 ## Marketing contact (Phase 7B.2)
 

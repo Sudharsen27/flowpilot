@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.identity import (
     AuthResponse,
+    GoogleAuthRequest,
     LoginRequest,
     MembershipPublic,
     OrganizationPublic,
@@ -11,6 +12,7 @@ from app.schemas.identity import (
     UserPublic,
 )
 from app.services.auth_service import AuthResult, AuthService
+from app.services.google_oauth_service import GoogleOAuthService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -38,4 +40,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     result = AuthService(db).login(email=str(payload.email), password=payload.password)
+    return to_auth_response(result)
+
+
+@router.post("/google", response_model=AuthResponse)
+def login_with_google(
+    payload: GoogleAuthRequest,
+    db: Session = Depends(get_db),
+) -> AuthResponse:
+    profile = GoogleOAuthService().exchange_authorization_code(payload.code)
+    result = AuthService(db).login_with_google(profile)
     return to_auth_response(result)

@@ -20,7 +20,7 @@ import { marketingPageMetadata } from "@/lib/marketing-metadata";
 export const metadata: Metadata = marketingPageMetadata({
   title: "Product",
   description:
-    "See how FlowPilot keeps lead context, AI qualification, response drafts, human approval, explicit sending, follow-ups, and activity on one record.",
+    "Explore FlowPilot product capabilities: lead context, AI qualification, Sales Copilot drafts, human approval, explicit email sending, follow-ups, and activity visibility.",
   path: "/product",
 });
 

@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     typesafe_api_key: SecretStr | None = None
     jev_model: str = "jev-latest"
     email_provider: str = "resend"
+    # Google Identity Services / OAuth. Leave empty until credentials are set.
+    # The browser uses the client ID; the API also needs the client secret to
+    # exchange an authorization code from the popup flow.
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: SecretStr | None = None
     resend_api_key: str | None = None
     email_from_address: str | None = None
     email_from_name: str | None = None

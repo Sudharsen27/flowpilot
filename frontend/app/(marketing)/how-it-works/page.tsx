@@ -11,7 +11,7 @@ import { marketingPageMetadata } from "@/lib/marketing-metadata";
 export const metadata: Metadata = marketingPageMetadata({
   title: "How it works",
   description:
-    "Capture a lead, review the enquiry, qualify it, draft a response, get human approval, then send only with an explicit action and track follow-ups.",
+    "Follow the FlowPilot workflow: capture a lead, review the enquiry, qualify with AI, prepare a draft, approve with a person, send through an explicit action, then track follow-ups.",
   path: "/how-it-works",
 });
 

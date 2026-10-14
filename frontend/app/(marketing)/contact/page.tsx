@@ -11,7 +11,7 @@ import { marketingPageMetadata } from "@/lib/marketing-metadata";
 export const metadata: Metadata = marketingPageMetadata({
   title: "Contact",
   description:
-    "Request a FlowPilot demo or contact the team. A person reviews the message. Submitting this form does not create an account or send customer email.",
+    "Request a FlowPilot demo or ask a product question. The team receives your message at a fixed inbox. Registration and customer email sending stay separate.",
   path: "/contact",
 });
 

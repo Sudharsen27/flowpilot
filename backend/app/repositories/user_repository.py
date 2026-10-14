@@ -14,6 +14,9 @@ class UserRepository:
     def get_by_email(self, email: str) -> User | None:
         return self.session.scalar(select(User).where(User.email == email))
 
+    def get_by_google_sub(self, google_sub: str) -> User | None:
+        return self.session.scalar(select(User).where(User.google_sub == google_sub))
+
     def add(self, user: User) -> User:
         self.session.add(user)
         return user
