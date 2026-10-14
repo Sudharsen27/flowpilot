@@ -306,6 +306,10 @@ Settings: `GET` / `PATCH /api/v1/organizations/current/website-capture`. `OWNER`
 
 `Lead.enquiry` is optional text (max 8000). Authenticated create/update may set it; capture always persists it. Duplicate visitor emails still create additional leads.
 
+## Marketing contact (Phase 7B.2)
+
+`POST /api/v1/public/contact` accepts a demo or contact request and sends one notification through the existing `ResendEmailProvider`. It does not create a lead, user, or other database row. The team recipient is fixed to `sundarlingam272000@gmail.com`. The sender is `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME`. The visitor address is `reply_to` on that notification. A second plain acknowledgement is sent to the visitor, with reply-to set to the team inbox. If that acknowledgement is rejected, the team notification still counts as accepted and `confirmation_sent` is false. Missing `RESEND_API_KEY` or sender configuration returns 503 and does not report success. Provider failures return 502 with a generic detail. A honeypot field returns the same success body without sending. The rate limit reuses the in-process sliding window (`CONTACT_RATE_LIMIT_MAX`, `CONTACT_RATE_LIMIT_WINDOW_SECONDS`) and is not shared across API processes. Redis is not used.
+
 ## Organization activity (Phase 6A)
 
 `ActivityEvent` is a tenant-owned, append-only operational timeline. It is **not** a compliance or WORM audit log.

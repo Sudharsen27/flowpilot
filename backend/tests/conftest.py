@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
-from app.core.rate_limit import website_capture_limiter
+from app.core.rate_limit import contact_form_limiter, website_capture_limiter
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -66,10 +66,12 @@ def client(db: Session) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_db] = override_get_db
     website_capture_limiter.reset()
+    contact_form_limiter.reset()
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
     website_capture_limiter.reset()
+    contact_form_limiter.reset()
 
 
 def register_payload(

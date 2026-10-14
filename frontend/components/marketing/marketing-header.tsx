@@ -10,10 +10,12 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { href: "#product", label: "Product" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#trust", label: "Trust" },
+  { href: "/product", label: "Product" },
+  { href: "/how-it-works", label: "How it works" },
+  { href: "/use-cases", label: "Use cases" },
+  { href: "/contact", label: "Contact" },
+  { href: "/#pricing", label: "Pricing" },
+  { href: "/#trust", label: "Trust" },
 ] as const;
 
 export function MarketingHeader() {
@@ -47,7 +49,7 @@ export function MarketingHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="text-muted-foreground hover:text-foreground rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
             >
               {item.label}
             </Link>
@@ -75,7 +77,7 @@ export function MarketingHeader() {
           <ThemeToggle />
           <button
             type="button"
-            className="hover:bg-muted inline-flex size-11 items-center justify-center rounded-lg"
+            className="hover:bg-muted focus-visible:ring-ring inline-flex size-11 items-center justify-center rounded-lg focus-visible:ring-2 focus-visible:outline-none"
             aria-label={open ? "Close navigation" : "Open navigation"}
             aria-expanded={open}
             aria-controls="marketing-mobile-menu"
@@ -98,7 +100,7 @@ export function MarketingHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="hover:bg-muted rounded-lg px-3 py-3 text-base font-medium"
+              className="hover:bg-muted focus-visible:ring-ring rounded-lg px-3 py-3 text-base font-medium focus-visible:ring-2 focus-visible:outline-none"
               onClick={() => setOpen(false)}
             >
               {item.label}

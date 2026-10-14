@@ -11,6 +11,8 @@ class EmailMessage(BaseModel):
     from_name: str | None = None
     subject: str = Field(min_length=1, max_length=200)
     body_text: str = Field(min_length=1, max_length=8000)
+    body_html: str | None = Field(default=None, max_length=32000)
+    reply_to: EmailStr | None = None
     idempotency_key: str | None = None
 
 

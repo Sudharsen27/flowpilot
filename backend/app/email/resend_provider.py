@@ -52,12 +52,16 @@ class ResendEmailProvider:
         from_value = message.from_email
         if message.from_name:
             from_value = f"{message.from_name} <{message.from_email}>"
-        payload = {
+        payload: dict[str, Any] = {
             "from": from_value,
             "to": [str(message.to)],
             "subject": message.subject,
             "text": message.body_text,
         }
+        if message.body_html:
+            payload["html"] = message.body_html
+        if message.reply_to:
+            payload["reply_to"] = str(message.reply_to)
         body = json.dumps(payload).encode("utf-8")
         headers = {
             "Authorization": f"Bearer {self._api_key}",

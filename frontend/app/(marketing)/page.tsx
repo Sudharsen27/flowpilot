@@ -23,7 +23,7 @@ import {
   Workflow,
 } from "lucide-react";
 
-import { BrandLockup } from "@/components/brand-lockup";
+import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingHeader } from "@/components/marketing/marketing-header";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -499,7 +499,7 @@ export default function MarketingHomePage() {
                   <ArrowRight aria-hidden="true" />
                 </Link>
                 <Link
-                  href="#product"
+                  href="/product"
                   className={buttonVariants({
                     variant: "outline",
                     size: "lg",
@@ -668,16 +668,24 @@ export default function MarketingHomePage() {
                 title="AI moves quickly. Your controls stay clear."
                 copy="FlowPilot separates preparation, approval, and sending so your team always knows what the system has done—and what still needs a person."
               />
-              <Link
-                href="/register"
-                className={buttonVariants({
-                  size: "lg",
-                  className: "mt-8 px-4",
-                })}
-              >
-                Start with your organization
-                <ArrowRight aria-hidden="true" />
-              </Link>
+              <div className="mt-8 flex flex-col items-start gap-3">
+                <Link
+                  href="/how-it-works"
+                  className="text-sm font-medium underline underline-offset-4"
+                >
+                  Read the full sequence
+                </Link>
+                <Link
+                  href="/register"
+                  className={buttonVariants({
+                    size: "lg",
+                    className: "px-4",
+                  })}
+                >
+                  Start with your organization
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </div>
             </div>
             <ol className="before:bg-border relative grid gap-5 before:absolute before:top-7 before:bottom-7 before:left-7 before:w-px">
               {[
@@ -821,6 +829,14 @@ export default function MarketingHomePage() {
                 );
               })}
             </div>
+            <p className="mt-8 text-center">
+              <Link
+                href="/use-cases"
+                className="text-sm font-medium underline underline-offset-4"
+              >
+                See example workflows
+              </Link>
+            </p>
           </div>
         </section>
 
@@ -1017,68 +1033,7 @@ export default function MarketingHomePage() {
         </section>
       </main>
 
-      <footer className="border-border border-t">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_0.6fr_0.6fr] lg:px-8">
-          <div>
-            <BrandLockup />
-            <p className="text-muted-foreground mt-5 max-w-sm text-sm leading-6">
-              AI sales operations for teams that want faster preparation,
-              connected follow-up, and human control over customer
-              communication.
-            </p>
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Product</p>
-            <nav aria-label="Footer product" className="mt-4 grid gap-3">
-              {[
-                ["Product", "#product"],
-                ["How it works", "#how-it-works"],
-                ["Pricing preview", "#pricing"],
-                ["Trust", "#trust"],
-              ].map(([label, href]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className="text-muted-foreground hover:text-foreground text-sm"
-                >
-                  {label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Access</p>
-            <nav aria-label="Footer access" className="mt-4 grid gap-3">
-              <Link
-                href="/register"
-                className="text-muted-foreground hover:text-foreground text-sm"
-              >
-                Get started
-              </Link>
-              <Link
-                href="/login"
-                className="text-muted-foreground hover:text-foreground text-sm"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/dashboard"
-                className="text-muted-foreground hover:text-foreground text-sm"
-              >
-                Command Center
-              </Link>
-            </nav>
-          </div>
-        </div>
-        <div className="border-border border-t">
-          <div className="text-muted-foreground mx-auto flex max-w-7xl flex-col gap-2 px-4 py-5 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-            <p>© {new Date().getFullYear()} FlowPilot.</p>
-            <p>
-              Product capabilities shown are based on the current application.
-            </p>
-          </div>
-        </div>
-      </footer>
+      <MarketingFooter />
     </>
   );
 }

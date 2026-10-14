@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     # it is not shared across API processes and does not use Redis.
     website_capture_rate_limit_max: int = Field(default=5, ge=1)
     website_capture_rate_limit_window_seconds: float = Field(default=60, ge=1)
+    # In-process sliding window for the public marketing contact form.
+    # Single-instance only; it is not shared across API processes and does not use Redis.
+    contact_rate_limit_max: int = Field(default=5, ge=1)
+    contact_rate_limit_window_seconds: float = Field(default=600, ge=1)
 
     def agent_execution_stale_timeout_effective_seconds(self) -> float:
         floor = (self.agent_max_tool_iterations + 1) * self.openai_request_timeout_seconds

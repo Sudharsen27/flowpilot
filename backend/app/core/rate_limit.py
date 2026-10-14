@@ -34,3 +34,4 @@ class SlidingWindowRateLimiter:
 
 
 website_capture_limiter = SlidingWindowRateLimiter()
+contact_form_limiter = SlidingWindowRateLimiter()
