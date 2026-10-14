@@ -36,6 +36,10 @@ describe("contact page", () => {
     screen.getAllByRole("link", { name: "How it works" }).forEach((link) => {
       expect(link).toHaveAttribute("href", "/how-it-works");
     });
+    expect(screen.getAllByRole("link", { name: "Use cases" }).length).toBeGreaterThan(0);
+    screen.getAllByRole("link", { name: "Use cases" }).forEach((link) => {
+      expect(link).toHaveAttribute("href", "/use-cases");
+    });
     expect(metadata.title).toBe("Contact");
     expect(metadata.description).toMatch(/demo/i);
     expect(metadata.alternates).toBeUndefined();

@@ -19,7 +19,7 @@ from app.schemas.contact import ContactReason, ContactSubmission
 
 logger = logging.getLogger(__name__)
 
-CONTACT_NOTIFICATION_EMAIL = "sundarlingam272000@gmail.com"
+CONTACT_NOTIFICATION_EMAIL = "hello.sundardigital@gmail.com"
 _SUBJECT_PREFIX = "FlowPilot Demo Request — "
 _DELIVERY_ERROR = "We could not send your message. Please try again later."
 _REJECTED = "The contact form could not be accepted."

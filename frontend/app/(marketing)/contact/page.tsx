@@ -40,6 +40,11 @@ export default function ContactPage() {
                 label: "How it works",
                 copy: "See the sequence from a lead through review and follow-up.",
               },
+              {
+                href: "/use-cases",
+                label: "Use cases",
+                copy: "Read example workflows for enquiries, approvals, and follow-ups.",
+              },
             ]}
           />
         </div>

@@ -53,7 +53,7 @@ Required environment:
 - The matching provider key and model when that provider should be used
 - `TYPESAFE_API_KEY` when human decision calls should run
 - `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`, and `EMAIL_FROM_NAME` when email should send
-- The same Resend settings for `POST /api/v1/public/contact`. `EMAIL_FROM_ADDRESS` must be on a domain verified with Resend. Notifications go only to `sundarlingam272000@gmail.com`. `CONTACT_RATE_LIMIT_MAX` and `CONTACT_RATE_LIMIT_WINDOW_SECONDS` tune the in-process limit; they do not provide a shared limit across API instances.
+- The same Resend settings for `POST /api/v1/public/contact`. `EMAIL_FROM_ADDRESS` must be on a domain verified with Resend. Notifications go only to `hello.sundardigital@gmail.com`. `CONTACT_RATE_LIMIT_MAX` and `CONTACT_RATE_LIMIT_WINDOW_SECONDS` tune the in-process limit; they do not provide a shared limit across API instances.
 
 Missing AI or email credentials do not stop the API. Settings shows those integrations as not configured. Missing `SECRET_KEY`, a local `DATABASE_URL`, or a non-HTTPS CORS origin prevents production startup.
 
