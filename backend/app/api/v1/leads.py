@@ -15,12 +15,20 @@ from app.models.lead import LeadSource, LeadStatus
 from app.models.lead_follow_up import LeadFollowUpStatus
 from app.models.membership import Membership
 from app.models.organization import Organization
+from app.repositories.agent_execution_repository import (
+    EXECUTION_LIST_DEFAULT_LIMIT,
+    EXECUTION_LIST_MAX_LIMIT,
+)
 from app.repositories.lead_follow_up_repository import (
     FOLLOW_UP_LIST_DEFAULT_LIMIT,
     FOLLOW_UP_LIST_MAX_LIMIT,
 )
 from app.repositories.lead_repository import LEAD_LIST_DEFAULT_LIMIT, LEAD_LIST_MAX_LIMIT
 from app.schemas.lead_email_send import LeadEmailSendPublic
+from app.schemas.lead_execution_outcome import (
+    LeadExecutionOutcome,
+    LeadExecutionOutcomeListResponse,
+)
 from app.schemas.lead_follow_up import (
     LeadFollowUpCreate,
     LeadFollowUpLifecycleRequest,
@@ -45,6 +53,7 @@ from app.schemas.leads import (
     LeadPublic,
     LeadUpdate,
 )
+from app.services.agent_execution_service import AgentExecutionService
 from app.services.human_attention_service import HumanAttentionService
 from app.services.lead_email_send_service import LeadEmailSendService, to_email_send_public
 from app.services.lead_follow_up_execution_service import LeadFollowUpExecutionService
@@ -460,4 +469,46 @@ def list_lead_follow_up_executions(
         follow_up_id,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/{lead_id}/executions",
+    response_model=LeadExecutionOutcomeListResponse,
+)
+def list_lead_execution_outcomes(
+    lead_id: str,
+    limit: int = Query(
+        default=EXECUTION_LIST_DEFAULT_LIMIT,
+        ge=1,
+        le=EXECUTION_LIST_MAX_LIMIT,
+    ),
+    offset: int = Query(default=0, ge=0),
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadExecutionOutcomeListResponse:
+    """Read-only outcomes for executions already linked to this lead."""
+    return AgentExecutionService(db).list_outcomes_for_lead(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/{lead_id}/executions/{execution_id}",
+    response_model=LeadExecutionOutcome,
+)
+def get_lead_execution_outcome(
+    lead_id: str,
+    execution_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadExecutionOutcome:
+    """One lead-linked execution. Does not run the agent or expose tool output."""
+    return AgentExecutionService(db).get_outcome_for_lead(
+        organization_id=organization.id,
+        lead_id=lead_id,
+        execution_id=execution_id,
     )

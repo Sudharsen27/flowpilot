@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,6 +33,7 @@ from app.services.agent_planner_service import (
     PlannerResult,
 )
 from app.services.lead_service import LeadService
+from app.services.orchestration_outcome import OrchestrationOutcome
 from app.services.plan_execution_service import PlanExecutionService
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools import build_default_tool_registry
@@ -43,16 +43,6 @@ from app.tools.registry import ToolRegistry
 from app.tools.schema import ToolDefinition
 
 logger = logging.getLogger(__name__)
-
-
-class OrchestrationOutcome(StrEnum):
-    SUCCESS = "SUCCESS"
-    PLANNING_FAILED = "PLANNING_FAILED"
-    PLAN_VALIDATION_FAILED = "PLAN_VALIDATION_FAILED"
-    TOOL_DENIED = "TOOL_DENIED"
-    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
-    TOOL_FAILED = "TOOL_FAILED"
-    EXECUTION_FAILED = "EXECUTION_FAILED"
 
 
 class OrchestrationResult(BaseModel):
@@ -128,8 +118,7 @@ class AgentOrchestrationService:
         self.plan_executor: _PlanExecutorLike = plan_executor or PlanExecutionService(
             session,
             self.registry,
-            tool_executor=tool_executor
-            or self.execution_service.tool_executor,
+            tool_executor=tool_executor or self.execution_service.tool_executor,
             policy=resolved_policy,
         )
 
@@ -238,9 +227,7 @@ class AgentOrchestrationService:
         execution_id: str,
         correlation_id: str,
     ) -> None:
-        execution = self.executions.get_by_agent(
-            organization_id, agent_id, execution_id
-        )
+        execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if execution is None:
             return
         payload = dict(execution.input or {})
@@ -257,9 +244,7 @@ class AgentOrchestrationService:
         planner_result: PlannerResult,
     ) -> OrchestrationResult:
         outcome, category = _planning_outcome(planner_result.failure_reason)
-        error = sanitize_provider_error(
-            planner_result.error or "Planning failed"
-        )
+        error = sanitize_provider_error(planner_result.error or "Planning failed")
         self._finalize_execution(
             organization_id=organization_id,
             agent_id=agent_id,
@@ -324,9 +309,7 @@ class AgentOrchestrationService:
                 "total_step_count": total,
             },
             "plan": plan.model_dump(mode="json"),
-            "step_results": [
-                item.model_dump(mode="json") for item in plan_result.step_results
-            ],
+            "step_results": [item.model_dump(mode="json") for item in plan_result.step_results],
         }
         self._finalize_execution(
             organization_id=organization_id,
@@ -378,9 +361,7 @@ class AgentOrchestrationService:
             "output": output,
             "completed_at": now,
         }
-        updated = self.executions.finalize_running(
-            organization_id, agent_id, execution_id, values
-        )
+        updated = self.executions.finalize_running(organization_id, agent_id, execution_id, values)
         if updated != 1:
             logger.warning(
                 "Orchestration finalize missed execution_id=%s status=%s",
@@ -388,16 +369,12 @@ class AgentOrchestrationService:
                 status,
             )
             return
-        execution = self.executions.get_by_agent(
-            organization_id, agent_id, execution_id
-        )
+        execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if execution is None:
             return
         self._record_activity(execution, status)
 
-    def _record_activity(
-        self, execution: AgentExecution, status: AgentExecutionStatus
-    ) -> None:
+    def _record_activity(self, execution: AgentExecution, status: AgentExecutionStatus) -> None:
         if status == AgentExecutionStatus.COMPLETED:
             title = "Agent execution completed"
             summary = "An agent orchestration finished successfully."
@@ -414,6 +391,7 @@ class AgentOrchestrationService:
             entity_id=execution.id,
             agent_id=execution.agent_id,
             actor_user_id=execution.initiated_by_user_id,
+            lead_id=execution.lead_id,
             status=status,
             dedupe_key=f"agent_execution:{execution.id}:{status.value}",
         )

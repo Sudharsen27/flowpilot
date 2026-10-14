@@ -34,6 +34,7 @@ from app.repositories.agent_execution_repository import (
     AgentExecutionRepository,
 )
 from app.repositories.agent_repository import AgentRepository
+from app.repositories.lead_repository import LeadRepository
 from app.repositories.membership_repository import MembershipRepository
 from app.repositories.tool_invocation_repository import (
     INVOCATION_LIST_DEFAULT_LIMIT,
@@ -50,8 +51,14 @@ from app.schemas.agents import (
     ToolInvocationListItem,
     ToolInvocationListResponse,
 )
+from app.schemas.lead_execution_outcome import (
+    LeadExecutionOutcome,
+    LeadExecutionOutcomeListItem,
+    LeadExecutionOutcomeListResponse,
+)
 from app.services.activity_service import ActivityService
 from app.services.observability import duration_ms
+from app.services.orchestration_outcome import OrchestrationOutcome
 from app.services.tool_execution_service import ToolExecutionService
 from app.tools import build_default_tool_registry
 from app.tools.policy import DefaultToolPolicy, ToolPolicy
@@ -95,6 +102,7 @@ class AgentExecutionService:
         self.session = session
         self.provider = provider
         self.agents = AgentRepository(session)
+        self.leads = LeadRepository(session)
         self.executions = AgentExecutionRepository(session)
         self.invocations = ToolInvocationRepository(session)
         self.memberships = MembershipRepository(session)
@@ -273,9 +281,7 @@ class AgentExecutionService:
     ) -> AgentExecutionResult:
         if self.agents.get_by_id(organization_id, agent_id) is None:
             raise NotFoundError("Agent not found")
-        execution = self.executions.get_by_agent(
-            organization_id, agent_id, execution_id
-        )
+        execution = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if execution is None:
             raise NotFoundError("Agent execution not found")
         status = AgentExecutionStatus(execution.status)
@@ -295,9 +301,7 @@ class AgentExecutionService:
             },
         )
         if updated != 1:
-            current = self.executions.get_by_agent(
-                organization_id, agent_id, execution_id
-            )
+            current = self.executions.get_by_agent(organization_id, agent_id, execution_id)
             if current is None:
                 raise NotFoundError("Agent execution not found")
             raise ConflictError("Execution cannot be cancelled in its current status")
@@ -314,6 +318,7 @@ class AgentExecutionService:
             entity_id=current.id,
             agent_id=current.agent_id,
             actor_user_id=current.initiated_by_user_id,
+            lead_id=current.lead_id,
             status=AgentExecutionStatus.CANCELLED,
             dedupe_key=f"agent_execution:{current.id}:CANCELLED",
         )
@@ -385,9 +390,7 @@ class AgentExecutionService:
         user_id = execution.initiated_by_user_id
         role: str | None = None
         if user_id:
-            membership = self.memberships.get_for_user_in_organization(
-                organization_id, user_id
-            )
+            membership = self.memberships.get_for_user_in_organization(organization_id, user_id)
             if membership is not None:
                 role = membership.role
         return ToolContext(
@@ -418,9 +421,7 @@ class AgentExecutionService:
         execution_id: str,
     ) -> AgentExecutionResult:
         self.session.expire_all()
-        current = self.executions.get_by_agent(
-            organization_id, agent_id, execution_id
-        )
+        current = self.executions.get_by_agent(organization_id, agent_id, execution_id)
         if current is None:
             raise NotFoundError("Agent execution not found")
         if AgentExecutionStatus(current.status) == AgentExecutionStatus.RUNNING:
@@ -491,8 +492,7 @@ class AgentExecutionService:
                 if not result.success:
                     raise ExecutionFailure(
                         result.error or "Tool execution failed",
-                        result.failure_category
-                        or ExecutionFailureCategory.TOOL_ERROR,
+                        result.failure_category or ExecutionFailureCategory.TOOL_ERROR,
                     )
         self._ensure_not_cancelled(execution)
         if generated is None:
@@ -522,9 +522,7 @@ class AgentExecutionService:
                 "output": {
                     "text": generated.output_text,
                     "usage": generated.usage.model_dump() if generated.usage else None,
-                    "tool_results": [
-                        item.model_dump(mode="json") for item in tool_results
-                    ],
+                    "tool_results": [item.model_dump(mode="json") for item in tool_results],
                 },
                 "completed_at": now,
             },
@@ -550,6 +548,7 @@ class AgentExecutionService:
             entity_id=current.id,
             agent_id=current.agent_id,
             actor_user_id=current.initiated_by_user_id,
+            lead_id=current.lead_id,
             status=AgentExecutionStatus.COMPLETED,
             dedupe_key=f"agent_execution:{current.id}:COMPLETED",
         )
@@ -600,6 +599,7 @@ class AgentExecutionService:
             entity_id=execution.id,
             agent_id=execution.agent_id,
             actor_user_id=execution.initiated_by_user_id,
+            lead_id=execution.lead_id,
             status=AgentExecutionStatus.FAILED,
             dedupe_key=f"agent_execution:{execution.id}:FAILED",
         )
@@ -700,6 +700,47 @@ class AgentExecutionService:
             total=total,
         )
 
+    def list_outcomes_for_lead(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        limit: int = EXECUTION_LIST_DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> LeadExecutionOutcomeListResponse:
+        self._require_lead(organization_id, lead_id)
+        safe_limit = min(max(limit, 1), EXECUTION_LIST_MAX_LIMIT)
+        safe_offset = max(offset, 0)
+        items, total = self.executions.list_by_lead(
+            organization_id,
+            lead_id,
+            limit=safe_limit,
+            offset=safe_offset,
+        )
+        return LeadExecutionOutcomeListResponse(
+            items=[_to_lead_outcome_item(item) for item in items],
+            limit=safe_limit,
+            offset=safe_offset,
+            total=total,
+        )
+
+    def get_outcome_for_lead(
+        self,
+        *,
+        organization_id: str,
+        lead_id: str,
+        execution_id: str,
+    ) -> LeadExecutionOutcome:
+        self._require_lead(organization_id, lead_id)
+        execution = self.executions.get_by_lead(organization_id, lead_id, execution_id)
+        if execution is None:
+            raise NotFoundError("Agent execution not found")
+        return _to_lead_outcome(execution)
+
+    def _require_lead(self, organization_id: str, lead_id: str) -> None:
+        if self.leads.get_by_id(organization_id, lead_id) is None:
+            raise NotFoundError("Lead not found")
+
 
 def _is_run_claimed(output: dict[str, Any] | None) -> bool:
     return isinstance(output, dict) and output.get(RUN_CLAIM_KEY) is True
@@ -795,6 +836,98 @@ def _to_detail(execution: AgentExecution) -> AgentExecutionDetail:
         initiated_by_user_id=execution.initiated_by_user_id,
         duration_ms=duration_ms(execution.started_at, execution.completed_at),
         failure_category=_failure_category(execution),
+    )
+
+
+def _orchestration_block(output: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(output, dict):
+        return None
+    block = output.get("orchestration")
+    if not isinstance(block, dict):
+        return None
+    return block
+
+
+def _orchestration_outcome(block: dict[str, Any] | None) -> OrchestrationOutcome | None:
+    if block is None:
+        return None
+    raw = block.get("outcome")
+    if not isinstance(raw, str):
+        return None
+    try:
+        return OrchestrationOutcome(raw)
+    except ValueError:
+        return None
+
+
+def _optional_count(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _optional_text(value: Any) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _approval_required(block: dict[str, Any] | None) -> bool:
+    return bool(block and block.get("approval_required") is True)
+
+
+def _to_lead_outcome_item(execution: AgentExecution) -> LeadExecutionOutcomeListItem:
+    if execution.lead_id is None:
+        raise NotFoundError("Agent execution not found")
+    output = execution.output if isinstance(execution.output, dict) else None
+    block = _orchestration_block(output)
+    return LeadExecutionOutcomeListItem(
+        id=execution.id,
+        agent_id=execution.agent_id,
+        lead_id=execution.lead_id,
+        status=AgentExecutionStatus(execution.status),
+        outcome=_orchestration_outcome(block),
+        approval_required=_approval_required(block),
+        plan_id=_optional_text(block.get("plan_id") if block else None),
+        completed_step_count=_optional_count(block.get("completed_step_count") if block else None),
+        total_step_count=_optional_count(block.get("total_step_count") if block else None),
+        stopped_at_step_id=_optional_text(block.get("stopped_at_step_id") if block else None),
+        provider=execution.provider,
+        model=execution.model,
+        error_preview=_preview(execution.error),
+        failure_category=_failure_category(execution),
+        started_at=execution.started_at,
+        completed_at=execution.completed_at,
+        created_at=execution.created_at,
+        initiated_by_user_id=execution.initiated_by_user_id,
+        duration_ms=duration_ms(execution.started_at, execution.completed_at),
+        input_preview=_preview(_json_text(execution.input, "text")),
+    )
+
+
+def _to_lead_outcome(execution: AgentExecution) -> LeadExecutionOutcome:
+    item = _to_lead_outcome_item(execution)
+    return LeadExecutionOutcome(
+        id=item.id,
+        agent_id=item.agent_id,
+        lead_id=item.lead_id,
+        status=item.status,
+        outcome=item.outcome,
+        approval_required=item.approval_required,
+        plan_id=item.plan_id,
+        completed_step_count=item.completed_step_count,
+        total_step_count=item.total_step_count,
+        stopped_at_step_id=item.stopped_at_step_id,
+        provider=item.provider,
+        model=item.model,
+        input=_json_text(execution.input, "text"),
+        error=execution.error,
+        failure_category=item.failure_category,
+        started_at=item.started_at,
+        completed_at=item.completed_at,
+        created_at=item.created_at,
+        initiated_by_user_id=item.initiated_by_user_id,
+        duration_ms=item.duration_ms,
     )
 
 

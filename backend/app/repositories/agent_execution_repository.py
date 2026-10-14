@@ -69,6 +69,46 @@ class AgentExecutionRepository:
         )
         return items, int(total or 0)
 
+    def get_by_lead(
+        self,
+        organization_id: str,
+        lead_id: str,
+        execution_id: str,
+    ) -> AgentExecution | None:
+        return self.session.scalar(
+            select(AgentExecution).where(
+                AgentExecution.organization_id == organization_id,
+                AgentExecution.lead_id == lead_id,
+                AgentExecution.id == execution_id,
+            )
+        )
+
+    def list_by_lead(
+        self,
+        organization_id: str,
+        lead_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[AgentExecution], int]:
+        filters = (
+            AgentExecution.organization_id == organization_id,
+            AgentExecution.lead_id == lead_id,
+        )
+        total = self.session.scalar(
+            select(func.count()).select_from(AgentExecution).where(*filters)
+        )
+        items = list(
+            self.session.scalars(
+                select(AgentExecution)
+                .where(*filters)
+                .order_by(AgentExecution.created_at.desc(), AgentExecution.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        return items, int(total or 0)
+
     def probe_status(
         self,
         organization_id: str,

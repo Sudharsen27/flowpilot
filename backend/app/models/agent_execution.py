@@ -78,6 +78,13 @@ class AgentExecution(Base):
             "created_at",
             "id",
         ),
+        Index(
+            "ix_agent_executions_organization_id_lead_id_created_at_id",
+            "organization_id",
+            "lead_id",
+            "created_at",
+            "id",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))

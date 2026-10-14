@@ -26,7 +26,7 @@ def test_alembic_revision_chain_is_linear() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "028_agent_execution_lead_delete"
+    assert script.get_current_head() == "029_lead_exec_list_index"
     chain = {
         "022_lead_human_attention": "021_sales_agent_auto_start",
         "023_inbound_emails": "022_lead_human_attention",
@@ -35,6 +35,7 @@ def test_alembic_revision_chain_is_linear() -> None:
         "026_webhooks": "025_workflows",
         "027_agent_execution_lead": "026_webhooks",
         "028_agent_execution_lead_delete": "027_agent_execution_lead",
+        "029_lead_exec_list_index": "028_agent_execution_lead_delete",
     }
     for revision, down_revision in chain.items():
         row = script.get_revision(revision)

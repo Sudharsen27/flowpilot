@@ -126,6 +126,21 @@ Authenticated members of the current organization may read persisted `AgentExecu
 
 Missing agents, missing executions, cross-tenant ids, and executions that belong to a different agent return 404. Unauthenticated requests return 401.
 
+### Lead-linked execution outcomes (Phase 6E.3.2)
+
+`AgentExecution.lead_id` is the link created when orchestration starts for a selected lead. This slice does not add another execution table.
+
+```
+GET /api/v1/leads/{lead_id}/executions
+GET /api/v1/leads/{lead_id}/executions/{execution_id}
+```
+
+Organization comes from the membership JWT. Any org member may read. Missing leads, missing executions, executions linked to a different lead, and cross-tenant ids return 404. Pagination matches agent execution history (default 20, max 50, `created_at DESC`, `id DESC`).
+
+Responses expose status, the stored orchestration `outcome` when present, approval and step counts, sanitized error, and an input preview or the stored instruction. They do not return the plan, step results, tool outputs, `tool_results`, or provider payloads. Executions with a null `lead_id` stay on the agent history APIs only.
+
+Completion, failure, and cancellation activity events copy `execution.lead_id` onto the existing `ActivityEvent`. There is no backfill. Reading these routes does not run the agent and does not recover stale `RUNNING` rows; that recovery remains on the agent-scoped execution operations.
+
 ### Stuck RUNNING recovery (Phase 3L.3)
 
 There is no worker or scheduler. Recovery is opportunistic and tenant-scoped: listing or loading an agent's executions, starting a new execution, running a specific execution, or listing its tool invocations CAS-updates matching rows.
@@ -514,3 +529,7 @@ FlowPilot UI uses Tailwind v4 tokens in `frontend/app/globals.css`, shadcn/ui, a
 ## Phase 6A (organization activity)
 
 See **Organization activity (Phase 6A)** above. Activity is a user-facing operational timeline recorded by existing services. It does not replace execution history, Sales Agent history, or application logs.
+
+## Phase 6E.3.2 (lead-linked execution outcomes)
+
+See **Lead-linked execution outcomes (Phase 6E.3.2)** above. Lead-scoped reads compose existing `AgentExecution` rows. They do not start a run or create a second activity stream.
