@@ -23,6 +23,7 @@ import {
   Workflow,
 } from "lucide-react";
 
+import { InteractiveProductDemo } from "@/components/marketing/interactive-product-demo";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingHeader } from "@/components/marketing/marketing-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -487,6 +488,7 @@ export default function MarketingHomePage() {
                   Get started
                   <ArrowRight aria-hidden="true" />
                 </Link>
+                <InteractiveProductDemo />
                 <Link
                   href="/product"
                   className={buttonVariants({

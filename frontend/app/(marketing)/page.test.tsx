@@ -6,6 +6,18 @@ import MarketingHomePage, { metadata } from "@/app/(marketing)/page";
 import { MarketingHeader } from "@/components/marketing/marketing-header";
 
 describe("public marketing homepage", () => {
+  it("opens the interactive demo from the hero CTA", async () => {
+    const user = userEvent.setup();
+    render(<MarketingHomePage />);
+
+    await user.click(screen.getByRole("button", { name: "Play Product Demo" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "Interactive product demo" }),
+    ).toBeVisible();
+    expect(screen.getByText("Fictional data")).toBeVisible();
+  });
+
   it("explains the product with a complete, truthful workflow", () => {
     render(<MarketingHomePage />);
 

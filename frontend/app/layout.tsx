@@ -1,6 +1,5 @@
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/hooks/use-auth";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -39,9 +38,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {`try{var t=localStorage.getItem('flowpilot-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}`}
         </Script>
         <TooltipProvider delay={400}>
-          <ToastProvider>
-            <AuthProvider>{children}</AuthProvider>
-          </ToastProvider>
+          <ToastProvider>{children}</ToastProvider>
         </TooltipProvider>
       </body>
     </html>
