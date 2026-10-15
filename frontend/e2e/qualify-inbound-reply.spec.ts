@@ -74,8 +74,36 @@ test("qualifies a matched inbound reply from Inbox", async ({
   await page.getByRole("textbox", { name: "Password" }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL("**/dashboard");
+  await expect(
+    page.getByRole("heading", { name: "Command Center" }),
+  ).toBeVisible();
 
+  const inboxResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url() === `${API_URL}/api/v1/inbox/${lead.id}`,
+  );
   await page.goto(`/inbox?lead=${lead.id}`);
+  const inboxResponse = await inboxResponsePromise;
+  expect(inboxResponse.ok()).toBeTruthy();
+  const conversation = (await inboxResponse.json()) as {
+    lead: { lead_id: string };
+    items: Array<{
+      kind: string;
+      body: string | null;
+      inbound_email_id: string | null;
+    }>;
+  };
+  expect(conversation.lead.lead_id).toBe(lead.id);
+  expect(
+    conversation.items.some(
+      (item) =>
+        item.kind === "CUSTOMER_REPLY" &&
+        item.body === E2E_REPLY &&
+        item.inbound_email_id !== null,
+    ),
+  ).toBeTruthy();
+
   const timeline = page.getByRole("list", { name: "Conversation timeline" });
   await expect(timeline.getByText(E2E_REPLY)).toBeVisible();
   await expect(page.getByRole("button", { name: "Send reply" })).toBeDisabled();
