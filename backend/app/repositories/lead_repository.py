@@ -43,6 +43,20 @@ class LeadRepository:
             )
         )
 
+    def list_by_emails(self, organization_id: str, emails: set[str]) -> list[Lead]:
+        normalized = {email.strip().casefold() for email in emails if email.strip()}
+        if not normalized:
+            return []
+        return list(
+            self.session.scalars(
+                select(Lead).where(
+                    Lead.organization_id == organization_id,
+                    Lead.email.is_not(None),
+                    func.lower(Lead.email).in_(normalized),
+                )
+            )
+        )
+
     def list_for_organization(
         self,
         organization_id: str,

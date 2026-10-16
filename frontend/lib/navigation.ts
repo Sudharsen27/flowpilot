@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LibraryBig,
   Plug,
+  Search,
   Settings,
   Users,
   Workflow,
@@ -40,6 +41,7 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
   {
     label: "Work",
     items: [
+      { href: "/prospect-discovery", label: "Prospect Discovery", icon: Search },
       { href: "/leads", label: "Leads", icon: Users },
       { href: "/inbox", label: "AI Inbox", icon: Inbox },
       { href: "/approvals", label: "Approvals", icon: CheckCheck },

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiGet, apiPost, resolveApiBaseUrl } from "@/lib/api/client";
+import { apiGet, apiPost, apiPostFile, resolveApiBaseUrl } from "@/lib/api/client";
 
 describe("API client", () => {
   beforeEach(() => {
@@ -50,6 +50,33 @@ describe("API client", () => {
         body: JSON.stringify({
           email: "owner@example.com",
           password: "password12",
+        }),
+      }),
+    );
+  });
+
+  it("sends CSV blobs with their content type and bearer token", async () => {
+    window.localStorage.setItem("flowpilot.access_token", "upload-token");
+    const file = new File(["Name,Email\nAda,ada@example.com"], "prospects.csv", {
+      type: "text/csv",
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ rows: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await apiPostFile("/api/v1/prospect-discovery/preview", file, "text/csv");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/prospect-discovery/preview",
+      expect.objectContaining({
+        method: "POST",
+        body: file,
+        headers: expect.objectContaining({
+          Authorization: "Bearer upload-token",
+          "Content-Type": "text/csv",
         }),
       }),
     );

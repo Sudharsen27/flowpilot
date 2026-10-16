@@ -12,6 +12,7 @@ from app.api.v1.integrations import router as integrations_router
 from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.organizations import router as organizations_router
+from app.api.v1.prospect_discovery import router as prospect_discovery_router
 from app.api.v1.public_enquiries import router as public_enquiries_router
 from app.api.v1.runtime import router as runtime_router
 from app.api.v1.sales_runs import agent_router as agent_sales_runs_router
@@ -35,6 +36,7 @@ api_router.include_router(contact_router)
 api_router.include_router(runtime_router)
 api_router.include_router(agents_router)
 api_router.include_router(leads_router)
+api_router.include_router(prospect_discovery_router)
 api_router.include_router(follow_ups_router)
 api_router.include_router(agent_sales_runs_router)
 api_router.include_router(lead_sales_runs_router)

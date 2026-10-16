@@ -30,6 +30,7 @@ export class ApiError extends Error {
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
+  contentType?: string;
   token?: string | null;
 };
 
@@ -41,17 +42,28 @@ async function request<T>(
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
-  if (options.body !== undefined) {
+  const isBlobBody =
+    typeof Blob !== "undefined" && options.body instanceof Blob;
+  if (options.body !== undefined && !isBlobBody) {
     headers["Content-Type"] = "application/json";
+  }
+  if (options.contentType) {
+    headers["Content-Type"] = options.contentType;
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const body: BodyInit | undefined =
+    options.body === undefined
+      ? undefined
+      : isBlobBody
+        ? (options.body as Blob)
+        : JSON.stringify(options.body);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? "GET",
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body,
   });
 
   if (response.status === 401) {
@@ -88,6 +100,14 @@ export function apiPost<T>(
   options: { token?: string | null } = {},
 ): Promise<T> {
   return request<T>(path, { method: "POST", body, ...options });
+}
+
+export function apiPostFile<T>(path: string, file: Blob, contentType: string) {
+  return request<T>(path, {
+    method: "POST",
+    body: file,
+    contentType,
+  });
 }
 
 export function apiDelete(path: string, options: { token?: string | null } = {}) {

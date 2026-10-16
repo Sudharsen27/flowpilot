@@ -632,6 +632,41 @@ export type LeadListResponse = {
   status_counts: Record<LeadStatus, number>;
 };
 
+export type ProspectPreviewColumn = {
+  index: number;
+  label: string;
+  field: string | null;
+};
+
+export type ProspectPreviewIssue = {
+  code: string;
+  message: string;
+  row_number: number | null;
+  field: string | null;
+  severity: "error" | "warning";
+};
+
+export type ProspectPreviewRow = {
+  row_number: number;
+  cells: string[];
+  valid: boolean;
+  errors: ProspectPreviewIssue[];
+  duplicate_reasons: string[];
+  duplicate_of_row: number | null;
+};
+
+export type ProspectPreviewResponse = {
+  columns: ProspectPreviewColumn[];
+  issues: ProspectPreviewIssue[];
+  rows: ProspectPreviewRow[];
+  summary: {
+    total_rows: number;
+    valid_rows: number;
+    invalid_rows: number;
+    duplicate_rows: number;
+  };
+};
+
 export type LeadCreateRequest = {
   name: string;
   email?: string | null;

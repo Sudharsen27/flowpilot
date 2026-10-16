@@ -41,6 +41,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Register: `POST /api/v1/auth/register`
 - Login: `POST /api/v1/auth/login`
 - Current user: `GET /api/v1/users/me`
+- Prospect CSV preview (authenticated, read-only): `POST /api/v1/prospect-discovery/preview`
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
 - Start sales run (authenticated, SALES agents): `POST /api/v1/agents/{agent_id}/sales-runs`
 - Send approved sales run (authenticated): `POST /api/v1/agents/{agent_id}/sales-runs/{sales_run_id}/send`

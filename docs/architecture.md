@@ -8,6 +8,12 @@ Business operating platform: connect tools, give AI controlled capabilities, aut
 
 V1 is lead and customer automation. Other agent types reuse the same runtime later.
 
+## Prospect Discovery (Phase 1)
+
+`POST /api/v1/prospect-discovery/preview` accepts a raw `text/csv` request body. It is authenticated and derives organization scope from the current membership, then returns detected headers, row-level validation, duplicate reasons, and summary counts. The parser uses UTF-8 (including BOM), Python's strict CSV reader, a 2 MiB byte limit, a 100-column limit, a 500 data-row limit, a 4 MiB response limit, and a 10-second upload-read timeout.
+
+Header matching trims and case-folds names, maps spaces/punctuation to underscores, and retains original labels for display. `name` is required; optional mapped fields are `email`, `phone`, `company`, `notes`, and `enquiry`, matching the existing Lead schema. Email is validated with the existing Pydantic email validator. Duplicate checks normalize whitespace and case: email matches and name/company pairs are detected within the file, and valid emails are checked only against leads in the authenticated organization. The endpoint does not create or update leads, write activity or webhook rows, enqueue workflows, or persist the upload. The frontend keeps the response only in component memory; there is no CRM import action in this phase.
+
 ## System shape
 
 Two applications in a monorepo:
