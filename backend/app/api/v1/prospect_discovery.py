@@ -1,29 +1,26 @@
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_organization
+from app.api.deps import get_current_membership, get_current_organization
 from app.db.session import get_db
+from app.models.membership import Membership
 from app.models.organization import Organization
-from app.schemas.prospect_discovery import ProspectPreviewResponse
+from app.schemas.prospect_discovery import ProspectImportResponse, ProspectPreviewResponse
 from app.services.prospect_csv_preview_service import (
     MAX_PROSPECT_CSV_BYTES,
     ProspectCsvTooManyColumns,
     ProspectCsvTooManyRows,
     preview_prospect_csv,
 )
+from app.services.prospect_csv_import_service import import_prospect_rows
 
 router = APIRouter(prefix="/api/v1/prospect-discovery", tags=["prospect-discovery"])
 MAX_PROSPECT_PREVIEW_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
-@router.post("/preview", response_model=ProspectPreviewResponse)
-async def preview_prospects(
-    request: Request,
-    organization: Organization = Depends(get_current_organization),
-    db: Session = Depends(get_db),
-) -> ProspectPreviewResponse:
+async def _read_csv_text(request: Request) -> str:
     media_type = request.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().lower()
     if media_type not in {"text/csv", "application/csv"}:
         raise HTTPException(
@@ -60,6 +57,16 @@ async def preview_prospects(
             status_code=422,
             detail="The CSV must use UTF-8 encoding.",
         ) from exc
+    return text
+
+
+@router.post("/preview", response_model=ProspectPreviewResponse)
+async def preview_prospects(
+    request: Request,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> ProspectPreviewResponse:
+    text = await _read_csv_text(request)
 
     try:
         response = preview_prospect_csv(text, organization_id=organization.id, session=db)
@@ -76,3 +83,51 @@ async def preview_prospects(
     if len(response.model_dump_json().encode("utf-8")) > MAX_PROSPECT_PREVIEW_RESPONSE_BYTES:
         raise HTTPException(status_code=413, detail="The preview response is too large.")
     return response
+
+
+@router.post("/import", response_model=ProspectImportResponse)
+async def import_prospects(
+    request: Request,
+    confirmed: str | None = Header(default=None, alias="X-Prospect-Import-Confirmed"),
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> ProspectImportResponse:
+    if confirmed != "true":
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail="Explicit confirmation is required before importing prospects.",
+        )
+
+    text = await _read_csv_text(request)
+    try:
+        preview = preview_prospect_csv(text, organization_id=organization.id, session=db)
+    except ProspectCsvTooManyRows as exc:
+        raise HTTPException(
+            status_code=413,
+            detail="CSV files may contain at most 500 data rows.",
+        ) from exc
+    except ProspectCsvTooManyColumns as exc:
+        raise HTTPException(
+            status_code=413,
+            detail="CSV files may contain at most 100 columns.",
+        ) from exc
+
+    structural_errors = {
+        "empty_file",
+        "malformed_csv",
+        "duplicate_header",
+        "missing_required_header",
+    }
+    if not preview.columns or any(issue.code in structural_errors for issue in preview.issues):
+        raise HTTPException(
+            status_code=422,
+            detail="The CSV must have one unique name column and a valid header row.",
+        )
+
+    return import_prospect_rows(
+        preview,
+        organization_id=organization.id,
+        initiated_by_user_id=membership.user_id,
+        session=db,
+    )

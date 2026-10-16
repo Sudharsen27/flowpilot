@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiGet, apiPost, apiPostFile, resolveApiBaseUrl } from "@/lib/api/client";
+import { importProspectCsv } from "@/lib/api/prospect-discovery";
 
 describe("API client", () => {
   beforeEach(() => {
@@ -77,6 +78,32 @@ describe("API client", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer upload-token",
           "Content-Type": "text/csv",
+        }),
+      }),
+    );
+  });
+
+  it("sends the explicit confirmation header for prospect imports", async () => {
+    const file = new File(["Name,Email\nAda,ada@example.com"], "prospects.csv", {
+      type: "text/csv",
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ total_rows: 1, rows: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await importProspectCsv(file);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/prospect-discovery/import",
+      expect.objectContaining({
+        method: "POST",
+        body: file,
+        headers: expect.objectContaining({
+          "Content-Type": "text/csv",
+          "X-Prospect-Import-Confirmed": "true",
         }),
       }),
     );

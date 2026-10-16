@@ -31,6 +31,7 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   contentType?: string;
+  headers?: Record<string, string>;
   token?: string | null;
 };
 
@@ -49,6 +50,9 @@ async function request<T>(
   }
   if (options.contentType) {
     headers["Content-Type"] = options.contentType;
+  }
+  if (options.headers) {
+    Object.assign(headers, options.headers);
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -102,11 +106,17 @@ export function apiPost<T>(
   return request<T>(path, { method: "POST", body, ...options });
 }
 
-export function apiPostFile<T>(path: string, file: Blob, contentType: string) {
+export function apiPostFile<T>(
+  path: string,
+  file: Blob,
+  contentType: string,
+  headers?: Record<string, string>,
+) {
   return request<T>(path, {
     method: "POST",
     body: file,
     contentType,
+    headers,
   });
 }
 

@@ -667,6 +667,22 @@ export type ProspectPreviewResponse = {
   };
 };
 
+export type ProspectImportRowResult = {
+  row_number: number;
+  status: "IMPORTED" | "SKIPPED" | "FAILED";
+  reason_code: string | null;
+  message: string | null;
+  duplicate_of_row: number | null;
+};
+
+export type ProspectImportResponse = {
+  total_rows: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  rows: ProspectImportRowResult[];
+};
+
 export type LeadCreateRequest = {
   name: string;
   email?: string | null;

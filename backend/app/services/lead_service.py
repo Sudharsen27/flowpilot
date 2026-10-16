@@ -77,6 +77,7 @@ class LeadService:
         initiated_by_user_id: str | None = None,
         website_enquiry: bool = False,
         sales_agent_auto_start_status: LeadSalesAgentAutoStartStatus | None = None,
+        commit: bool = True,
     ) -> Lead:
         lead = Lead(
             organization_id=organization_id,
@@ -130,8 +131,9 @@ class LeadService:
             trigger_key=f"lead:{lead.id}:created",
         )
         webhook_events.lead_created(self.session, lead)
-        self.session.commit()
-        self.session.refresh(lead)
+        if commit:
+            self.session.commit()
+            self.session.refresh(lead)
         return lead
 
     def get(self, organization_id: str, lead_id: str) -> Lead | None:

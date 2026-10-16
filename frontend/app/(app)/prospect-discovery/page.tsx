@@ -7,14 +7,16 @@ import {
   LoaderCircle,
   RotateCcw,
   Upload,
+  UserPlus,
 } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
-import { previewProspectCsv } from "@/lib/api/prospect-discovery";
+import { importProspectCsv, previewProspectCsv } from "@/lib/api/prospect-discovery";
 import type {
+  ProspectImportResponse,
   ProspectPreviewIssue,
   ProspectPreviewResponse,
   ProspectPreviewRow,
@@ -33,12 +35,14 @@ function formatFileSize(size: number) {
     : `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function errorMessage(error: unknown) {
+function errorMessage(error: unknown, action: "preview" | "import" = "preview") {
   if (error instanceof ApiError && typeof error.body === "object" && error.body) {
     const detail = (error.body as { detail?: unknown }).detail;
     if (typeof detail === "string") return detail;
   }
-  return "The file could not be previewed. Check your connection and try again.";
+  return action === "import"
+    ? "The import could not be completed. Check your connection and try again."
+    : "The file could not be previewed. Check your connection and try again.";
 }
 
 function duplicateLabel(row: ProspectPreviewRow) {
@@ -157,18 +161,93 @@ function PreviewTable({ preview }: { preview: ProspectPreviewResponse }) {
   );
 }
 
+function ImportResults({ result }: { result: ProspectImportResponse }) {
+  const completeFailure =
+    result.imported_count === 0 && result.failed_count > 0;
+  const partialSuccess =
+    result.imported_count > 0 &&
+    (result.skipped_count > 0 || result.failed_count > 0);
+  const title = completeFailure
+    ? "Import failed"
+    : partialSuccess
+      ? "Partial import complete"
+      : result.imported_count > 0
+        ? "Import complete"
+        : "No prospects imported";
+
+  return (
+    <section
+      aria-labelledby="import-result-title"
+      role={completeFailure ? "alert" : "status"}
+      className="border-border grid gap-3 border-y py-4"
+    >
+      <div>
+        <h3 id="import-result-title" className="text-sm font-semibold">
+          {title}
+        </h3>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {result.imported_count} imported, {result.skipped_count} skipped,{" "}
+          {result.failed_count} failed.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-96 border-collapse text-left text-sm">
+          <thead className="text-muted-foreground border-border border-b text-xs">
+            <tr>
+              <th scope="col" className="py-2 pr-4 font-medium">
+                Row
+              </th>
+              <th scope="col" className="py-2 pr-4 font-medium">
+                Result
+              </th>
+              <th scope="col" className="py-2 font-medium">
+                Reason
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-border divide-y">
+            {result.rows.map((row) => (
+              <tr key={row.row_number}>
+                <th
+                  scope="row"
+                  className="text-muted-foreground py-2 pr-4 font-mono text-xs"
+                >
+                  {row.row_number}
+                </th>
+                <td className="py-2 pr-4">{row.status.toLowerCase()}</td>
+                <td className="text-muted-foreground py-2">
+                  {row.message ?? "Lead created."}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function ProspectDiscoveryPage() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const importInFlightRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ProspectPreviewResponse | null>(null);
+  const [importResult, setImportResult] =
+    useState<ProspectImportResponse | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   function selectFile(candidate?: File) {
     if (!candidate) return;
     setPreview(null);
+    setImportResult(null);
+    setImportError(null);
+    setConfirmed(false);
     setUploadError(null);
     setFileError(null);
     if (!candidate.name.toLocaleLowerCase().endsWith(".csv")) {
@@ -201,10 +280,13 @@ export default function ProspectDiscoveryPage() {
   }
 
   async function runPreview() {
-    if (!file || isLoading) return;
+    if (!file || isLoading || isImporting) return;
     setIsLoading(true);
     setUploadError(null);
     setPreview(null);
+    setImportResult(null);
+    setImportError(null);
+    setConfirmed(false);
     try {
       setPreview(await previewProspectCsv(file));
     } catch (error) {
@@ -213,6 +295,34 @@ export default function ProspectDiscoveryPage() {
       setIsLoading(false);
     }
   }
+
+  async function runImport() {
+    if (
+      !file ||
+      !preview ||
+      !confirmed ||
+      importInFlightRef.current ||
+      importResult
+    )
+      return;
+    importInFlightRef.current = true;
+    setIsImporting(true);
+    setImportError(null);
+    try {
+      setImportResult(await importProspectCsv(file));
+    } catch (error) {
+      setImportError(errorMessage(error, "import"));
+    } finally {
+      importInFlightRef.current = false;
+      setIsImporting(false);
+    }
+  }
+
+  const eligibleCount = preview
+    ? preview.rows.filter(
+        (row) => row.valid && row.duplicate_reasons.length === 0,
+      ).length
+    : 0;
 
   return (
     <div className="gap-section flex flex-col">
@@ -245,6 +355,7 @@ export default function ProspectDiscoveryPage() {
             accept=".csv,text/csv,application/csv"
             aria-label="Choose CSV file"
             className="sr-only"
+            disabled={isLoading || isImporting}
             onChange={handleFileChange}
           />
           <span className="grid justify-items-center gap-2">
@@ -259,7 +370,11 @@ export default function ProspectDiscoveryPage() {
         </label>
         {fileError ? <p role="alert" className="text-danger-text text-sm">{fileError}</p> : null}
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" onClick={() => void runPreview()} disabled={!file || isLoading}>
+          <Button
+            type="button"
+            onClick={() => void runPreview()}
+            disabled={!file || isLoading || isImporting}
+          >
             {isLoading ? (
               <LoaderCircle className="animate-spin" aria-hidden="true" />
             ) : preview ? (
@@ -270,7 +385,7 @@ export default function ProspectDiscoveryPage() {
             {isLoading ? "Validating CSV" : preview ? "Preview again" : "Preview CSV"}
           </Button>
           <p className="text-muted-foreground text-xs" aria-live="polite">
-            Preview only. This phase does not save prospects to the CRM.
+            Review every row before confirming an import.
           </p>
         </div>
       </section>
@@ -287,10 +402,10 @@ export default function ProspectDiscoveryPage() {
         </div>
       ) : null}
 
-      {isLoading ? (
+      {isLoading || isImporting ? (
         <p role="status" className="text-muted-foreground flex items-center gap-2 py-3 text-sm">
           <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-          Reading and validating CSV rows…
+          {isImporting ? "Importing confirmed prospects…" : "Reading and validating CSV rows…"}
         </p>
       ) : null}
 
@@ -319,6 +434,84 @@ export default function ProspectDiscoveryPage() {
           </div>
           <IssueList issues={preview.issues} />
           <PreviewTable preview={preview} />
+          <section
+            aria-labelledby="import-review-title"
+            className="border-border grid gap-3 border-t pt-4"
+          >
+            <div>
+              <h2 id="import-review-title" className="text-sm font-semibold">
+                Review and import
+              </h2>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {eligibleCount} valid, non-duplicate{" "}
+                {eligibleCount === 1 ? "prospect is" : "prospects are"}{" "}
+                eligible. {preview.summary.total_rows - eligibleCount} invalid
+                or duplicate{" "}
+                {preview.summary.total_rows - eligibleCount === 1
+                  ? "row will be"
+                  : "rows will be"}{" "}
+                skipped. Existing leads will never be overwritten. Imported
+                records are created as new CRM leads.
+              </p>
+            </div>
+            <label className="flex max-w-2xl items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                disabled={
+                  !eligibleCount || isImporting || importResult !== null
+                }
+                onChange={(event) => setConfirmed(event.currentTarget.checked)}
+                className="border-input accent-primary mt-0.5 size-4 shrink-0"
+              />
+              <span>
+                I confirm that eligible prospects should be added to this
+                organization&apos;s CRM.
+              </span>
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                onClick={() => void runImport()}
+                disabled={
+                  !eligibleCount ||
+                  !confirmed ||
+                  isImporting ||
+                  isLoading ||
+                  importResult !== null
+                }
+              >
+                {isImporting ? (
+                  <LoaderCircle className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <UserPlus aria-hidden="true" />
+                )}
+                {isImporting
+                  ? "Importing prospects"
+                  : `Import ${eligibleCount} eligible leads`}
+              </Button>
+              {importResult ? (
+                <span className="text-muted-foreground text-sm">
+                  {importResult.failed_count > 0
+                    ? "Preview this file again before retrying failed rows; email duplicates will be skipped."
+                    : "This file has already been submitted."}
+                </span>
+              ) : null}
+            </div>
+            {importError ? (
+              <div
+                role="alert"
+                className="border-destructive/40 bg-destructive/5 flex items-center gap-2 border px-4 py-3 text-sm"
+              >
+                <AlertCircle
+                  className="text-danger-text size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span className="text-danger-text">{importError}</span>
+              </div>
+            ) : null}
+            {importResult ? <ImportResults result={importResult} /> : null}
+          </section>
         </section>
       ) : !isLoading && !uploadError ? (
         <section aria-labelledby="empty-preview-title" className="border-border border-t py-6">

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -46,3 +48,23 @@ class ProspectPreviewResponse(BaseModel):
     issues: list[ProspectPreviewIssue]
     rows: list[ProspectPreviewRow]
     summary: ProspectPreviewSummary
+
+
+class ProspectImportRowResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row_number: int
+    status: Literal["IMPORTED", "SKIPPED", "FAILED"]
+    reason_code: str | None = None
+    message: str | None = None
+    duplicate_of_row: int | None = None
+
+
+class ProspectImportResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_rows: int
+    imported_count: int
+    skipped_count: int
+    failed_count: int
+    rows: list[ProspectImportRowResult]

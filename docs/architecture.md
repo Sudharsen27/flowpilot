@@ -14,6 +14,16 @@ V1 is lead and customer automation. Other agent types reuse the same runtime lat
 
 Header matching trims and case-folds names, maps spaces/punctuation to underscores, and retains original labels for display. `name` is required; optional mapped fields are `email`, `phone`, `company`, `notes`, and `enquiry`, matching the existing Lead schema. Email is validated with the existing Pydantic email validator. Duplicate checks normalize whitespace and case: email matches and name/company pairs are detected within the file, and valid emails are checked only against leads in the authenticated organization. The endpoint does not create or update leads, write activity or webhook rows, enqueue workflows, or persist the upload. The frontend keeps the response only in component memory; there is no CRM import action in this phase.
 
+## Prospect Discovery import (Phase 2)
+
+`POST /api/v1/prospect-discovery/import` accepts the same raw `text/csv` upload and byte, column, row, encoding, and timeout limits as preview. It requires `X-Prospect-Import-Confirmed: true`, an authenticated current organization membership, and derives both organization and initiating user from that membership; the request contains no organization identifier or trusted preview result. The server reparses the CSV, validates supported fields with the existing `LeadCreate` schema, and ignores unsupported columns as preview does. `source` and `status` are not importable fields: created rows use `IMPORT` and `NEW`.
+
+The response is `{ total_rows, imported_count, skipped_count, failed_count, rows }`. Each row has its CSV `row_number`, `status` (`IMPORTED`, `SKIPPED`, or `FAILED`), and optional non-sensitive `reason_code`, `message`, and `duplicate_of_row`. Invalid rows and duplicate rows are skipped; malformed structure that prevents interpreting the header returns 422. Existing email matches are checked only within the authenticated organization. In-file duplicate decisions use the server's freshly parsed validation result. No lead is updated.
+
+Imports support **partial success**: each row is its own transaction. Creation uses `LeadService.create` with caller-controlled commit so the lead and its activity, workflow enqueue, and webhook enqueue are committed together or rolled back together. A row failure does not undo earlier successful rows; its outcome is `FAILED`. Activity records identify the requesting member. The normal `LEAD_CREATED` workflow and webhook semantics run only for created leads. Import does not directly invoke AI, email, or Sales Run services, and uploaded CSV content is not persisted.
+
+On PostgreSQL, import requests for the same organization serialize their row-level duplicate-check/create transactions with a transaction-scoped advisory lock. Existing CRM email matching remains the duplicate rule; matching email retries are skipped, and in-file email or name/company duplicates are skipped. There is no new uniqueness constraint or durable import idempotency key. Consequently, retries are duplicate-safe when an existing email identifies the lead, but rows without a matching email can be created again after an ambiguous client/network failure; manual lead creation is not serialized with this import lock. SQLite does not provide the PostgreSQL advisory-lock guarantee.
+
 ## System shape
 
 Two applications in a monorepo:
