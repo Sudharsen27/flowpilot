@@ -343,6 +343,40 @@ export type Lead = {
   latest_qualification?: LeadQualificationSummary | null;
   latest_response_draft?: LeadResponseDraftSummary | null;
   latest_sales_run?: LeadLatestSalesRunSummary | null;
+  fit_score?: LeadFitScore | null;
+};
+
+export type IdealCustomerCriterion = {
+  terms: string[];
+  weight: number;
+};
+
+export type IdealCustomerProfileUpdate = {
+  company: IdealCustomerCriterion;
+  enquiry: IdealCustomerCriterion;
+};
+
+export type IdealCustomerProfile = IdealCustomerProfileUpdate & {
+  available_criteria: ("company" | "enquiry")[];
+  unavailable_criteria: Record<string, string>;
+  configuration_valid: boolean;
+};
+
+export type LeadFitComponent = {
+  criterion: "company" | "enquiry";
+  status: "MATCHED" | "UNMATCHED" | "UNKNOWN" | "UNCONFIGURED";
+  weight: number;
+  matched_terms: string[];
+  explanation: string;
+};
+
+export type LeadFitScore = {
+  score: number | null;
+  confidence: number;
+  fit: "STRONG" | "MODERATE" | "WEAK" | "UNKNOWN";
+  components: LeadFitComponent[];
+  unavailable_criteria: Record<string, string>;
+  configuration_valid: boolean;
 };
 
 export type LeadAiQualification =

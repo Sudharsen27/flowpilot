@@ -12,6 +12,7 @@ import { StatePanel } from "@/components/data-display/state-panel";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { WebsiteEnquirySettings } from "@/components/settings/website-enquiry-settings";
+import { IdealCustomerProfileSettings } from "@/components/settings/ideal-customer-profile-settings";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -268,6 +269,14 @@ export default function SettingsPage() {
                 </Card>
               </Link>
             </div>
+          </section>
+
+          <section className="grid gap-5" aria-label="Prospect scoring settings">
+            <SectionHeader
+              title="Prospect fit"
+              description="Configure the business signals used to assess lead fit."
+            />
+            <IdealCustomerProfileSettings role={session.membership.role} />
           </section>
 
           {SECONDARY_NAV_ITEMS.length > 0 ? (

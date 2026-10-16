@@ -5,8 +5,13 @@ from app.api.deps import get_current_membership, get_current_organization
 from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.organization import Organization
+from app.schemas.ideal_customer_profile import (
+    IdealCustomerProfilePublic,
+    IdealCustomerProfileUpdate,
+)
 from app.schemas.identity import MemberPublic, OrganizationPublic, UserPublic
 from app.schemas.website_capture import WebsiteCaptureSettings, WebsiteCaptureSettingsUpdate
+from app.services.ideal_customer_profile_service import IdealCustomerProfileService
 from app.services.organization_service import OrganizationService
 
 router = APIRouter(prefix="/api/v1/organizations", tags=["organizations"])
@@ -57,3 +62,31 @@ def update_website_capture_settings(
         default_sales_agent_id=payload.default_sales_agent_id,
     )
     return WebsiteCaptureSettings.model_validate(updated)
+
+
+@router.get(
+    "/current/ideal-customer-profile",
+    response_model=IdealCustomerProfilePublic,
+)
+def read_ideal_customer_profile(
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> IdealCustomerProfilePublic:
+    return IdealCustomerProfileService(db).get(organization.id)
+
+
+@router.patch(
+    "/current/ideal-customer-profile",
+    response_model=IdealCustomerProfilePublic,
+)
+def update_ideal_customer_profile(
+    payload: IdealCustomerProfileUpdate,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> IdealCustomerProfilePublic:
+    return IdealCustomerProfileService(db).update(
+        organization_id=organization.id,
+        role=membership.role,
+        payload=payload,
+    )

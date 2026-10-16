@@ -86,6 +86,14 @@ const lead: Lead = {
   source: "WEBSITE",
   status: "NEW",
   notes: "Inbound form",
+  fit_score: {
+    score: 88,
+    confidence: 100,
+    fit: "STRONG",
+    configuration_valid: true,
+    unavailable_criteria: {},
+    components: [],
+  },
   created_at: "2026-09-01T10:00:00Z",
   updated_at: "2026-09-10T10:00:00Z",
 };
@@ -633,6 +641,7 @@ describe("Leads page", () => {
     expect(screen.getAllByText("New")).toHaveLength(2);
     expect(screen.getAllByText("Not assessed")).toHaveLength(2);
     expect(screen.getAllByText("No sales run")).toHaveLength(2);
+    expect(screen.getAllByText("88 · Strong")).toHaveLength(2);
   });
 
   it("analyzes a lead with AI and keeps CRM status distinct", async () => {

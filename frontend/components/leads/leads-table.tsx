@@ -6,6 +6,7 @@ import {
   type DataTableColumn,
 } from "@/components/data-display/data-table";
 import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { QualificationStatus } from "@/components/leads/qualification-status";
 import { SalesAgentStatus } from "@/components/leads/sales-agent-status";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -85,6 +86,33 @@ const leadColumns: DataTableColumn<Lead>[] = [
     header: "Status",
     className: "whitespace-nowrap",
     cell: (lead) => <LeadStatusBadge status={lead.status} />,
+  },
+  {
+    key: "fit",
+    header: "Fit",
+    className: "whitespace-nowrap",
+    cell: (lead) => {
+      const score = lead.fit_score;
+      const status = score?.fit ?? "UNKNOWN";
+      return (
+        <StatusBadge
+          status={
+            status === "STRONG"
+              ? "success"
+              : status === "MODERATE"
+                ? "warning"
+                : status === "WEAK"
+                  ? "low"
+                  : "draft"
+          }
+          label={
+            score?.score === null || score?.score === undefined
+              ? "Unknown"
+              : `${score.score} · ${status.charAt(0) + status.slice(1).toLowerCase()}`
+          }
+        />
+      );
+    },
   },
   {
     key: "qualification",

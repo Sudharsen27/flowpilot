@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.lead import LeadSource, LeadStatus
+from app.schemas.ideal_customer_profile import LeadFitScore
 from app.schemas.lead_qualification import LeadQualificationSummary
 from app.schemas.lead_response_draft import LeadResponseDraftSummary
 from app.schemas.sales_run import LeadLatestSalesRunSummary
@@ -111,6 +112,7 @@ class LeadPublic(BaseModel):
     latest_qualification: LeadQualificationSummary | None = None
     latest_response_draft: LeadResponseDraftSummary | None = None
     latest_sales_run: LeadLatestSalesRunSummary | None = None
+    fit_score: LeadFitScore | None = None
 
 
 class LeadListResponse(BaseModel):

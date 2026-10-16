@@ -3,6 +3,7 @@ import { Inbox, Mail, Phone, UserRound } from "lucide-react";
 
 import { DetailRow } from "@/components/data-display/detail-row";
 import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
+import { LeadFitScorePanel } from "@/components/leads/lead-fit-score";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -154,6 +155,8 @@ export function Customer360Profile({
           </p>
         )}
       </div>
+
+      <LeadFitScorePanel score={lead.fit_score} />
 
       {lead.notes?.trim() ? (
         <div className="border-border border-t pt-5">

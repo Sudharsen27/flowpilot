@@ -19,6 +19,9 @@ from app.models.lead_response_draft import (
 )
 from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
 from app.models.workflow import WorkflowTrigger
+from app.repositories.ideal_customer_profile_repository import (
+    IdealCustomerProfileRepository,
+)
 from app.repositories.lead_qualification_repository import LeadQualificationRepository
 from app.repositories.lead_repository import (
     LEAD_LIST_DEFAULT_LIMIT,
@@ -27,6 +30,7 @@ from app.repositories.lead_repository import (
 )
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.repositories.sales_run_repository import SalesRunRepository
+from app.schemas.ideal_customer_profile import LeadFitScore
 from app.schemas.lead_qualification import (
     LeadQualificationAnalysis,
     LeadQualificationPublic,
@@ -41,6 +45,7 @@ from app.schemas.sales_run import (
 )
 from app.services import webhook_events
 from app.services.activity_service import ActivityService
+from app.services.lead_fit_scoring_service import score_lead_fit
 from app.services.lead_follow_up_service import to_follow_up_public
 from app.services.lead_qualification_service import usage_from_result
 from app.services.observability import duration_ms
@@ -61,6 +66,7 @@ class LeadService:
         self.qualifications = LeadQualificationRepository(session)
         self.response_drafts = LeadResponseDraftRepository(session)
         self.sales_runs = SalesRunRepository(session)
+        self.ideal_customer_profiles = IdealCustomerProfileRepository(session)
 
     def create(
         self,
@@ -146,7 +152,16 @@ class LeadService:
         return lead
 
     def get_public(self, organization_id: str, lead_id: str) -> LeadPublic:
-        return self._to_public(self.get_or_raise(organization_id, lead_id))
+        lead = self.get_or_raise(organization_id, lead_id)
+        profile = self.ideal_customer_profiles.get_for_organization(organization_id)
+        return self._to_public(
+            lead,
+            fit_score=score_lead_fit(
+                company=lead.company,
+                enquiry=lead.enquiry,
+                configuration=profile.configuration if profile is not None else None,
+            ),
+        )
 
     def list(
         self,
@@ -173,6 +188,7 @@ class LeadService:
         latest = self.qualifications.latest_for_leads(organization_id, lead_ids)
         drafts = self.response_drafts.latest_completed_for_leads(organization_id, lead_ids)
         latest_runs = self.sales_runs.latest_for_leads(organization_id, lead_ids)
+        profile = self.ideal_customer_profiles.get_for_organization(organization_id)
         sends, follow_ups = self._related_for_runs(
             organization_id, list(latest_runs.values())
         )
@@ -185,6 +201,11 @@ class LeadService:
                     sales_run=latest_runs.get(item.id),
                     email_send=_send_for_run(latest_runs.get(item.id), sends),
                     follow_up=_follow_up_for_run(latest_runs.get(item.id), follow_ups),
+                    fit_score=score_lead_fit(
+                        company=item.company,
+                        enquiry=item.enquiry,
+                        configuration=profile.configuration if profile is not None else None,
+                    ),
                     hydrate=False,
                 )
                 for item in items
@@ -277,6 +298,7 @@ class LeadService:
         sales_run: SalesRun | None = None,
         email_send: LeadEmailSend | None = None,
         follow_up: LeadFollowUp | None = None,
+        fit_score: LeadFitScore | None = None,
         hydrate: bool = True,
     ) -> LeadPublic:
         if hydrate:
@@ -309,6 +331,7 @@ class LeadService:
                 "latest_qualification": _qualification_summary(qualification),
                 "latest_response_draft": _draft_summary(draft),
                 "latest_sales_run": _sales_run_summary(sales_run, email_send, follow_up),
+                "fit_score": fit_score,
             }
         )
 

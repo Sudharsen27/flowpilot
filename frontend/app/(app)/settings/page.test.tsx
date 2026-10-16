@@ -12,6 +12,8 @@ const {
   authState,
   getWebsiteCaptureSettings,
   updateWebsiteCaptureSettings,
+  getIdealCustomerProfile,
+  updateIdealCustomerProfile,
   getAgents,
 } =
   vi.hoisted(() => {
@@ -21,6 +23,8 @@ const {
       signOut,
       getWebsiteCaptureSettings: vi.fn(),
       updateWebsiteCaptureSettings: vi.fn(),
+      getIdealCustomerProfile: vi.fn(),
+      updateIdealCustomerProfile: vi.fn(),
       getAgents: vi.fn(),
       authState: {
         isLoading: false,
@@ -68,6 +72,11 @@ vi.mock("@/lib/api/agents", () => ({
   getAgents,
 }));
 
+vi.mock("@/lib/api/ideal-customer-profile", () => ({
+  getIdealCustomerProfile,
+  updateIdealCustomerProfile,
+}));
+
 describe("identity-backed settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -77,6 +86,18 @@ describe("identity-backed settings", () => {
       default_sales_agent_id: null,
     });
     getAgents.mockResolvedValue([]);
+    getIdealCustomerProfile.mockResolvedValue({
+      company: { terms: [], weight: 50 },
+      enquiry: { terms: [], weight: 50 },
+      available_criteria: ["company", "enquiry"],
+      unavailable_criteria: {
+        industry: "Industry is not stored.",
+        employee_range: "Company size is not stored.",
+        geographic_region: "Region is not stored.",
+        buyer_role: "Buyer role is not stored.",
+      },
+      configuration_valid: true,
+    });
   });
 
   it("renders authenticated identity and real organization members", async () => {

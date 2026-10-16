@@ -6,6 +6,7 @@ from app.models.activity_event import (
 )
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.ideal_customer_profile import IdealCustomerProfile
 from app.models.inbound_email import InboundEmail
 from app.models.knowledge_entry import KnowledgeEntry
 from app.models.lead import Lead, LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
@@ -33,6 +34,7 @@ __all__ = [
     "AgentStatus",
     "AgentType",
     "InboundEmail",
+    "IdealCustomerProfile",
     "KnowledgeEntry",
     "Lead",
     "LeadEmailSend",

@@ -53,6 +53,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Public website enquiry form (unauthenticated): `GET /api/v1/public/organizations/{slug}/enquiries`
 - Public website enquiry (unauthenticated, capture must be enabled): `POST /api/v1/public/organizations/{slug}/enquiries`
 - Website capture settings (authenticated): `GET` / `PATCH /api/v1/organizations/current/website-capture`
+- Ideal Customer Profile (authenticated, current organization): `GET` / `PATCH /api/v1/organizations/current/ideal-customer-profile`
+- Lead list and detail include on-demand `fit_score` explanations from the organization's Ideal Customer Profile.
 - Qualification detail (authenticated): `GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}`
 - Organization activity (authenticated): `GET /api/v1/activity` and `GET /api/v1/activity/{activity_id}`
 
