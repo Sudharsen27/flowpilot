@@ -8,13 +8,13 @@ from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.prospect_discovery import ProspectImportResponse, ProspectPreviewResponse
+from app.services.prospect_csv_import_service import import_prospect_rows
 from app.services.prospect_csv_preview_service import (
     MAX_PROSPECT_CSV_BYTES,
     ProspectCsvTooManyColumns,
     ProspectCsvTooManyRows,
     preview_prospect_csv,
 )
-from app.services.prospect_csv_import_service import import_prospect_rows
 
 router = APIRouter(prefix="/api/v1/prospect-discovery", tags=["prospect-discovery"])
 MAX_PROSPECT_PREVIEW_RESPONSE_BYTES = 4 * 1024 * 1024

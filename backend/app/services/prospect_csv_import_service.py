@@ -129,7 +129,9 @@ def import_prospect_rows(
                     row_number=row.row_number,
                     status="FAILED",
                     reason_code="CREATE_FAILED",
-                    message="The row could not be imported. Correct it or retry after checking the CRM.",
+                    message=(
+                        "The row could not be imported. Correct it or retry after checking the CRM."
+                    ),
                 )
             )
             continue

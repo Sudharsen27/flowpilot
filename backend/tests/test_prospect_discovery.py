@@ -196,7 +196,9 @@ def test_import_requires_authentication_and_explicit_confirmation(
     response = _import(client, token, csv_data, confirmed=False)
 
     assert response.status_code == 428
-    assert response.json()["detail"] == "Explicit confirmation is required before importing prospects."
+    assert response.json()["detail"] == (
+        "Explicit confirmation is required before importing prospects."
+    )
     assert db.scalar(select(func.count()).select_from(Lead)) == 0
 
 
@@ -206,7 +208,8 @@ def test_import_creates_normalized_import_leads_and_ignores_unsupported_fields(
     auth = _auth(client)
     csv_data = (
         b"Name,Email,Phone,Company,Notes,Enquiry,Source,Status,Territory\n"
-        b" Ada Lovelace ,ADA@EXAMPLE.COM, 555-0100 , Acme , note , enquiry ,WEBSITE,CONVERTED,West\n"
+        b" Ada Lovelace ,ADA@EXAMPLE.COM, 555-0100 , Acme , note , enquiry ,"
+        b"WEBSITE,CONVERTED,West\n"
     )
 
     response = _import(client, auth["access_token"], csv_data)
@@ -278,7 +281,9 @@ def test_import_is_scoped_to_authenticated_organization(client: TestClient, db: 
     assert response.json()["imported_count"] == 1
     assert response.json()["skipped_count"] == 0
     leads = list(db.scalars(select(Lead).order_by(Lead.created_at)))
-    second_lead = next(lead for lead in leads if lead.organization_id == second["organization"]["id"])
+    second_lead = next(
+        lead for lead in leads if lead.organization_id == second["organization"]["id"]
+    )
     assert second_lead.name == "Shared"
     assert second_lead.email == "shared@example.com"
     assert second_lead.organization_id != first["organization"]["id"]
