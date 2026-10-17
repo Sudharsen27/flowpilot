@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models import (
     Agent,
     AgentExecution,
+    CompanyProspect,
     IdealCustomerProfile,
     InboundEmail,
     Lead,
@@ -28,6 +29,7 @@ from app.models import (
 assert (
     Agent
     and AgentExecution
+    and CompanyProspect
     and InboundEmail
     and IdealCustomerProfile
     and Lead
