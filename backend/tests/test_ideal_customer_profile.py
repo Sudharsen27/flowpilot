@@ -1,5 +1,6 @@
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
@@ -36,9 +37,21 @@ def test_profile_is_authenticated_and_exposes_supported_and_unavailable_fields(
     body = response.json()
     assert body["company"] == {"terms": [], "weight": 50}
     assert body["enquiry"] == {"terms": [], "weight": 50}
-    assert body["available_criteria"] == ["company", "enquiry"]
+    assert body["industry"] == {"terms": [], "weight": 50}
+    assert body["company_size"] == {
+        "minimum_employees": None,
+        "maximum_employees": None,
+        "weight": 50,
+    }
+    assert body["geography"] == {"targets": [], "weight": 50}
+    assert body["available_criteria"] == [
+        "company",
+        "enquiry",
+        "industry",
+        "company_size",
+        "geography",
+    ]
     assert body["configuration_valid"] is True
-    assert "industry" in body["unavailable_criteria"]
     assert "buyer_role" in body["unavailable_criteria"]
 
 
@@ -87,12 +100,102 @@ def test_profile_rejects_invalid_configuration_and_unknown_fields(client: TestCl
     )
     unsupported = client.patch(
         PROFILE_URL,
-        json={**_profile_payload(), "industry": {"terms": ["software"], "weight": 20}},
+        json={**_profile_payload(), "provider": {"enabled": True}},
         headers=_headers(token),
     )
 
     assert invalid_weight.status_code == 422
     assert unsupported.status_code == 422
+
+
+def test_profile_configures_new_criteria_and_normalizes_duplicate_targets(
+    client: TestClient,
+) -> None:
+    token = _auth(client)["access_token"]
+    response = client.patch(
+        PROFILE_URL,
+        json={
+            **_profile_payload(),
+            "industry": {"terms": [" Software ", "software"], "weight": 30},
+            "company_size": {
+                "minimum_employees": 10,
+                "maximum_employees": 500,
+                "weight": 40,
+            },
+            "geography": {
+                "targets": [
+                    {"country": " United   States ", "region": "California"},
+                    {"country": "united states", "region": " california "},
+                ],
+                "weight": 60,
+            },
+        },
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["industry"] == {"terms": ["Software"], "weight": 30}
+    assert response.json()["company_size"] == {
+        "minimum_employees": 10,
+        "maximum_employees": 500,
+        "weight": 40,
+    }
+    assert response.json()["geography"] == {
+        "targets": [{"country": "United States", "region": "California"}],
+        "weight": 60,
+    }
+
+
+@pytest.mark.parametrize(
+    "criteria",
+    [
+        {"company_size": {"minimum_employees": -1, "maximum_employees": 10, "weight": 50}},
+        {"company_size": {"minimum_employees": 20, "maximum_employees": 10, "weight": 50}},
+        {"company_size": {"minimum_employees": 10, "maximum_employees": 20, "weight": 0}},
+        {"geography": {"targets": [{"country": "", "region": "West"}], "weight": 50}},
+        {"geography": {"targets": [{"country": "Canada", "region": None}], "weight": 0}},
+    ],
+)
+def test_profile_rejects_invalid_new_criteria(
+    client: TestClient, criteria: dict[str, object]
+) -> None:
+    token = _auth(client)["access_token"]
+    response = client.patch(
+        PROFILE_URL,
+        json={**_profile_payload(), **criteria},
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 422
+
+
+def test_legacy_persisted_profile_loads_with_safe_new_criterion_defaults(
+    client: TestClient, db: Session
+) -> None:
+    auth = _auth(client)
+    db.add(
+        IdealCustomerProfile(
+            organization_id=auth["organization"]["id"],
+            configuration={
+                "company": {"terms": ["Acme"], "weight": 60},
+                "enquiry": {"terms": ["analytics"], "weight": 40},
+            },
+        )
+    )
+    db.commit()
+
+    response = client.get(PROFILE_URL, headers=_headers(auth["access_token"]))
+
+    assert response.status_code == 200
+    assert response.json()["configuration_valid"] is True
+    assert response.json()["company"]["terms"] == ["Acme"]
+    assert response.json()["industry"] == {"terms": [], "weight": 50}
+    assert response.json()["company_size"] == {
+        "minimum_employees": None,
+        "maximum_employees": None,
+        "weight": 50,
+    }
+    assert response.json()["geography"] == {"targets": [], "weight": 50}
 
 
 def test_invalid_persisted_profile_fails_closed_and_can_be_repaired(

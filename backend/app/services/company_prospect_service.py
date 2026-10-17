@@ -6,11 +6,15 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus
 from app.repositories.company_prospect_repository import CompanyProspectRepository
+from app.repositories.ideal_customer_profile_repository import IdealCustomerProfileRepository
 from app.schemas.company_prospect import (
     CompanyProspectCreate,
     CompanyProspectListResponse,
     CompanyProspectPublic,
 )
+from app.schemas.company_prospect_scoring import CompanyProspectScoringInput
+from app.schemas.ideal_customer_profile import LeadFitScore
+from app.services.lead_fit_scoring_service import score_company_prospect_fit
 
 ALLOWED_TRANSITIONS = {
     CompanyProspectStatus.IDENTIFIED: {
@@ -94,3 +98,18 @@ class CompanyProspectService:
         self.session.commit()
         self.session.refresh(prospect)
         return prospect
+
+    def score(
+        self,
+        organization_id: str,
+        prospect_id: str,
+        evidence: CompanyProspectScoringInput,
+    ) -> LeadFitScore:
+        self.get(organization_id, prospect_id)
+        profile = IdealCustomerProfileRepository(self.session).get_for_organization(
+            organization_id
+        )
+        return score_company_prospect_fit(
+            prospect=evidence,
+            configuration=profile.configuration if profile is not None else None,
+        )

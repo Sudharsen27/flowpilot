@@ -351,19 +351,49 @@ export type IdealCustomerCriterion = {
   weight: number;
 };
 
+export type IdealCustomerCompanySizeCriterion = {
+  minimum_employees: number | null;
+  maximum_employees: number | null;
+  weight: number;
+};
+
+export type IdealCustomerGeographicTarget = {
+  country: string;
+  region: string | null;
+};
+
+export type IdealCustomerGeographyCriterion = {
+  targets: IdealCustomerGeographicTarget[];
+  weight: number;
+};
+
 export type IdealCustomerProfileUpdate = {
   company: IdealCustomerCriterion;
   enquiry: IdealCustomerCriterion;
+  industry: IdealCustomerCriterion;
+  company_size: IdealCustomerCompanySizeCriterion;
+  geography: IdealCustomerGeographyCriterion;
 };
 
 export type IdealCustomerProfile = IdealCustomerProfileUpdate & {
-  available_criteria: ("company" | "enquiry")[];
+  available_criteria: (
+    | "company"
+    | "enquiry"
+    | "industry"
+    | "company_size"
+    | "geography"
+  )[];
   unavailable_criteria: Record<string, string>;
   configuration_valid: boolean;
 };
 
 export type LeadFitComponent = {
-  criterion: "company" | "enquiry";
+  criterion:
+    | "company"
+    | "enquiry"
+    | "industry"
+    | "company_size"
+    | "geography";
   status: "MATCHED" | "UNMATCHED" | "UNKNOWN" | "UNCONFIGURED";
   weight: number;
   matched_terms: string[];

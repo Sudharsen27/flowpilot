@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -10,9 +12,19 @@ from app.schemas.ideal_customer_profile import (
     IdealCustomerProfilePublic,
     IdealCustomerProfileUpdate,
 )
-from app.services.lead_fit_scoring_service import UNAVAILABLE_CRITERIA
 
 MANAGER_ROLES = frozenset({MembershipRole.OWNER, MembershipRole.ADMIN})
+AvailableCriterion = Literal["company", "enquiry", "industry", "company_size", "geography"]
+AVAILABLE_CRITERIA: list[AvailableCriterion] = [
+    "company",
+    "enquiry",
+    "industry",
+    "company_size",
+    "geography",
+]
+PROFILE_UNAVAILABLE_CRITERIA = {
+    "buyer_role": "Job title or buyer role is not available for deterministic scoring."
+}
 
 
 class IdealCustomerProfileService:
@@ -31,8 +43,8 @@ class IdealCustomerProfileService:
             configuration_valid = False
         return IdealCustomerProfilePublic(
             **configuration.model_dump(),
-            available_criteria=["company", "enquiry"],
-            unavailable_criteria=UNAVAILABLE_CRITERIA,
+            available_criteria=AVAILABLE_CRITERIA,
+            unavailable_criteria=PROFILE_UNAVAILABLE_CRITERIA,
             configuration_valid=configuration_valid,
         )
 
@@ -55,7 +67,7 @@ class IdealCustomerProfileService:
         )
         return IdealCustomerProfilePublic(
             **payload.model_dump(),
-            available_criteria=["company", "enquiry"],
-            unavailable_criteria=UNAVAILABLE_CRITERIA,
+            available_criteria=AVAILABLE_CRITERIA,
+            unavailable_criteria=PROFILE_UNAVAILABLE_CRITERIA,
             configuration_valid=True,
         )

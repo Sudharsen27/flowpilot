@@ -16,13 +16,21 @@ vi.mock("@/lib/api/ideal-customer-profile", () => ({
 const defaultProfile = {
   company: { terms: [], weight: 50 },
   enquiry: { terms: [], weight: 50 },
-  available_criteria: ["company", "enquiry"] as ("company" | "enquiry")[],
-  unavailable_criteria: {
-    industry: "Industry is not stored.",
-    employee_range: "Company size is not stored.",
-    geographic_region: "Region is not stored.",
-    buyer_role: "Buyer role is not stored.",
+  industry: { terms: [], weight: 50 },
+  company_size: {
+    minimum_employees: null,
+    maximum_employees: null,
+    weight: 50,
   },
+  geography: { targets: [], weight: 50 },
+  available_criteria: [
+    "company",
+    "enquiry",
+    "industry",
+    "company_size",
+    "geography",
+  ] as ("company" | "enquiry" | "industry" | "company_size" | "geography")[],
+  unavailable_criteria: { buyer_role: "Buyer role is not available." },
   configuration_valid: true,
 };
 
@@ -48,7 +56,7 @@ describe("IdealCustomerProfileSettings", () => {
     });
     expect(
       screen.getByText(
-        /Not configurable: Industry, Company size, Region, Buyer role/,
+        /Not configurable: Buyer role/,
       ),
     ).toBeVisible();
     await user.type(companyTerms, "Acme");
@@ -61,6 +69,13 @@ describe("IdealCustomerProfileSettings", () => {
       expect(updateProfileMock).toHaveBeenCalledWith({
         company: { terms: ["Acme"], weight: 70 },
         enquiry: { terms: [], weight: 50 },
+        industry: { terms: [], weight: 50 },
+        company_size: {
+          minimum_employees: null,
+          maximum_employees: null,
+          weight: 50,
+        },
+        geography: { targets: [], weight: 50 },
       }),
     );
     expect(screen.getByText("Profile saved.")).toBeVisible();
@@ -129,7 +144,72 @@ describe("IdealCustomerProfileSettings", () => {
     );
     await user.click(screen.getByRole("button", { name: "Save profile" }));
 
-    expect(screen.getByText(/Use up to 20 terms per field/)).toBeVisible();
+    expect(screen.getByText(/Use up to 20 terms or locations/)).toBeVisible();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("configures industry, employee bounds, and country-region targets", async () => {
+    const user = userEvent.setup();
+    updateProfileMock.mockResolvedValue({
+      ...defaultProfile,
+      industry: { terms: ["Software"], weight: 30 },
+      company_size: {
+        minimum_employees: 10,
+        maximum_employees: 500,
+        weight: 40,
+      },
+      geography: {
+        targets: [{ country: "United States", region: "California" }],
+        weight: 60,
+      },
+    });
+    render(<IdealCustomerProfileSettings role="OWNER" />);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Industry target terms" }),
+      "Software",
+    );
+    await user.clear(screen.getByRole("spinbutton", { name: "Industry weight" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Industry weight" }), "30");
+    await user.type(screen.getByLabelText("Minimum employees"), "10");
+    await user.type(screen.getByLabelText("Maximum employees"), "500");
+    await user.clear(screen.getByLabelText("Company-size weight"));
+    await user.type(screen.getByLabelText("Company-size weight"), "40");
+    await user.type(screen.getByLabelText("Country 1"), "United States");
+    await user.type(screen.getByLabelText("Region 1"), "California");
+    await user.clear(screen.getByLabelText("Geography weight"));
+    await user.type(screen.getByLabelText("Geography weight"), "60");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({
+        company: { terms: [], weight: 50 },
+        enquiry: { terms: [], weight: 50 },
+        industry: { terms: ["Software"], weight: 30 },
+        company_size: {
+          minimum_employees: 10,
+          maximum_employees: 500,
+          weight: 40,
+        },
+        geography: {
+          targets: [{ country: "United States", region: "California" }],
+          weight: 60,
+        },
+      }),
+    );
+  });
+
+  it("rejects a reversed employee range before submission", async () => {
+    const user = userEvent.setup();
+    render(<IdealCustomerProfileSettings role="OWNER" />);
+
+    await user.type(await screen.findByLabelText("Minimum employees"), "500");
+    await user.type(screen.getByLabelText("Maximum employees"), "10");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(
+      screen.getByText(/valid inclusive employee bounds/),
+    ).toBeVisible();
     expect(updateProfileMock).not.toHaveBeenCalled();
   });
 });

@@ -89,13 +89,21 @@ describe("identity-backed settings", () => {
     getIdealCustomerProfile.mockResolvedValue({
       company: { terms: [], weight: 50 },
       enquiry: { terms: [], weight: 50 },
-      available_criteria: ["company", "enquiry"],
-      unavailable_criteria: {
-        industry: "Industry is not stored.",
-        employee_range: "Company size is not stored.",
-        geographic_region: "Region is not stored.",
-        buyer_role: "Buyer role is not stored.",
+      industry: { terms: [], weight: 50 },
+      company_size: {
+        minimum_employees: null,
+        maximum_employees: null,
+        weight: 50,
       },
+      geography: { targets: [], weight: 50 },
+      available_criteria: [
+        "company",
+        "enquiry",
+        "industry",
+        "company_size",
+        "geography",
+      ],
+      unavailable_criteria: { buyer_role: "Buyer role is not available." },
       configuration_valid: true,
     });
   });

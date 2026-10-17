@@ -11,6 +11,8 @@ from app.schemas.company_prospect import (
     CompanyProspectListResponse,
     CompanyProspectPublic,
 )
+from app.schemas.company_prospect_scoring import CompanyProspectScoringInput
+from app.schemas.ideal_customer_profile import LeadFitScore
 from app.services.company_prospect_service import CompanyProspectService
 
 router = APIRouter(prefix="/api/v1/company-prospects", tags=["company-prospects"])
@@ -57,3 +59,13 @@ def transition_company_prospect(
         organization.id, prospect_id, CompanyProspectStatus(payload.status)
     )
     return CompanyProspectPublic.model_validate(prospect)
+
+
+@router.post("/{prospect_id}/fit-score", response_model=LeadFitScore)
+def score_company_prospect(
+    prospect_id: str,
+    evidence: CompanyProspectScoringInput,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> LeadFitScore:
+    return CompanyProspectService(db).score(organization.id, prospect_id, evidence)
