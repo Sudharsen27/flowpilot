@@ -63,7 +63,9 @@ describe("Discovery Workspace", () => {
       "not verified real companies",
     );
     expect(screen.getByText(/fixed demo dataset/i)).toBeVisible();
-    expect(screen.queryByRole("button", { name: /import/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import unavailable" })).toBeDisabled();
+    expect(screen.getByText(/No discovery results can be saved/)).toBeVisible();
+    expect(searchMock).not.toHaveBeenCalled();
   });
 
   it("submits normalized supported filters through the discovery API", async () => {
@@ -157,7 +159,9 @@ describe("Discovery Workspace", () => {
     expect(within(result).getByText("Industry matches Software.")).toBeVisible();
     expect(within(result).getByText(/Filter explanations only/)).toBeVisible();
     expect(within(result).queryByText(/Strong|Moderate|Weak|confidence/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /import|create lead|save prospect/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import unavailable" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /create lead|save prospect/i })).not.toBeInTheDocument();
+    expect(searchMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows an empty state using the server result", async () => {

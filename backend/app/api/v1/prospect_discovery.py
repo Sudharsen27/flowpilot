@@ -5,11 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_membership, get_current_organization
 from app.core.config import settings
+from app.core.exceptions import ForbiddenError
 from app.core.rate_limit import prospect_discovery_limiter
 from app.db.session import get_db
-from app.models.membership import Membership
+from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.schemas.prospect_discovery import (
+    ProspectCompanyImportOutcome,
+    ProspectCompanyImportRequest,
+    ProspectCompanyImportResponse,
     ProspectDiscoverySearchRequest,
     ProspectDiscoverySearchResponse,
     ProspectImportResponse,
@@ -32,6 +36,10 @@ from app.services.prospect_discovery_service import (
 router = APIRouter(prefix="/api/v1/prospect-discovery", tags=["prospect-discovery"])
 MAX_PROSPECT_PREVIEW_RESPONSE_BYTES = 4 * 1024 * 1024
 DISCOVERY_LIMIT_DETAIL = "Discovery usage limit exceeded. Try again later."
+PROSPECT_IMPORT_UNAVAILABLE_DETAIL = (
+    "Company prospect import is unavailable because discovery currently uses "
+    "synthetic, unverified data."
+)
 
 
 @router.post("/search", response_model=ProspectDiscoverySearchResponse)
@@ -71,6 +79,44 @@ def search_prospects(
     ):
         raise HTTPException(status_code=429, detail=DISCOVERY_LIMIT_DETAIL)
     return response
+
+
+@router.post(
+    "/company-prospects/import",
+    response_model=ProspectCompanyImportResponse,
+    status_code=status.HTTP_409_CONFLICT,
+)
+def import_discovered_company_prospects(
+    payload: ProspectCompanyImportRequest,
+    confirmed: str | None = Header(
+        default=None, alias="X-Prospect-Import-Confirmed"
+    ),
+    _organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+) -> ProspectCompanyImportResponse:
+    if membership.role not in {MembershipRole.OWNER, MembershipRole.ADMIN}:
+        raise ForbiddenError("Only owners and admins can import company prospects")
+    if confirmed != "true":
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail="Explicit confirmation is required before importing company prospects.",
+        )
+
+    return ProspectCompanyImportResponse(
+        detail=PROSPECT_IMPORT_UNAVAILABLE_DETAIL,
+        total_items=len(payload.items),
+        imported_count=0,
+        rejected_count=len(payload.items),
+        outcomes=[
+            ProspectCompanyImportOutcome(
+                item_number=index,
+                status="REJECTED",
+                reason_code="SOURCE_NOT_APPROVED",
+                message=PROSPECT_IMPORT_UNAVAILABLE_DETAIL,
+            )
+            for index in range(1, len(payload.items) + 1)
+        ],
+    )
 
 
 async def _read_csv_text(request: Request) -> str:

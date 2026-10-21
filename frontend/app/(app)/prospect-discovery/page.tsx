@@ -299,6 +299,26 @@ export default function ProspectDiscoveryPage() {
         </p>
       </aside>
 
+      <section
+        aria-labelledby="prospect-import-title"
+        className="border-border flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
+      >
+        <div>
+          <h2 id="prospect-import-title" className="text-sm font-semibold">
+            Company prospect import
+          </h2>
+          <p className="text-muted-foreground mt-1 max-w-3xl text-sm">
+            Import is unavailable while discovery uses synthetic, unverified
+            data. No discovery results can be saved as genuine company
+            prospects. Import can be enabled only after an explicitly approved
+            source provides eligible verified records.
+          </p>
+        </div>
+        <Button type="button" variant="outline" disabled aria-describedby="prospect-import-title">
+          Import unavailable
+        </Button>
+      </section>
+
       <section aria-labelledby="search-filters-title" className="border-border rounded-lg border p-4 sm:p-5">
         <div className="mb-4">
           <h2 id="search-filters-title" className="text-sm font-semibold">

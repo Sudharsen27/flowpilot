@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.company_prospect import CompanyProspectCreate
+
 DISCOVERY_INDUSTRIES = (
     "Financial Services",
     "Healthcare",
@@ -113,6 +115,46 @@ class ProspectDiscoverySearchResponse(BaseModel):
     page_size: int
     has_more: bool
     next_cursor: str | None
+
+
+class ProspectImportCandidate(CompanyProspectCreate):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str | None = Field(default=None, min_length=1, max_length=80)
+    industry: str | None = Field(default=None, max_length=120)
+    country: str | None = Field(default=None, max_length=120)
+    region: str | None = Field(default=None, max_length=120)
+    employee_count: int | None = Field(default=None, ge=0, le=1_000_000)
+    description: str | None = Field(default=None, max_length=1000)
+    synthetic: bool = True
+    verification_status: str = Field(min_length=1, max_length=80)
+    match_explanations: list[str] = Field(default_factory=list, max_length=10)
+
+
+class ProspectCompanyImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(min_length=1, max_length=80)
+    items: list[ProspectImportCandidate] = Field(min_length=1, max_length=100)
+
+
+class ProspectCompanyImportOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_number: int
+    status: Literal["REJECTED"]
+    reason_code: Literal["SOURCE_NOT_APPROVED"]
+    message: str
+
+
+class ProspectCompanyImportResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    detail: str
+    total_items: int
+    imported_count: int
+    rejected_count: int
+    outcomes: list[ProspectCompanyImportOutcome]
 
 
 class ProspectPreviewColumn(BaseModel):
