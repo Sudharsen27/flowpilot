@@ -116,6 +116,104 @@ describe("Discovery Workspace", () => {
     expect(await screen.findByText("Kitepath Software")).toBeVisible();
   });
 
+  it("lists every Indian state and union territory without implying demo records exist", async () => {
+    const user = userEvent.setup();
+    searchMock.mockResolvedValue(response({ items: [] }));
+    render(<ProspectDiscoveryPage />);
+
+    await user.selectOptions(screen.getByLabelText("Country"), "India");
+    const regionSelect = screen.getByRole("combobox", { name: /Region/ });
+    const options = within(regionSelect)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+
+    expect(options).toEqual([
+      "All supported regions",
+      "Andhra Pradesh",
+      "Arunachal Pradesh",
+      "Assam",
+      "Bihar",
+      "Chhattisgarh",
+      "Goa",
+      "Gujarat",
+      "Haryana",
+      "Himachal Pradesh",
+      "Jharkhand",
+      "Karnataka",
+      "Kerala",
+      "Madhya Pradesh",
+      "Maharashtra",
+      "Manipur",
+      "Meghalaya",
+      "Mizoram",
+      "Nagaland",
+      "Odisha",
+      "Punjab",
+      "Rajasthan",
+      "Sikkim",
+      "Tamil Nadu",
+      "Telangana",
+      "Tripura",
+      "Uttar Pradesh",
+      "Uttarakhand",
+      "West Bengal",
+      "Andaman and Nicobar Islands",
+      "Chandigarh",
+      "Dadra and Nagar Haveli and Daman and Diu",
+      "Delhi",
+      "Jammu and Kashmir",
+      "Ladakh",
+      "Lakshadweep",
+      "Puducherry",
+    ]);
+
+    await user.selectOptions(regionSelect, "Kerala");
+    await user.click(screen.getByRole("button", { name: "Search businesses" }));
+
+    expect(searchMock).toHaveBeenCalledWith({
+      country: "India",
+      region: "Kerala",
+      page_size: 10,
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "No synthetic businesses matched",
+      }),
+    ).toBeVisible();
+  });
+
+  it("offers the full country list and allows searches with no synthetic matches", async () => {
+    const user = userEvent.setup();
+    searchMock.mockResolvedValue(response({ items: [] }));
+    render(<ProspectDiscoveryPage />);
+
+    const countrySelect = screen.getByLabelText("Country");
+    const countries = within(countrySelect)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+
+    expect(countries[0]).toBe("All countries");
+    expect(countries.length).toBeGreaterThanOrEqual(190);
+    expect(countries).toContain("Germany");
+    expect(countries).toContain("India");
+
+    await user.selectOptions(countrySelect, "Germany");
+    expect(
+      screen.getByText("No synthetic region filters are defined for this country."),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Search businesses" }));
+
+    expect(searchMock).toHaveBeenCalledWith({
+      country: "Germany",
+      page_size: 10,
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "No synthetic businesses matched",
+      }),
+    ).toBeVisible();
+  });
+
   it("shows field-level range validation and does not call the API", async () => {
     const user = userEvent.setup();
     render(<ProspectDiscoveryPage />);
