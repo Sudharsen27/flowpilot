@@ -42,6 +42,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Login: `POST /api/v1/auth/login`
 - Current user: `GET /api/v1/users/me`
 - Synthetic business discovery (authenticated, read-only): `POST /api/v1/prospect-discovery/search`
+- Government company-data discovery (authenticated, read-only; disabled by default): `POST /api/v1/prospect-discovery/government/search`
 - Prospect CSV preview (authenticated, read-only): `POST /api/v1/prospect-discovery/preview`
 - Prospect CSV import (authenticated, explicit `X-Prospect-Import-Confirmed: true` required): `POST /api/v1/prospect-discovery/import`
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`

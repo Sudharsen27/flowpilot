@@ -48,9 +48,7 @@ def test_runtime_configuration_reports_status_without_secrets(
         assert secret not in response.text
 
 
-def test_runtime_configuration_reports_missing_providers(
-    client: TestClient, monkeypatch
-) -> None:
+def test_runtime_configuration_reports_missing_providers(client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_provider", "groq")
     monkeypatch.setattr(settings, "groq_api_key", None)
     monkeypatch.setattr(settings, "groq_model", "openai/gpt-oss-20b")
@@ -73,9 +71,24 @@ def test_runtime_configuration_reports_missing_providers(
     assert body["sender_status"] == "not_configured"
 
 
-def test_runtime_configuration_normalizes_inbound_domain(
+def test_runtime_configuration_never_exposes_roc_provider_secret(
     client: TestClient, monkeypatch
 ) -> None:
+    monkeypatch.setattr(settings, "roc_data_gov_in_api_key", SecretStr("roc-server-secret"))
+    monkeypatch.setattr(settings, "roc_data_gov_in_provider_enabled", True)
+    token = _token(client)
+
+    response = client.get(
+        "/api/v1/runtime/configuration",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert "roc-server-secret" not in response.text
+    assert "roc_data_gov_in" not in response.text
+
+
+def test_runtime_configuration_normalizes_inbound_domain(client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(settings, "resend_inbound_domain", " USTAAZILAI.RESEND.APP ")
     monkeypatch.setattr(settings, "resend_webhook_secret", SecretStr("whsec_test_secret"))
     monkeypatch.setattr(settings, "resend_api_key", RESEND_KEY)
@@ -90,9 +103,7 @@ def test_runtime_configuration_normalizes_inbound_domain(
     assert RESEND_KEY not in response.text
 
 
-def test_runtime_configuration_omits_empty_inbound_domain(
-    client: TestClient, monkeypatch
-) -> None:
+def test_runtime_configuration_omits_empty_inbound_domain(client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(settings, "resend_inbound_domain", "   ")
     token = _token(client)
     response = client.get(

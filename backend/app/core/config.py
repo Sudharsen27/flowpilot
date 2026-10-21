@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     # an organization slug. Absent means no tenant can be resolved.
     resend_inbound_domain: str | None = None
     email_request_timeout_seconds: float = 30
+    roc_data_gov_in_api_key: SecretStr | None = None
+    roc_data_gov_in_provider_enabled: bool = False
+    roc_data_gov_in_request_timeout_seconds: float = Field(default=10, ge=1, le=30)
+    roc_data_gov_in_max_page_size: int = Field(default=100, ge=1, le=100)
+    roc_data_gov_in_max_offset: int = Field(default=100_000, ge=0, le=1_000_000)
     agent_max_tool_iterations: int = 3
     # Phase 6D.4: conservative bounds for untrusted AgentPlan artifacts.
     agent_plan_max_steps: int = Field(default=5, ge=1, le=20)

@@ -4,6 +4,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_membership, get_current_organization
+from app.company_data.data_gov_in_provider import get_roc_company_data_provider
+from app.company_data.provider import CompanyDataProviderError, CompanyDataProviderNotConfigured
+from app.company_data.schemas import (
+    GovernmentCompanyDiscoveryRequest,
+    GovernmentCompanyDiscoveryResponse,
+)
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError
 from app.core.rate_limit import prospect_discovery_limiter
@@ -82,15 +88,90 @@ def search_prospects(
 
 
 @router.post(
+    "/government/search",
+    response_model=GovernmentCompanyDiscoveryResponse,
+)
+def search_government_companies(
+    payload: GovernmentCompanyDiscoveryRequest,
+    organization: Organization = Depends(get_current_organization),
+    _membership: Membership = Depends(get_current_membership),
+) -> GovernmentCompanyDiscoveryResponse:
+    if payload.page_size > settings.roc_data_gov_in_max_page_size:
+        raise HTTPException(
+            status_code=422,
+            detail="Page size exceeds the configured maximum.",
+        )
+    if payload.offset > settings.roc_data_gov_in_max_offset:
+        raise HTTPException(
+            status_code=422,
+            detail="Offset exceeds the configured maximum.",
+        )
+
+    ticket = prospect_discovery_limiter.allow_request(
+        organization.id,
+        max_requests=settings.prospect_discovery_rate_limit_max,
+        window_seconds=settings.prospect_discovery_usage_window_seconds,
+    )
+    if ticket is None:
+        raise HTTPException(status_code=429, detail=DISCOVERY_LIMIT_DETAIL)
+
+    try:
+        provider = get_roc_company_data_provider()
+        page = provider.search(
+            state_code=payload.state_code,
+            offset=payload.offset,
+            limit=payload.page_size,
+        )
+    except CompanyDataProviderNotConfigured as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Government company discovery is unavailable.",
+        ) from exc
+    except CompanyDataProviderError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Government company discovery is temporarily unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Government company discovery request is outside configured bounds.",
+        ) from exc
+
+    has_more = (
+        payload.offset + len(page.records) < page.total
+        if page.total is not None
+        else len(page.records) == payload.page_size
+    )
+    if not prospect_discovery_limiter.allow_results(
+        organization.id,
+        ticket,
+        len(page.records),
+        max_results=settings.prospect_discovery_result_limit,
+        window_seconds=settings.prospect_discovery_usage_window_seconds,
+    ):
+        raise HTTPException(status_code=429, detail=DISCOVERY_LIMIT_DETAIL)
+
+    return GovernmentCompanyDiscoveryResponse(
+        source="GOVERNMENT",
+        items=list(page.records),
+        total=page.total,
+        offset=page.offset,
+        page_size=page.limit,
+        has_more=has_more,
+        next_offset=page.offset + len(page.records) if has_more else None,
+        attribution=page.attribution,
+    )
+
+
+@router.post(
     "/company-prospects/import",
     response_model=ProspectCompanyImportResponse,
     status_code=status.HTTP_409_CONFLICT,
 )
 def import_discovered_company_prospects(
     payload: ProspectCompanyImportRequest,
-    confirmed: str | None = Header(
-        default=None, alias="X-Prospect-Import-Confirmed"
-    ),
+    confirmed: str | None = Header(default=None, alias="X-Prospect-Import-Confirmed"),
     _organization: Organization = Depends(get_current_organization),
     membership: Membership = Depends(get_current_membership),
 ) -> ProspectCompanyImportResponse:
