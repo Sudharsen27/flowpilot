@@ -13,8 +13,11 @@ from app.company_data.provider import (
 )
 from app.core.config import settings
 from app.models.activity_event import ActivityEvent
+from app.models.agent_execution import AgentExecution
 from app.models.company_prospect import CompanyProspect
 from app.models.lead import Lead
+from app.models.lead_email_send import LeadEmailSend
+from app.models.sales_run import SalesRun
 from app.models.webhook import WebhookDelivery
 from app.models.workflow import WorkflowRun
 from tests.test_agent_runtime import _headers
@@ -118,6 +121,20 @@ def test_government_route_is_authenticated_and_disabled_by_default(
     assert response.json() == {"detail": "Government company discovery is unavailable."}
 
 
+def test_government_route_fails_closed_when_enabled_without_api_key(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "roc_data_gov_in_provider_enabled", True)
+    monkeypatch.setattr(settings, "roc_data_gov_in_api_key", None)
+    token = _auth(client)["access_token"]
+
+    response = _government_search(client, token, {"state_code": "DL"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Government company discovery is unavailable."}
+
+
 def test_government_route_handles_provider_failures_safely(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -206,7 +223,16 @@ def test_government_results_are_not_persisted_or_automated(
         lambda: provider,
     )
     token = _auth(client)["access_token"]
-    models = (CompanyProspect, Lead, ActivityEvent, WorkflowRun, WebhookDelivery)
+    models = (
+        CompanyProspect,
+        Lead,
+        ActivityEvent,
+        WorkflowRun,
+        WebhookDelivery,
+        LeadEmailSend,
+        AgentExecution,
+        SalesRun,
+    )
     before = {model: db.scalar(select(func.count()).select_from(model)) for model in models}
 
     response = _government_search(client, token, {"state_code": "DL"})
