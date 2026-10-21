@@ -12,6 +12,7 @@ import {
 import { useRef, useState, type FormEvent } from "react";
 
 import { PageHeader } from "@/components/page-header";
+import { GovernmentCompanyDiscovery } from "@/components/prospect-discovery/government-company-discovery";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import { searchProspects } from "@/lib/api/prospect-discovery";
@@ -278,7 +279,7 @@ export default function ProspectDiscoveryPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Discovery Workspace"
-        description="Explore a small, fixed set of synthetic business examples using your discovery filters."
+        description="Explore synthetic business examples and, when enabled by the server, government company records."
         titleBadge={
           <span className="bg-warning/15 text-warning-text rounded-full px-2.5 py-1 text-xs font-medium">
             Synthetic data only
@@ -294,10 +295,12 @@ export default function ProspectDiscoveryPage() {
         <p className="text-sm leading-5">
           <strong>Synthetic, unverified examples.</strong> These records are
           generated from a fixed demo dataset, are not verified real companies,
-          and are not saved to your CRM. No live business-data provider is
-          connected.
+          and are not saved to your CRM. Synthetic discovery does not call the
+          government data provider.
         </p>
       </aside>
+
+      <GovernmentCompanyDiscovery />
 
       <section
         aria-labelledby="prospect-import-title"
@@ -308,10 +311,10 @@ export default function ProspectDiscoveryPage() {
             Company prospect import
           </h2>
           <p className="text-muted-foreground mt-1 max-w-3xl text-sm">
-            Import is unavailable while discovery uses synthetic, unverified
-            data. No discovery results can be saved as genuine company
-            prospects. Import can be enabled only after an explicitly approved
-            source provides eligible verified records.
+            Import remains unavailable. Synthetic examples are unverified, and
+            government records are read-only and are not an approved import
+            source. No discovery results can be saved as genuine company
+            prospects.
           </p>
         </div>
         <Button type="button" variant="outline" disabled aria-describedby="prospect-import-title">

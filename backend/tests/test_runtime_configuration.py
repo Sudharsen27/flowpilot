@@ -43,6 +43,7 @@ def test_runtime_configuration_reports_status_without_secrets(
     assert body["email_status"] == "configured"
     assert body["sender_address"] == "sales@example.com"
     assert body["sender_status"] == "configured"
+    assert body["government_company_discovery_available"] is False
     assert "organization_id" not in body
     for secret in (SECRET_KEY, TYPESAFE_KEY, RESEND_KEY):
         assert secret not in response.text
@@ -84,8 +85,46 @@ def test_runtime_configuration_never_exposes_roc_provider_secret(
     )
 
     assert response.status_code == 200
+    assert response.json()["government_company_discovery_available"] is True
     assert "roc-server-secret" not in response.text
     assert "roc_data_gov_in" not in response.text
+
+
+def test_government_company_discovery_availability_requires_explicit_enable_and_key() -> None:
+    from app.core.config import Settings
+
+    enabled_without_key = Settings(
+        environment="test",
+        roc_data_gov_in_provider_enabled=True,
+        _env_file=None,
+    )
+    with_key_but_disabled = Settings(
+        environment="test",
+        roc_data_gov_in_api_key="server-only-key",
+        _env_file=None,
+    )
+    enabled_with_key = Settings(
+        environment="test",
+        roc_data_gov_in_provider_enabled=True,
+        roc_data_gov_in_api_key="server-only-key",
+        roc_data_gov_in_max_page_size=25,
+        roc_data_gov_in_max_offset=500,
+        _env_file=None,
+    )
+
+    assert (
+        build_runtime_configuration(enabled_without_key).government_company_discovery_available
+        is False
+    )
+    assert (
+        build_runtime_configuration(with_key_but_disabled).government_company_discovery_available
+        is False
+    )
+    configuration = build_runtime_configuration(enabled_with_key)
+    assert configuration.government_company_discovery_available is True
+    assert configuration.government_company_discovery_max_page_size == 25
+    assert configuration.government_company_discovery_max_offset == 500
+    assert "server-only-key" not in str(configuration.model_dump())
 
 
 def test_runtime_configuration_normalizes_inbound_domain(client: TestClient, monkeypatch) -> None:

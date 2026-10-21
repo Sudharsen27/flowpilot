@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiGet, apiPost, apiPostFile, resolveApiBaseUrl } from "@/lib/api/client";
-import { importProspectCsv, searchProspects } from "@/lib/api/prospect-discovery";
+import { importProspectCsv, searchGovernmentCompanies, searchProspects } from "@/lib/api/prospect-discovery";
 
 describe("API client", () => {
   beforeEach(() => {
@@ -142,6 +142,55 @@ describe("API client", () => {
           "Content-Type": "application/json",
         }),
       }),
+    );
+  });
+
+  it("posts government discovery through the authenticated client without credentials in its body", async () => {
+    window.localStorage.setItem(
+      "flowpilot.access_token",
+      "government-discovery-token",
+    );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          source: "GOVERNMENT",
+          items: [],
+          total: 0,
+          offset: 0,
+          page_size: 10,
+          has_more: false,
+          next_offset: null,
+          attribution: {
+            provider: "data.gov.in",
+            dataset: "Registrars of Companies (RoC)-wise Company Master Data",
+            resource_uuid: "4dbe5667-7b6b-41d7-82af-211562424d9a",
+            endpoint:
+              "https://api.data.gov.in/resource/4dbe5667-7b6b-41d7-82af-211562424d9a",
+            attribution: "Government of India, Ministry of Corporate Affairs.",
+            licensing_status: "PENDING_WRITTEN_CLARIFICATION",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    const input = { state_code: "DL", offset: 10, page_size: 10 };
+
+    const result = await searchGovernmentCompanies(input);
+
+    expect(result.source).toBe("GOVERNMENT");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/prospect-discovery/government/search",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(input),
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Bearer /),
+          "Content-Type": "application/json",
+        }),
+      }),
+    );
+    expect(JSON.stringify(fetchMock.mock.calls[0][1]?.body)).not.toContain(
+      "api-key",
     );
   });
 

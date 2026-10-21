@@ -4,11 +4,22 @@ import type {
   ProspectDiscoverySearchResponse,
   ProspectImportResponse,
   ProspectPreviewResponse,
+  GovernmentCompanyDiscoveryRequest,
+  GovernmentCompanyDiscoveryResponse,
 } from "@/types/api";
 
 export function searchProspects(input: ProspectDiscoverySearchRequest) {
   return apiPost<ProspectDiscoverySearchResponse>(
     "/api/v1/prospect-discovery/search",
+    input,
+  );
+}
+
+export function searchGovernmentCompanies(
+  input: GovernmentCompanyDiscoveryRequest,
+) {
+  return apiPost<GovernmentCompanyDiscoveryResponse>(
+    "/api/v1/prospect-discovery/government/search",
     input,
   );
 }

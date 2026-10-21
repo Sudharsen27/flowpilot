@@ -29,6 +29,9 @@ function configuration(
     email_status: "configured",
     sender_address: "sales@example.com",
     sender_status: "configured",
+    government_company_discovery_available: false,
+    government_company_discovery_max_page_size: 100,
+    government_company_discovery_max_offset: 100_000,
     ...overrides,
   };
 }

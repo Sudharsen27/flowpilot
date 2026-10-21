@@ -26,3 +26,6 @@ class RuntimeConfigurationPublic(BaseModel):
     sender_address: str | None
     sender_status: RuntimeCheckStatus
     resend_inbound_domain: str | None
+    government_company_discovery_available: bool
+    government_company_discovery_max_page_size: int
+    government_company_discovery_max_offset: int

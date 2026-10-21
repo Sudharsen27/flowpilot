@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProspectDiscoveryPage from "@/app/(app)/prospect-discovery/page";
 import { ApiError } from "@/lib/api/client";
 import { searchProspects } from "@/lib/api/prospect-discovery";
+import { getRuntimeConfiguration } from "@/lib/api/runtime";
 import type {
   ProspectDiscoverySearchRequest,
   ProspectDiscoverySearchResponse,
@@ -12,9 +13,15 @@ import type {
 
 vi.mock("@/lib/api/prospect-discovery", () => ({
   searchProspects: vi.fn(),
+  searchGovernmentCompanies: vi.fn(),
+}));
+
+vi.mock("@/lib/api/runtime", () => ({
+  getRuntimeConfiguration: vi.fn(),
 }));
 
 const searchMock = vi.mocked(searchProspects);
+const runtimeMock = vi.mocked(getRuntimeConfiguration);
 
 const business = {
   name: "Kitepath Software",
@@ -44,6 +51,23 @@ function response(
 describe("Discovery Workspace", () => {
   beforeEach(() => {
     searchMock.mockReset();
+    runtimeMock.mockReset();
+    runtimeMock.mockResolvedValue({
+      source: "environment",
+      ai_provider: "openai",
+      ai_provider_label: "OpenAI",
+      ai_model: "gpt-4o-mini",
+      ai_status: "not_configured",
+      human_decision_provider: "typesafe",
+      human_decision_status: "not_configured",
+      email_provider_label: "Resend",
+      email_status: "not_configured",
+      sender_address: null,
+      sender_status: "not_configured",
+      government_company_discovery_available: false,
+      government_company_discovery_max_page_size: 100,
+      government_company_discovery_max_offset: 100_000,
+    });
   });
 
   it("renders accessible supported filters and explains the synthetic-only data", () => {

@@ -27,6 +27,35 @@ export type RuntimeConfiguration = {
   email_status: RuntimeCheckStatus;
   sender_address: string | null;
   sender_status: RuntimeCheckStatus;
+  government_company_discovery_available: boolean;
+  government_company_discovery_max_page_size: number;
+  government_company_discovery_max_offset: number;
+};
+
+export type GovernmentCompanyDiscoveryRequest = {
+  state_code: string;
+  offset: number;
+  page_size: number;
+};
+
+export type CompanyDataAttribution = {
+  provider: string;
+  dataset: string;
+  resource_uuid: string;
+  endpoint: string;
+  attribution: string;
+  licensing_status: string;
+};
+
+export type GovernmentCompanyDiscoveryResponse = {
+  source: "GOVERNMENT";
+  items: Record<string, string | number | boolean | null>[];
+  total: number | null;
+  offset: number;
+  page_size: number;
+  has_more: boolean;
+  next_offset: number | null;
+  attribution: CompanyDataAttribution;
 };
 
 export type MembershipPublic = {

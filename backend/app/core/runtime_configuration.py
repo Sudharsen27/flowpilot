@@ -50,6 +50,10 @@ def build_runtime_configuration(configured: Settings) -> RuntimeConfigurationPub
         ai_configured = _present(configured.openai_api_key)
     sender = _sender_address(configured.email_from_address)
     email_configured = configured.email_provider == "resend" and _present(configured.resend_api_key)
+    government_discovery_available = (
+        configured.roc_data_gov_in_provider_enabled
+        and _secret_present(configured.roc_data_gov_in_api_key)
+    )
     return RuntimeConfigurationPublic(
         ai_provider=provider,
         ai_provider_label=provider_label,
@@ -75,4 +79,7 @@ def build_runtime_configuration(configured: Settings) -> RuntimeConfigurationPub
             else RuntimeCheckStatus.NOT_CONFIGURED
         ),
         resend_inbound_domain=_inbound_domain(configured.resend_inbound_domain),
+        government_company_discovery_available=government_discovery_available,
+        government_company_discovery_max_page_size=configured.roc_data_gov_in_max_page_size,
+        government_company_discovery_max_offset=configured.roc_data_gov_in_max_offset,
     )
