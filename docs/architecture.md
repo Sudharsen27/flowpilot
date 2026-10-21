@@ -38,6 +38,56 @@ CompanyProspect criteria are assessable only when their evidence quality is `SOU
 
 Lead list responses include fit results only for the existing SQL-paginated page (maximum 50); lead detail includes the same result. No scores are persisted or cached: a read recalculates from the latest lead values and current profile, so edits take effect on the next read. Score reads do not update lead rows or create Activity, workflow, webhook, AI, email, or outreach work. Score-based sorting/filtering is not offered because the current list's SQL pagination order is created time and per-page client sorting would not represent tenant-wide score order.
 
+## Provider-independent business discovery (Slice 3)
+
+`POST /api/v1/prospect-discovery/search` is a separate, authenticated, read-only endpoint alongside the existing CSV preview/import operations. It derives the organization from the authenticated membership and accepts only `industry`, `country`, optional `region`, inclusive `minimum_employees`/`maximum_employees`, `page_size`, and `cursor`. Industries are Software, Healthcare, Manufacturing, Professional Services, and Financial Services. Geography is restricted to the fixed synthetic fixture catalog; a region requires its country. Employee bounds are 0–1,000,000, page size is 1–100 and defaults to 20, and the configurable maximum page size defaults to 25.
+
+Example request:
+
+```json
+{
+  "industry": "Software",
+  "country": "United States",
+  "minimum_employees": 10,
+  "maximum_employees": 250,
+  "page_size": 10
+}
+```
+
+Example response:
+
+```json
+{
+  "source": "SYNTHETIC",
+  "items": [
+    {
+      "name": "Kitepath Software",
+      "industry": "Software",
+      "country": "United States",
+      "region": "New York",
+      "employee_count": 22,
+      "description": "Develops planning software for distributed teams.",
+      "synthetic": true,
+      "verification_status": "SYNTHETIC_UNVERIFIED",
+      "match_explanations": [
+        "Industry matches Software.",
+        "Geography matches United States.",
+        "Employee count (22) is within the requested range."
+      ]
+    }
+  ],
+  "page_size": 10,
+  "has_more": false,
+  "next_cursor": null
+}
+```
+
+The response contains `source: "SYNTHETIC"`, business-shaped fixture results marked `synthetic: true` and `verification_status: "SYNTHETIC_UNVERIFIED"`, deterministic filter-match explanations, `has_more`, and an opaque `next_cursor`. Cursors are HMAC-SHA256 signed using a purpose-derived key from the configured `SECRET_KEY`; they bind the normalized filters, page size, and authenticated organization, expire after 15 minutes by default (`PROSPECT_DISCOVERY_CURSOR_TTL_SECONDS`), and are rejected if malformed, altered, expired, or replayed for different filters, page sizes, or another organization. No provider offset or upstream token is exposed. `PROSPECT_DISCOVERY_MAX_PAGE_SIZE` configures the maximum page size (default 25).
+
+The only adapter is an in-memory fixed synthetic dataset. It performs no network requests and writes no discovery result to the database, CompanyProspect, Lead, activity, workflow, webhook, AI, email, or outreach system. Per-organization request and returned-result budgets default to 30 requests and 250 results per hour (`PROSPECT_DISCOVERY_RATE_LIMIT_MAX`, `PROSPECT_DISCOVERY_RESULT_LIMIT`, and `PROSPECT_DISCOVERY_USAGE_WINDOW_SECONDS`). These counters use a locked in-process sliding window, scoped by organization, and are **not shared across API workers or instances**; deployments requiring globally enforced quotas must provision shared-state infrastructure before relying on these values as a distributed limit.
+
+No real business-data provider is implemented or enabled. Licensing approval is not inferred from a setting. A future licensed adapter must implement the provider-independent service interface, be activated only after licensing and security approval are explicitly verified, and continue to use the same authenticated tenant scope, signed pagination, usage controls, and human-reviewed flow. Provider discovery must remain separate from CRM persistence and must not trigger import, lead creation, outreach, or automation.
+
 ## System shape
 
 Two applications in a monorepo:

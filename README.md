@@ -41,6 +41,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Register: `POST /api/v1/auth/register`
 - Login: `POST /api/v1/auth/login`
 - Current user: `GET /api/v1/users/me`
+- Synthetic business discovery (authenticated, read-only): `POST /api/v1/prospect-discovery/search`
 - Prospect CSV preview (authenticated, read-only): `POST /api/v1/prospect-discovery/preview`
 - Prospect CSV import (authenticated, explicit `X-Prospect-Import-Confirmed: true` required): `POST /api/v1/prospect-discovery/import`
 - Execute agent (authenticated): `POST /api/v1/agents/{agent_id}/execute`
@@ -98,6 +99,8 @@ npm run build
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md).
+
+Business discovery currently uses only fixed synthetic fixtures; no external business-data provider is integrated. Results are not verified real companies and are never saved as CRM records. See the [discovery contract and licensing gate](docs/architecture.md#provider-independent-business-discovery-slice-3).
 
 ## License
 

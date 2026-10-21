@@ -4,10 +4,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_membership, get_current_organization
+from app.core.config import settings
+from app.core.rate_limit import prospect_discovery_limiter
 from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.organization import Organization
-from app.schemas.prospect_discovery import ProspectImportResponse, ProspectPreviewResponse
+from app.schemas.prospect_discovery import (
+    ProspectDiscoverySearchRequest,
+    ProspectDiscoverySearchResponse,
+    ProspectImportResponse,
+    ProspectPreviewResponse,
+)
 from app.services.prospect_csv_import_service import import_prospect_rows
 from app.services.prospect_csv_preview_service import (
     MAX_PROSPECT_CSV_BYTES,
@@ -15,9 +22,55 @@ from app.services.prospect_csv_preview_service import (
     ProspectCsvTooManyRows,
     preview_prospect_csv,
 )
+from app.services.prospect_discovery_service import (
+    DiscoveryCursorError,
+    DiscoveryProviderError,
+    ProspectDiscoveryService,
+    get_discovery_service,
+)
 
 router = APIRouter(prefix="/api/v1/prospect-discovery", tags=["prospect-discovery"])
 MAX_PROSPECT_PREVIEW_RESPONSE_BYTES = 4 * 1024 * 1024
+DISCOVERY_LIMIT_DETAIL = "Discovery usage limit exceeded. Try again later."
+
+
+@router.post("/search", response_model=ProspectDiscoverySearchResponse)
+def search_prospects(
+    payload: ProspectDiscoverySearchRequest,
+    organization: Organization = Depends(get_current_organization),
+    _membership: Membership = Depends(get_current_membership),
+    service: ProspectDiscoveryService = Depends(get_discovery_service),
+) -> ProspectDiscoverySearchResponse:
+    if payload.page_size > settings.prospect_discovery_max_page_size:
+        raise HTTPException(
+            status_code=422,
+            detail="Page size exceeds the configured maximum.",
+        )
+    ticket = prospect_discovery_limiter.allow_request(
+        organization.id,
+        max_requests=settings.prospect_discovery_rate_limit_max,
+        window_seconds=settings.prospect_discovery_usage_window_seconds,
+    )
+    if ticket is None:
+        raise HTTPException(status_code=429, detail=DISCOVERY_LIMIT_DETAIL)
+    try:
+        response = service.search(organization.id, payload)
+    except DiscoveryCursorError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired discovery cursor.") from exc
+    except DiscoveryProviderError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Synthetic discovery is temporarily unavailable.",
+        ) from exc
+    if not prospect_discovery_limiter.allow_results(
+        organization.id,
+        ticket,
+        len(response.items),
+        max_results=settings.prospect_discovery_result_limit,
+        window_seconds=settings.prospect_discovery_usage_window_seconds,
+    ):
+        raise HTTPException(status_code=429, detail=DISCOVERY_LIMIT_DETAIL)
+    return response
 
 
 async def _read_csv_text(request: Request) -> str:

@@ -1,6 +1,118 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+DISCOVERY_INDUSTRIES = (
+    "Financial Services",
+    "Healthcare",
+    "Manufacturing",
+    "Professional Services",
+    "Software",
+)
+DISCOVERY_REGIONS = {
+    "Australia": ("New South Wales", "Victoria"),
+    "Canada": ("British Columbia", "Ontario"),
+    "India": ("Karnataka", "Maharashtra"),
+    "United Kingdom": ("England", "Scotland"),
+    "United States": ("California", "New York", "Texas"),
+}
+
+
+def _normalize_supported_value(
+    value: str | None, supported_values: tuple[str, ...], label: str
+) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.split())
+    if not normalized:
+        raise ValueError(f"{label} must not be blank")
+    canonical = {item.casefold(): item for item in supported_values}
+    try:
+        return canonical[normalized.casefold()]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported {label.lower()}") from exc
+
+
+class ProspectDiscoverySearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    industry: str | None = Field(default=None, min_length=1, max_length=80)
+    country: str | None = Field(default=None, min_length=1, max_length=80)
+    region: str | None = Field(default=None, min_length=1, max_length=80)
+    minimum_employees: int | None = Field(default=None, strict=True, ge=0, le=1_000_000)
+    maximum_employees: int | None = Field(default=None, strict=True, ge=0, le=1_000_000)
+    page_size: int = Field(default=20, strict=True, ge=1, le=100)
+    cursor: str | None = Field(default=None, max_length=1024)
+
+    @field_validator("industry", mode="before")
+    @classmethod
+    def normalize_industry(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        return _normalize_supported_value(value, DISCOVERY_INDUSTRIES, "Industry")
+
+    @field_validator("country", mode="before")
+    @classmethod
+    def normalize_country(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        return _normalize_supported_value(value, tuple(DISCOVERY_REGIONS), "Country")
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def normalize_region(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Region must not be blank")
+        supported = tuple(region for regions in DISCOVERY_REGIONS.values() for region in regions)
+        return _normalize_supported_value(normalized, supported, "Region")
+
+    @model_validator(mode="after")
+    def validate_filters(self) -> "ProspectDiscoverySearchRequest":
+        if (
+            self.minimum_employees is not None
+            and self.maximum_employees is not None
+            and self.minimum_employees > self.maximum_employees
+        ):
+            raise ValueError("Minimum employees cannot exceed maximum employees")
+        if self.region is not None:
+            if self.country is None:
+                raise ValueError("Country is required when region is provided")
+            if self.region not in DISCOVERY_REGIONS[self.country]:
+                raise ValueError("Region does not belong to the selected country")
+        return self
+
+
+class ProspectDiscoveryBusinessResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    industry: str
+    country: str
+    region: str
+    employee_count: int
+    description: str
+    synthetic: Literal[True] = True
+    verification_status: Literal["SYNTHETIC_UNVERIFIED"] = "SYNTHETIC_UNVERIFIED"
+    match_explanations: list[str]
+
+
+class ProspectDiscoverySearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["SYNTHETIC"]
+    items: list[ProspectDiscoveryBusinessResult]
+    page_size: int
+    has_more: bool
+    next_cursor: str | None
 
 
 class ProspectPreviewColumn(BaseModel):

@@ -117,6 +117,13 @@ class Settings(BaseSettings):
     # Single-instance only; it is not shared across API processes and does not use Redis.
     contact_rate_limit_max: int = Field(default=5, ge=1)
     contact_rate_limit_window_seconds: float = Field(default=600, ge=1)
+    # Prospect discovery uses the same single-process limit model; counters are
+    # organization-scoped but are not shared between API processes.
+    prospect_discovery_rate_limit_max: int = Field(default=30, ge=1)
+    prospect_discovery_result_limit: int = Field(default=250, ge=1)
+    prospect_discovery_usage_window_seconds: float = Field(default=3600, ge=1)
+    prospect_discovery_max_page_size: int = Field(default=25, ge=1, le=100)
+    prospect_discovery_cursor_ttl_seconds: int = Field(default=900, ge=60, le=3600)
 
     def agent_execution_stale_timeout_effective_seconds(self) -> float:
         floor = (self.agent_max_tool_iterations + 1) * self.openai_request_timeout_seconds
