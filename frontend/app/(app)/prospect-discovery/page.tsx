@@ -2,524 +2,484 @@
 
 import {
   AlertCircle,
-  Check,
-  FileSpreadsheet,
+  ArrowRight,
+  Building2,
   LoaderCircle,
   RotateCcw,
-  Upload,
-  UserPlus,
+  Search,
+  Sparkles,
 } from "lucide-react";
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
-import { importProspectCsv, previewProspectCsv } from "@/lib/api/prospect-discovery";
+import { searchProspects } from "@/lib/api/prospect-discovery";
 import type {
-  ProspectImportResponse,
-  ProspectPreviewIssue,
-  ProspectPreviewResponse,
-  ProspectPreviewRow,
+  ProspectDiscoverySearchRequest,
+  ProspectDiscoverySearchResponse,
 } from "@/types/api";
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024;
-const ACCEPTED_TYPES = new Set([
-  "text/csv",
-  "application/csv",
-  "application/vnd.ms-excel",
-]);
+const INDUSTRIES = [
+  "Financial Services",
+  "Healthcare",
+  "Manufacturing",
+  "Professional Services",
+  "Software",
+] as const;
 
-function formatFileSize(size: number) {
-  return size < 1024 * 1024
-    ? `${Math.max(1, Math.round(size / 1024))} KB`
-    : `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
+const REGIONS_BY_COUNTRY: Record<string, readonly string[]> = {
+  Australia: ["New South Wales", "Victoria"],
+  Canada: ["British Columbia", "Ontario"],
+  India: ["Karnataka", "Maharashtra"],
+  "United Kingdom": ["England", "Scotland"],
+  "United States": ["California", "New York", "Texas"],
+};
 
-function errorMessage(error: unknown, action: "preview" | "import" = "preview") {
-  if (error instanceof ApiError && typeof error.body === "object" && error.body) {
-    const detail = (error.body as { detail?: unknown }).detail;
-    if (typeof detail === "string") return detail;
+const COUNTRIES = Object.keys(REGIONS_BY_COUNTRY);
+const PAGE_SIZES = [5, 10, 20, 25] as const;
+
+type SearchFilters = {
+  industry: string;
+  country: string;
+  region: string;
+  minimum_employees: string;
+  maximum_employees: string;
+  page_size: number;
+};
+type FilterErrors = Partial<Record<"minimum_employees" | "maximum_employees", string>>;
+
+const INITIAL_FILTERS: SearchFilters = {
+  industry: "",
+  country: "",
+  region: "",
+  minimum_employees: "",
+  maximum_employees: "",
+  page_size: 10,
+};
+
+function safeSearchError(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return "Discovery could not be reached. Check your connection and try again.";
   }
-  return action === "import"
-    ? "The import could not be completed. Check your connection and try again."
-    : "The file could not be previewed. Check your connection and try again.";
+  if (error.status === 401) return "Your session has expired. Sign in again to search.";
+  if (error.status === 403) return "You do not have access to this organization’s discovery workspace.";
+  if (error.status === 429) {
+    return "The organization’s discovery usage limit has been reached. Try again later.";
+  }
+  if (error.status === 503) return "Synthetic discovery is temporarily unavailable. Try again shortly.";
+  if (error.status === 400 || error.status === 422) {
+    return "Some search filters are invalid or the page cursor has expired. Review the filters and search again.";
+  }
+  return "Discovery could not be completed. Try again.";
 }
 
-function duplicateLabel(row: ProspectPreviewRow) {
-  return row.duplicate_reasons
-    .map((reason) => {
-      if (reason === "EXISTING_EMAIL") {
-        return "Email matches a lead in this organization";
-      }
-      if (reason === "IN_FILE_EMAIL") {
-        return `Email duplicates row ${row.duplicate_of_row ?? "in this file"}`;
-      }
-      if (reason === "IN_FILE_NAME_COMPANY") {
-        return "Name and company match another row in this file";
-      }
-      return "Possible duplicate";
-    })
-    .join("; ");
+function parseEmployeeCount(value: string): number | undefined {
+  if (value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : undefined;
 }
 
-function IssueList({ issues }: { issues: ProspectPreviewIssue[] }) {
-  if (issues.length === 0) return null;
+function buildRequest(filters: SearchFilters): ProspectDiscoverySearchRequest {
+  const minimum = parseEmployeeCount(filters.minimum_employees);
+  const maximum = parseEmployeeCount(filters.maximum_employees);
+  return {
+    ...(filters.industry ? { industry: filters.industry } : {}),
+    ...(filters.country ? { country: filters.country } : {}),
+    ...(filters.region ? { region: filters.region } : {}),
+    ...(minimum !== undefined ? { minimum_employees: minimum } : {}),
+    ...(maximum !== undefined ? { maximum_employees: maximum } : {}),
+    page_size: filters.page_size,
+  };
+}
+
+function validateFilters(filters: SearchFilters): FilterErrors {
+  const errors: FilterErrors = {};
+  const minimum = parseEmployeeCount(filters.minimum_employees);
+  const maximum = parseEmployeeCount(filters.maximum_employees);
+  if (filters.minimum_employees !== "" && minimum === undefined) {
+    errors.minimum_employees = "Enter a whole employee count.";
+  } else if (minimum !== undefined && (minimum < 0 || minimum > 1_000_000)) {
+    errors.minimum_employees = "Enter a value from 0 to 1,000,000.";
+  }
+  if (filters.maximum_employees !== "" && maximum === undefined) {
+    errors.maximum_employees = "Enter a whole employee count.";
+  } else if (maximum !== undefined && (maximum < 0 || maximum > 1_000_000)) {
+    errors.maximum_employees = "Enter a value from 0 to 1,000,000.";
+  }
+  if (
+    minimum !== undefined &&
+    maximum !== undefined &&
+    minimum > maximum
+  ) {
+    errors.minimum_employees = "Minimum employees cannot exceed maximum.";
+    errors.maximum_employees = "Maximum employees must be at least the minimum.";
+  }
+  return errors;
+}
+
+function SearchSkeleton() {
   return (
-    <ul className="grid gap-1 text-sm" aria-label="File validation messages">
-      {issues.map((issue, index) => (
-        <li
-          key={`${issue.code}-${issue.row_number ?? "file"}-${index}`}
-          className={
-            issue.severity === "warning"
-              ? "text-warning-text"
-              : "text-danger-text"
-          }
-        >
-          {issue.row_number ? `Row ${issue.row_number}: ` : "File: "}
-          {issue.message}
-        </li>
+    <div role="status" aria-label="Loading synthetic businesses" className="grid gap-3">
+      <span className="text-muted-foreground flex items-center gap-2 text-sm">
+        <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+        Searching synthetic businesses…
+      </span>
+      {[0, 1, 2].map((item) => (
+        <div
+          key={item}
+          aria-hidden="true"
+          className="border-border bg-muted/40 h-24 animate-pulse rounded-lg border"
+        />
       ))}
-    </ul>
-  );
-}
-
-function PreviewTable({ preview }: { preview: ProspectPreviewResponse }) {
-  if (preview.rows.length === 0) {
-    return (
-      <p className="text-muted-foreground border-border border-t py-5 text-sm">
-        No data rows found in this file.
-      </p>
-    );
-  }
-
-  return (
-    <div className="border-border overflow-x-auto border-y">
-      <table className="w-full min-w-176 border-collapse text-left text-sm">
-        <thead className="bg-muted/60 text-muted-foreground sticky top-0 text-xs">
-          <tr>
-            <th scope="col" className="px-3 py-2 font-medium">Row</th>
-            <th scope="col" className="px-3 py-2 font-medium">Status</th>
-            {preview.columns.map((column) => (
-              <th scope="col" key={column.index} className="px-3 py-2 font-medium">
-                <span>{column.label || `Column ${column.index + 1}`}</span>
-                {column.field ? (
-                  <span className="text-muted-foreground/70 ml-1 font-normal">
-                    {column.field}
-                  </span>
-                ) : null}
-              </th>
-            ))}
-            <th scope="col" className="px-3 py-2 font-medium">Validation</th>
-            <th scope="col" className="px-3 py-2 font-medium">Duplicate check</th>
-          </tr>
-        </thead>
-        <tbody className="divide-border divide-y">
-          {preview.rows.map((row) => (
-            <tr key={row.row_number} className="align-top">
-              <th scope="row" className="text-muted-foreground px-3 py-3 font-mono text-xs">
-                {row.row_number}
-              </th>
-              <td className="px-3 py-3">
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                  {row.valid ? (
-                    <Check className="text-success-text size-4" aria-hidden="true" />
-                  ) : (
-                    <AlertCircle className="text-danger-text size-4" aria-hidden="true" />
-                  )}
-                  {row.valid ? "Valid" : "Invalid"}
-                </span>
-              </td>
-              {preview.columns.map((column) => (
-                <td
-                  key={column.index}
-                  className="text-foreground max-w-64 px-3 py-3 wrap-break-word"
-                >
-                  {row.cells[column.index] ?? (
-                    <span className="text-muted-foreground italic">Missing</span>
-                  )}
-                </td>
-              ))}
-              <td className="text-danger-text max-w-64 px-3 py-3">
-                {row.errors.length ? (
-                  <ul className="grid gap-1">
-                    {row.errors.map((issue, index) => (
-                      <li key={`${issue.code}-${index}`}>{issue.message}</li>
-                    ))}
-                  </ul>
-                ) : <span className="text-muted-foreground">None</span>}
-              </td>
-              <td className="max-w-64 px-3 py-3">
-                {row.duplicate_reasons.length ? (
-                  <span className="text-warning-text">{duplicateLabel(row)}</span>
-                ) : <span className="text-muted-foreground">No match found</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
 
-function ImportResults({ result }: { result: ProspectImportResponse }) {
-  const completeFailure =
-    result.imported_count === 0 && result.failed_count > 0;
-  const partialSuccess =
-    result.imported_count > 0 &&
-    (result.skipped_count > 0 || result.failed_count > 0);
-  const title = completeFailure
-    ? "Import failed"
-    : partialSuccess
-      ? "Partial import complete"
-      : result.imported_count > 0
-        ? "Import complete"
-        : "No prospects imported";
-
-  return (
-    <section
-      aria-labelledby="import-result-title"
-      role={completeFailure ? "alert" : "status"}
-      className="border-border grid gap-3 border-y py-4"
-    >
-      <div>
-        <h3 id="import-result-title" className="text-sm font-semibold">
-          {title}
-        </h3>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {result.imported_count} imported, {result.skipped_count} skipped,{" "}
-          {result.failed_count} failed.
+function BusinessResults({
+  response,
+}: {
+  response: ProspectDiscoverySearchResponse;
+}) {
+  if (response.items.length === 0) {
+    return (
+      <div className="border-border grid justify-items-center gap-2 rounded-lg border border-dashed px-5 py-10 text-center">
+        <Search className="text-muted-foreground size-5" aria-hidden="true" />
+        <h2 className="text-sm font-semibold">No synthetic businesses matched</h2>
+        <p className="text-muted-foreground max-w-lg text-sm">
+          Try widening the filters. The fixed synthetic dataset is intentionally
+          limited and does not represent comprehensive real-world coverage.
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-96 border-collapse text-left text-sm">
-          <thead className="text-muted-foreground border-border border-b text-xs">
-            <tr>
-              <th scope="col" className="py-2 pr-4 font-medium">
-                Row
-              </th>
-              <th scope="col" className="py-2 pr-4 font-medium">
-                Result
-              </th>
-              <th scope="col" className="py-2 font-medium">
-                Reason
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-border divide-y">
-            {result.rows.map((row) => (
-              <tr key={row.row_number}>
-                <th
-                  scope="row"
-                  className="text-muted-foreground py-2 pr-4 font-mono text-xs"
-                >
-                  {row.row_number}
-                </th>
-                <td className="py-2 pr-4">{row.status.toLowerCase()}</td>
-                <td className="text-muted-foreground py-2">
-                  {row.message ?? "Lead created."}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    );
+  }
+
+  return (
+    <div className="grid gap-3" aria-label="Synthetic business results">
+      {response.items.map((business) => (
+        <article
+          key={`${business.name}-${business.country}-${business.region}`}
+          className="border-border bg-card grid gap-3 rounded-lg border p-4 sm:p-5"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 gap-3">
+              <span className="bg-muted text-muted-foreground grid size-9 shrink-0 place-items-center rounded-md">
+                <Building2 className="size-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold">{business.name}</h2>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {business.industry} · {business.region}, {business.country}
+                </p>
+              </div>
+            </div>
+            <span className="bg-warning/15 text-warning-text inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium">
+              <Sparkles className="size-3.5" aria-hidden="true" />
+              Synthetic · unverified
+            </span>
+          </div>
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[minmax(8rem,0.25fr)_1fr]">
+            <dt className="text-muted-foreground">Employee count</dt>
+            <dd>{business.employee_count.toLocaleString()}</dd>
+            <dt className="text-muted-foreground">Description</dt>
+            <dd>{business.description}</dd>
+            <dt className="text-muted-foreground">Search match</dt>
+            <dd>
+              <ul className="grid gap-1">
+                {business.match_explanations.map((explanation) => (
+                  <li key={explanation}>{explanation}</li>
+                ))}
+              </ul>
+              <p className="text-muted-foreground mt-2 text-xs">
+                Filter explanations only; no formal CompanyProspect ICP fit score
+                is available for these ephemeral results.
+              </p>
+            </dd>
+          </dl>
+        </article>
+      ))}
+    </div>
   );
 }
 
 export default function ProspectDiscoveryPage() {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const importInFlightRef = useRef(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ProspectPreviewResponse | null>(null);
-  const [importResult, setImportResult] =
-    useState<ProspectImportResponse | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<SearchFilters>(INITIAL_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<SearchFilters | null>(null);
+  const [response, setResponse] = useState<ProspectDiscoverySearchResponse | null>(null);
+  const [errors, setErrors] = useState<FilterErrors>({});
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  const requestSequence = useRef(0);
+  const requestInFlight = useRef(false);
 
-  function selectFile(candidate?: File) {
-    if (!candidate) return;
-    setPreview(null);
-    setImportResult(null);
-    setImportError(null);
-    setConfirmed(false);
-    setUploadError(null);
-    setFileError(null);
-    if (!candidate.name.toLocaleLowerCase().endsWith(".csv")) {
-      setFile(null);
-      setFileError("Choose a file with the .csv extension.");
-      return;
-    }
-    if (candidate.type && !ACCEPTED_TYPES.has(candidate.type.toLowerCase())) {
-      setFile(null);
-      setFileError("This file type is not supported. Choose a CSV file.");
-      return;
-    }
-    if (candidate.size > MAX_FILE_SIZE) {
-      setFile(null);
-      setFileError("CSV files must be 2 MiB or smaller.");
-      return;
-    }
-    setFile(candidate);
-  }
-
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    selectFile(event.currentTarget.files?.[0]);
-    event.currentTarget.value = "";
-  }
-
-  function handleDrop(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    setIsDragging(false);
-    selectFile(event.dataTransfer.files[0]);
-  }
-
-  async function runPreview() {
-    if (!file || isLoading || isImporting) return;
+  async function executeSearch(
+    request: ProspectDiscoverySearchRequest,
+    nextFilters: SearchFilters,
+  ) {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
+    const sequence = ++requestSequence.current;
     setIsLoading(true);
-    setUploadError(null);
-    setPreview(null);
-    setImportResult(null);
-    setImportError(null);
-    setConfirmed(false);
+    setSearchError(null);
+    setResponse(null);
+    setAppliedFilters(nextFilters);
     try {
-      setPreview(await previewProspectCsv(file));
+      const result = await searchProspects(request);
+      if (sequence === requestSequence.current) setResponse(result);
     } catch (error) {
-      setUploadError(errorMessage(error));
+      if (sequence === requestSequence.current) setSearchError(safeSearchError(error));
     } finally {
-      setIsLoading(false);
+      if (sequence === requestSequence.current) {
+        setIsLoading(false);
+        requestInFlight.current = false;
+      }
     }
   }
 
-  async function runImport() {
-    if (
-      !file ||
-      !preview ||
-      !confirmed ||
-      importInFlightRef.current ||
-      importResult
-    )
-      return;
-    importInFlightRef.current = true;
-    setIsImporting(true);
-    setImportError(null);
-    try {
-      setImportResult(await importProspectCsv(file));
-    } catch (error) {
-      setImportError(errorMessage(error, "import"));
-    } finally {
-      importInFlightRef.current = false;
-      setIsImporting(false);
-    }
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (requestInFlight.current) return;
+    const nextErrors = validateFilters(filters);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+    void executeSearch(buildRequest(filters), filters);
   }
 
-  const eligibleCount = preview
-    ? preview.rows.filter(
-        (row) => row.valid && row.duplicate_reasons.length === 0,
-      ).length
-    : 0;
+  function updateFilters(update: Partial<SearchFilters>) {
+    setFilters((current) => ({ ...current, ...update }));
+    setErrors({});
+    setAppliedFilters(null);
+    setResponse(null);
+    setSearchError(null);
+  }
+
+  function resetFilters() {
+    requestSequence.current += 1;
+    requestInFlight.current = false;
+    setFilters(INITIAL_FILTERS);
+    setAppliedFilters(null);
+    setResponse(null);
+    setErrors({});
+    setSearchError(null);
+    setIsLoading(false);
+  }
+
+  function loadNextPage() {
+    if (!response?.next_cursor || !appliedFilters || requestInFlight.current) return;
+    void executeSearch(
+      { ...buildRequest(appliedFilters), cursor: response.next_cursor },
+      appliedFilters,
+    );
+  }
+
+  const resultCount = response?.items.length ?? 0;
 
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
-        title="Prospect Discovery"
-        description="Review and validate business prospects from a CSV before any CRM action."
+        title="Discovery Workspace"
+        description="Explore a small, fixed set of synthetic business examples using your discovery filters."
+        titleBadge={
+          <span className="bg-warning/15 text-warning-text rounded-full px-2.5 py-1 text-xs font-medium">
+            Synthetic data only
+          </span>
+        }
       />
 
-      <section aria-labelledby="csv-upload-title" className="grid gap-4">
-        <div>
-          <h2 id="csv-upload-title" className="text-sm font-semibold">CSV file</h2>
-          <p className="text-muted-foreground mt-1 text-sm">
-            UTF-8 CSV, up to 2 MiB and 500 data rows.
-          </p>
-        </div>
-        <label
-          htmlFor="prospect-csv-file"
-          onDragOver={(event) => {
-            event.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`border-border bg-muted/30 hover:bg-muted/50 focus-within:ring-ring grid min-h-36 cursor-pointer place-items-center border border-dashed px-5 py-6 text-center transition-colors focus-within:ring-2 ${isDragging ? "border-primary bg-primary/5" : ""}`}
-        >
-          <input
-            ref={inputRef}
-            id="prospect-csv-file"
-            type="file"
-            accept=".csv,text/csv,application/csv"
-            aria-label="Choose CSV file"
-            className="sr-only"
-            disabled={isLoading || isImporting}
-            onChange={handleFileChange}
-          />
-          <span className="grid justify-items-center gap-2">
-            <FileSpreadsheet className="text-primary size-6" aria-hidden="true" />
-            <span className="text-sm font-medium">
-              {file ? file.name : "Choose a CSV or drop it here"}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {file ? formatFileSize(file.size) : "CSV files only · 2 MiB maximum"}
-            </span>
-          </span>
-        </label>
-        {fileError ? <p role="alert" className="text-danger-text text-sm">{fileError}</p> : null}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            onClick={() => void runPreview()}
-            disabled={!file || isLoading || isImporting}
-          >
-            {isLoading ? (
-              <LoaderCircle className="animate-spin" aria-hidden="true" />
-            ) : preview ? (
-              <RotateCcw aria-hidden="true" />
-            ) : (
-              <Upload aria-hidden="true" />
-            )}
-            {isLoading ? "Validating CSV" : preview ? "Preview again" : "Preview CSV"}
-          </Button>
-          <p className="text-muted-foreground text-xs" aria-live="polite">
-            Review every row before confirming an import.
-          </p>
-        </div>
-      </section>
-
-      {uploadError ? (
-        <div role="alert" className="border-destructive/40 bg-destructive/5 flex flex-wrap items-center justify-between gap-3 border px-4 py-3">
-          <p className="text-danger-text flex items-center gap-2 text-sm">
-            <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-            {uploadError}
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void runPreview()} disabled={isLoading || !file}>
-            Retry preview
-          </Button>
-        </div>
-      ) : null}
-
-      {isLoading || isImporting ? (
-        <p role="status" className="text-muted-foreground flex items-center gap-2 py-3 text-sm">
-          <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-          {isImporting ? "Importing confirmed prospects…" : "Reading and validating CSV rows…"}
+      <aside
+        className="border-warning/40 bg-warning/5 flex gap-3 rounded-lg border px-4 py-3"
+        aria-label="Synthetic data notice"
+      >
+        <Sparkles className="text-warning-text mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <p className="text-sm leading-5">
+          <strong>Synthetic, unverified examples.</strong> These records are
+          generated from a fixed demo dataset, are not verified real companies,
+          and are not saved to your CRM. No live business-data provider is
+          connected.
         </p>
-      ) : null}
+      </aside>
 
-      {preview ? (
-        <section aria-labelledby="preview-title" className="grid gap-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 id="preview-title" className="text-sm font-semibold">Preview results</h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Detected columns are shown using their original header labels.
-              </p>
-            </div>
-            <dl className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
-              {[
-                ["Rows", preview.summary.total_rows],
-                ["Valid", preview.summary.valid_rows],
-                ["Invalid", preview.summary.invalid_rows],
-                ["Duplicates", preview.summary.duplicate_rows],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <dt className="text-muted-foreground text-xs">{label}</dt>
-                  <dd className="text-foreground mt-0.5 text-sm font-semibold">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-          <IssueList issues={preview.issues} />
-          <PreviewTable preview={preview} />
-          <section
-            aria-labelledby="import-review-title"
-            className="border-border grid gap-3 border-t pt-4"
-          >
-            <div>
-              <h2 id="import-review-title" className="text-sm font-semibold">
-                Review and import
-              </h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {eligibleCount} valid, non-duplicate{" "}
-                {eligibleCount === 1 ? "prospect is" : "prospects are"}{" "}
-                eligible. {preview.summary.total_rows - eligibleCount} invalid
-                or duplicate{" "}
-                {preview.summary.total_rows - eligibleCount === 1
-                  ? "row will be"
-                  : "rows will be"}{" "}
-                skipped. Existing leads will never be overwritten. Imported
-                records are created as new CRM leads.
-              </p>
-            </div>
-            <label className="flex max-w-2xl items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                disabled={
-                  !eligibleCount || isImporting || importResult !== null
-                }
-                onChange={(event) => setConfirmed(event.currentTarget.checked)}
-                className="border-input accent-primary mt-0.5 size-4 shrink-0"
-              />
-              <span>
-                I confirm that eligible prospects should be added to this
-                organization&apos;s CRM.
-              </span>
-            </label>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                onClick={() => void runImport()}
-                disabled={
-                  !eligibleCount ||
-                  !confirmed ||
-                  isImporting ||
-                  isLoading ||
-                  importResult !== null
-                }
+      <section aria-labelledby="search-filters-title" className="border-border rounded-lg border p-4 sm:p-5">
+        <div className="mb-4">
+          <h2 id="search-filters-title" className="text-sm font-semibold">
+            Search filters
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Filters are limited to the fields supported by synthetic discovery.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="grid content-start gap-1.5 text-sm">
+              <span className="font-medium">Industry</span>
+              <select
+                value={filters.industry}
+                disabled={isLoading}
+                onChange={(event) => updateFilters({ industry: event.target.value })}
+                className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2"
               >
-                {isImporting ? (
-                  <LoaderCircle className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <UserPlus aria-hidden="true" />
-                )}
-                {isImporting
-                  ? "Importing prospects"
-                  : `Import ${eligibleCount} eligible leads`}
-              </Button>
-              {importResult ? (
-                <span className="text-muted-foreground text-sm">
-                  {importResult.failed_count > 0
-                    ? "Preview this file again before retrying failed rows; email duplicates will be skipped."
-                    : "This file has already been submitted."}
+                <option value="">All supported industries</option>
+                {INDUSTRIES.map((industry) => (
+                  <option key={industry} value={industry}>{industry}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid content-start gap-1.5 text-sm">
+              <span className="font-medium">Country</span>
+              <select
+                value={filters.country}
+                disabled={isLoading}
+                onChange={(event) => updateFilters({ country: event.target.value, region: "" })}
+                className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2"
+              >
+                <option value="">All supported countries</option>
+                {COUNTRIES.map((country) => (
+                  <option key={country} value={country}>{country}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid content-start gap-1.5 text-sm">
+              <span className="font-medium">Region</span>
+              <select
+                value={filters.region}
+                disabled={!filters.country || isLoading}
+                onChange={(event) => updateFilters({ region: event.target.value })}
+                className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">All supported regions</option>
+                {(REGIONS_BY_COUNTRY[filters.country] ?? []).map((region) => (
+                  <option key={region} value={region}>{region}</option>
+                ))}
+              </select>
+              <span className="text-muted-foreground text-xs">Select a country first.</span>
+            </label>
+            <label className="grid content-start gap-1.5 text-sm">
+              <span className="font-medium">Minimum employees</span>
+              <input
+                type="number"
+                min={0}
+                max={1_000_000}
+                step={1}
+                inputMode="numeric"
+                value={filters.minimum_employees}
+                disabled={isLoading}
+                aria-invalid={Boolean(errors.minimum_employees)}
+                aria-describedby={errors.minimum_employees ? "minimum-employees-error" : undefined}
+                onChange={(event) => updateFilters({ minimum_employees: event.target.value })}
+                className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2 aria-invalid:border-destructive"
+              />
+              {errors.minimum_employees ? (
+                <span id="minimum-employees-error" className="text-danger-text text-xs" role="alert">
+                  {errors.minimum_employees}
                 </span>
               ) : null}
-            </div>
-            {importError ? (
-              <div
-                role="alert"
-                className="border-destructive/40 bg-destructive/5 flex items-center gap-2 border px-4 py-3 text-sm"
+            </label>
+            <label className="grid content-start gap-1.5 text-sm">
+              <span className="font-medium">Maximum employees</span>
+              <input
+                type="number"
+                min={0}
+                max={1_000_000}
+                step={1}
+                inputMode="numeric"
+                value={filters.maximum_employees}
+                disabled={isLoading}
+                aria-invalid={Boolean(errors.maximum_employees)}
+                aria-describedby={errors.maximum_employees ? "maximum-employees-error" : undefined}
+                onChange={(event) => updateFilters({ maximum_employees: event.target.value })}
+                className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2 aria-invalid:border-destructive"
+              />
+              {errors.maximum_employees ? (
+                <span id="maximum-employees-error" className="text-danger-text text-xs" role="alert">
+                  {errors.maximum_employees}
+                </span>
+              ) : null}
+            </label>
+            <label className="grid content-start gap-1.5 text-sm">
+              <span className="font-medium">Results per page</span>
+              <select
+                value={filters.page_size}
+                disabled={isLoading}
+                onChange={(event) => updateFilters({ page_size: Number(event.target.value) })}
+                className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2"
               >
-                <AlertCircle
-                  className="text-danger-text size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                <span className="text-danger-text">{importError}</span>
-              </div>
-            ) : null}
-            {importResult ? <ImportResults result={importResult} /> : null}
-          </section>
-        </section>
-      ) : !isLoading && !uploadError ? (
-        <section aria-labelledby="empty-preview-title" className="border-border border-t py-6">
-          <h2 id="empty-preview-title" className="text-sm font-medium">No preview yet</h2>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Choose a CSV file to see its columns, validation results, and duplicate checks.
+                {PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>{size} results</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? (
+                <LoaderCircle className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Search aria-hidden="true" />
+              )}
+              {isLoading ? "Searching…" : "Search businesses"}
+            </Button>
+            <Button type="button" variant="outline" onClick={resetFilters}>
+              <RotateCcw aria-hidden="true" />
+              Reset filters
+            </Button>
+          </div>
+        </form>
+      </section>
+
+      {searchError ? (
+        <div role="alert" className="border-destructive/40 bg-destructive/5 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3">
+          <p className="text-danger-text flex items-center gap-2 text-sm">
+            <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+            {searchError}
           </p>
+          {appliedFilters ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void executeSearch(buildRequest(appliedFilters), appliedFilters)}
+              disabled={isLoading}
+            >
+              Retry search
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isLoading ? <SearchSkeleton /> : null}
+
+      {response && !isLoading ? (
+        <section aria-labelledby="search-results-title" className="grid gap-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 id="search-results-title" className="text-sm font-semibold">
+                Search results
+              </h2>
+              <p className="text-muted-foreground mt-1 text-sm" aria-live="polite">
+                {resultCount} synthetic {resultCount === 1 ? "business" : "businesses"} on this page
+                {response.has_more ? " · More results available" : " · End of results"}
+              </p>
+            </div>
+            <span className="text-muted-foreground text-xs">
+              Match explanations are filter matches, not formal ICP fit scores.
+            </span>
+          </div>
+          <BusinessResults response={response} />
+          {response.has_more && response.next_cursor ? (
+            <div className="flex justify-end">
+              <Button type="button" variant="outline" onClick={loadNextPage} disabled={isLoading}>
+                Next page
+                <ArrowRight aria-hidden="true" />
+              </Button>
+            </div>
+          ) : null}
         </section>
+      ) : null}
+
+      {!response && !isLoading && !searchError ? (
+        <div className="border-border text-muted-foreground rounded-lg border border-dashed px-5 py-8 text-center text-sm">
+          Choose any supported filters and search to explore the synthetic demo dataset.
+        </div>
       ) : null}
     </div>
   );

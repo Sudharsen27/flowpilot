@@ -702,6 +702,36 @@ export type ProspectPreviewColumn = {
   field: string | null;
 };
 
+export type ProspectDiscoverySearchRequest = {
+  industry?: string;
+  country?: string;
+  region?: string;
+  minimum_employees?: number;
+  maximum_employees?: number;
+  page_size: number;
+  cursor?: string;
+};
+
+export type ProspectDiscoveryBusinessResult = {
+  name: string;
+  industry: string;
+  country: string;
+  region: string;
+  employee_count: number;
+  description: string;
+  synthetic: true;
+  verification_status: "SYNTHETIC_UNVERIFIED";
+  match_explanations: string[];
+};
+
+export type ProspectDiscoverySearchResponse = {
+  source: "SYNTHETIC";
+  items: ProspectDiscoveryBusinessResult[];
+  page_size: number;
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
 export type ProspectPreviewIssue = {
   code: string;
   message: string;

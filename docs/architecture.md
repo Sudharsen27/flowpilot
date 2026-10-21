@@ -88,6 +88,8 @@ The only adapter is an in-memory fixed synthetic dataset. It performs no network
 
 No real business-data provider is implemented or enabled. Licensing approval is not inferred from a setting. A future licensed adapter must implement the provider-independent service interface, be activated only after licensing and security approval are explicitly verified, and continue to use the same authenticated tenant scope, signed pagination, usage controls, and human-reviewed flow. Provider discovery must remain separate from CRM persistence and must not trigger import, lead creation, outreach, or automation.
 
+The authenticated frontend route `/prospect-discovery` presents this endpoint as a read-only Discovery Workspace. It uses the existing bearer-token API client and only sends the supported search fields. The response's signed cursor is passed through unchanged. Synthetic badges and filter explanations are not ICP fit scores. Formal fit scoring is currently available only at `POST /api/v1/company-prospects/{prospect_id}/fit-score` for an already persisted CompanyProspect; there is no ephemeral discovery-result scoring API. The workspace therefore does not create temporary CRM rows or calculate a score in the browser. Search results remain ephemeral, and the workspace has no import, save, lifecycle, or outreach actions.
+
 ## System shape
 
 Two applications in a monorepo:

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiGet, apiPost, apiPostFile, resolveApiBaseUrl } from "@/lib/api/client";
-import { importProspectCsv } from "@/lib/api/prospect-discovery";
+import { importProspectCsv, searchProspects } from "@/lib/api/prospect-discovery";
 
 describe("API client", () => {
   beforeEach(() => {
@@ -104,6 +104,42 @@ describe("API client", () => {
         headers: expect.objectContaining({
           "Content-Type": "text/csv",
           "X-Prospect-Import-Confirmed": "true",
+        }),
+      }),
+    );
+  });
+
+  it("posts discovery search through the authenticated JSON API client", async () => {
+    window.localStorage.setItem("flowpilot.access_token", "discovery-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          source: "SYNTHETIC",
+          items: [],
+          page_size: 10,
+          has_more: false,
+          next_cursor: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    const input = {
+      industry: "Software",
+      country: "United States",
+      page_size: 10,
+    };
+
+    const result = await searchProspects(input);
+
+    expect(result.source).toBe("SYNTHETIC");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/prospect-discovery/search",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(input),
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Bearer /),
+          "Content-Type": "application/json",
         }),
       }),
     );
