@@ -67,6 +67,20 @@ Health:
 - `GET /health` — liveness. It does not check PostgreSQL.
 - `GET /health/ready` — readiness. It checks database connectivity and returns 503 without connection details when PostgreSQL is unavailable.
 
+### Government company discovery (optional)
+
+This integration is disabled by default. Do not enable it for customer use until you have written confirmation from the data provider that your intended commercial use and expected API quota are permitted. An API key alone is not permission for commercial use.
+
+After that approval, add these variables to the **API web service** environment in Render (never to Vercel or a `NEXT_PUBLIC_*` variable):
+
+- `ROC_DATA_GOV_IN_API_KEY` — the server-side API key issued by data.gov.in; keep it secret
+- `ROC_DATA_GOV_IN_PROVIDER_ENABLED=true`
+- `ROC_DATA_GOV_IN_REQUEST_TIMEOUT_SECONDS=10` (optional; allowed range is 1–30)
+- `ROC_DATA_GOV_IN_MAX_PAGE_SIZE=100` (optional; allowed range is 1–100)
+- `ROC_DATA_GOV_IN_MAX_OFFSET=100000` (optional; allowed range is 0–1000000)
+
+Save the environment changes and restart or redeploy the API service. The authenticated prospect-discovery page reads availability from the API at runtime; once the API has both the key and explicit enable flag, its government search fields become active. If it remains unavailable, confirm both variables are set on the API service and inspect the API service's configuration without printing or sharing the key. The endpoint is read-only and results are not saved to the CRM.
+
 ## Worker (Render background worker)
 
 Use the same repository, build, and environment as the API, including `DATABASE_URL`. Do not give the worker a public HTTP service. Do not run `uvicorn` in this service.
