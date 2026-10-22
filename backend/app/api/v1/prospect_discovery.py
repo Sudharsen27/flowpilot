@@ -1,10 +1,12 @@
 import asyncio
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_membership, get_current_organization
 from app.company_data.data_gov_in_provider import get_roc_company_data_provider
+from app.company_data.normalized_company import normalize_company_record
 from app.company_data.provider import CompanyDataProviderError, CompanyDataProviderNotConfigured
 from app.company_data.schemas import (
     GovernmentCompanyDiscoveryRequest,
@@ -152,9 +154,18 @@ def search_government_companies(
     ):
         raise HTTPException(status_code=429, detail=DISCOVERY_LIMIT_DETAIL)
 
+    retrieved_at = datetime.now(UTC)
     return GovernmentCompanyDiscoveryResponse(
         source="GOVERNMENT",
         items=list(page.records),
+        normalized_items=[
+            normalize_company_record(
+                record,
+                attribution=page.attribution,
+                retrieved_at=retrieved_at,
+            )
+            for record in page.records
+        ],
         total=page.total,
         offset=page.offset,
         page_size=page.limit,

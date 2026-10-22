@@ -57,6 +57,36 @@ function governmentResponse(
         OptionalSourceField: null,
       },
     ],
+    normalized_items: [
+      {
+        cin: "U12345DL2001PLC123456",
+        company_name: "Example Registry Company",
+        company_status: null,
+        company_class: null,
+        company_category: null,
+        company_sub_category: null,
+        authorized_capital: null,
+        paid_up_capital: null,
+        number_of_members: null,
+        date_of_incorporation: "2001-01-01",
+        registered_address: null,
+        company_state_code: "DL",
+        registrar_of_companies: null,
+        principal_business_activity: null,
+        industrial_classification_code: null,
+        attribution: {
+          provider: "data.gov.in",
+          dataset: "Registrars of Companies (RoC)-wise Company Master Data",
+          resource_uuid: "4dbe5667-7b6b-41d7-82af-211562424d9a",
+          endpoint:
+            "https://api.data.gov.in/resource/4dbe5667-7b6b-41d7-82af-211562424d9a",
+          attribution:
+            "Government of India, Ministry of Corporate Affairs, via data.gov.in.",
+          licensing_status: "PENDING_WRITTEN_CLARIFICATION",
+        },
+        retrieved_at: "2026-10-22T07:52:45Z",
+      },
+    ],
     total: 3,
     offset: 0,
     page_size: 1,
@@ -158,16 +188,21 @@ describe("Government Company Discovery", () => {
     ).toBeVisible();
     const record = screen.getByRole("article");
     expect(within(record).getByText("Government sourced")).toBeVisible();
-    expect(within(record).getByText("U12345DL2001PLC123456")).toBeVisible();
-    expect(within(record).getByText("DL")).toBeVisible();
+    expect(
+      within(record).getAllByText("U12345DL2001PLC123456"),
+    ).toHaveLength(2);
+    expect(within(record).getAllByText("DL")).toHaveLength(2);
     expect(within(record).getByText("OptionalSourceField")).toBeVisible();
     expect(within(record).getByText("null")).toBeVisible();
+    expect(within(record).getByText("Normalized source fields")).toBeVisible();
+    expect(within(record).getByText("2001-01-01")).toBeVisible();
+    expect(within(record).getByText(/Retrieved at 2026-10-22T07:52:45Z/)).toBeVisible();
     expect(
       screen.getByText(/Licence and API quota clarification is pending/),
     ).toBeVisible();
     expect(
-      screen.getByText(/Government of India, Ministry of Corporate Affairs/),
-    ).toBeVisible();
+      screen.getAllByText(/Government of India, Ministry of Corporate Affairs/),
+    ).toHaveLength(2);
     expect(
       screen.getByRole("link", { name: "View dataset resource" }),
     ).toHaveAttribute("href", governmentResponse().attribution.endpoint);

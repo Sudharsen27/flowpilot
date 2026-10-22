@@ -47,9 +47,30 @@ export type CompanyDataAttribution = {
   licensing_status: string;
 };
 
+export type NormalizedCompanyRecord = {
+  cin: string | null;
+  company_name: string | null;
+  company_status: string | number | boolean | null;
+  company_class: string | number | boolean | null;
+  company_category: string | number | boolean | null;
+  company_sub_category: string | number | boolean | null;
+  authorized_capital: string | number | boolean | null;
+  paid_up_capital: string | number | boolean | null;
+  number_of_members: string | number | boolean | null;
+  date_of_incorporation: string | null;
+  registered_address: string | number | boolean | null;
+  company_state_code: string | number | boolean | null;
+  registrar_of_companies: string | number | boolean | null;
+  principal_business_activity: string | number | boolean | null;
+  industrial_classification_code: string | number | boolean | null;
+  attribution: CompanyDataAttribution;
+  retrieved_at: string;
+};
+
 export type GovernmentCompanyDiscoveryResponse = {
   source: "GOVERNMENT";
   items: Record<string, string | number | boolean | null>[];
+  normalized_items?: NormalizedCompanyRecord[];
   total: number | null;
   offset: number;
   page_size: number;

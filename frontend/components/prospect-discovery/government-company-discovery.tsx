@@ -10,6 +10,7 @@ import { searchGovernmentCompanies } from "@/lib/api/prospect-discovery";
 import { getRuntimeConfiguration } from "@/lib/api/runtime";
 import type {
   GovernmentCompanyDiscoveryResponse,
+  NormalizedCompanyRecord,
   RuntimeConfiguration,
 } from "@/types/api";
 
@@ -56,6 +57,52 @@ function displayRecordValue(value: string | number | boolean | null): string {
   return String(value);
 }
 
+function NormalizedRecord({
+  record,
+}: {
+  record: NormalizedCompanyRecord;
+}) {
+  const fields: [string, string | number | boolean | null][] = [
+    ["Company name", record.company_name],
+    ["CIN", record.cin],
+    ["Status", record.company_status],
+    ["Class", record.company_class],
+    ["Category", record.company_category],
+    ["Sub-category", record.company_sub_category],
+    ["Authorized capital", record.authorized_capital],
+    ["Paid-up capital", record.paid_up_capital],
+    ["Number of members", record.number_of_members],
+    ["Date of incorporation", record.date_of_incorporation],
+    ["Registered address", record.registered_address],
+    ["State code", record.company_state_code],
+    ["Registrar of Companies", record.registrar_of_companies],
+    ["Principal business activity", record.principal_business_activity],
+    ["Industrial classification code", record.industrial_classification_code],
+  ];
+
+  return (
+    <section
+      aria-label="Normalized company record"
+      className="border-border grid gap-2 rounded-md border border-dashed p-3 text-sm"
+    >
+      <h4 className="font-medium">Normalized source fields</h4>
+      <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[minmax(8rem,0.25fr)_1fr]">
+        {fields
+          .filter(([, value]) => value !== null)
+          .map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="break-words">{displayRecordValue(value)}</dd>
+            </div>
+          ))}
+      </dl>
+      <p className="text-muted-foreground text-xs">
+        {record.attribution.attribution} Retrieved at {record.retrieved_at}.
+      </p>
+    </section>
+  );
+}
+
 function GovernmentRecords({
   response,
 }: {
@@ -78,6 +125,7 @@ function GovernmentRecords({
   return (
     <div className="grid gap-3" aria-label="Government company records">
       {response.items.map((record, index) => {
+        const normalizedRecord = response.normalized_items?.[index];
         const nameKey = companyNameField(record);
         const nameValue = nameKey ? record[nameKey] : null;
         const name =
@@ -113,6 +161,9 @@ function GovernmentRecords({
                   </div>
                 ))}
               </dl>
+            ) : null}
+            {normalizedRecord ? (
+              <NormalizedRecord record={normalizedRecord} />
             ) : null}
           </article>
         );

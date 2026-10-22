@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.company_data.normalized_company import NormalizedCompanyRecord
 from app.company_data.provider import CompanyDataAttribution, CompanyDataRecord
 
 
@@ -25,6 +26,7 @@ class GovernmentCompanyDiscoveryResponse(BaseModel):
 
     source: Literal["GOVERNMENT"]
     items: list[CompanyDataRecord]
+    normalized_items: list[NormalizedCompanyRecord] = Field(default_factory=list)
     total: int | None
     offset: int
     page_size: int

@@ -28,6 +28,7 @@ GOVERNMENT_RECORD: CompanyDataRecord = {
     "CorporateIdentificationNumber": "U12345DL2001PLC123456",
     "CompanyName": "Example Registry Company",
     "CompanyStateCode": "DL",
+    "DateOfIncorporation": "01/01/2001",
 }
 
 
@@ -95,6 +96,11 @@ def test_government_route_selects_provider_and_returns_attributed_records(
     body = response.json()
     assert body["source"] == "GOVERNMENT"
     assert body["items"] == [GOVERNMENT_RECORD]
+    assert body["normalized_items"][0]["cin"] == "U12345DL2001PLC123456"
+    assert body["normalized_items"][0]["company_name"] == "Example Registry Company"
+    assert body["normalized_items"][0]["date_of_incorporation"] == "2001-01-01"
+    assert body["normalized_items"][0]["attribution"]["provider"] == "data.gov.in"
+    assert body["normalized_items"][0]["retrieved_at"]
     assert body["offset"] == 2
     assert body["page_size"] == 1
     assert body["total"] == 5
