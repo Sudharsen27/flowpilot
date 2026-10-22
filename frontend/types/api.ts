@@ -79,6 +79,39 @@ export type GovernmentCompanyDiscoveryResponse = {
   attribution: CompanyDataAttribution;
 };
 
+export type DuplicateAssessmentOutcome =
+  | "NEW"
+  | "EXACT_MATCH"
+  | "POSSIBLE_DUPLICATE"
+  | "INSUFFICIENT_DATA";
+
+export type CompanyDuplicateCandidateInput = {
+  reference_id: string;
+  company_name?: string | null;
+  website_domain?: string | null;
+  cin?: string | null;
+};
+
+export type CompanyDuplicateAssessmentRequest = {
+  candidates: CompanyDuplicateCandidateInput[];
+};
+
+export type CompanyDuplicateAssessmentItem = {
+  reference_id: string;
+  outcome: DuplicateAssessmentOutcome;
+  reason_code: string;
+  explanation: string;
+  matching_fields: string[];
+  existing_match_references: string[];
+  in_batch_match_reference?: string | null;
+};
+
+export type CompanyDuplicateAssessmentResponse = {
+  assessments: CompanyDuplicateAssessmentItem[];
+  total_evaluated: number;
+  persisted_cin_available: boolean;
+};
+
 export type MembershipPublic = {
   id: string;
   role: MembershipRole;

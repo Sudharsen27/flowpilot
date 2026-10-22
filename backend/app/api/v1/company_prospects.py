@@ -5,6 +5,10 @@ from app.api.deps import get_current_organization
 from app.db.session import get_db
 from app.models.company_prospect import CompanyProspectStatus
 from app.models.organization import Organization
+from app.schemas.company_duplicate_assessment import (
+    CompanyDuplicateAssessmentRequest,
+    CompanyDuplicateAssessmentResponse,
+)
 from app.schemas.company_prospect import (
     CompanyProspectCreate,
     CompanyProspectLifecycleRequest,
@@ -69,3 +73,12 @@ def score_company_prospect(
     db: Session = Depends(get_db),
 ) -> LeadFitScore:
     return CompanyProspectService(db).score(organization.id, prospect_id, evidence)
+
+
+@router.post("/duplicate-assessment", response_model=CompanyDuplicateAssessmentResponse)
+def assess_company_duplicates(
+    payload: CompanyDuplicateAssessmentRequest,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> CompanyDuplicateAssessmentResponse:
+    return CompanyProspectService(db).assess_duplicates(organization.id, payload)

@@ -1,11 +1,13 @@
 import { apiPost, apiPostFile } from "@/lib/api/client";
 import type {
+  CompanyDuplicateAssessmentRequest,
+  CompanyDuplicateAssessmentResponse,
+  GovernmentCompanyDiscoveryRequest,
+  GovernmentCompanyDiscoveryResponse,
   ProspectDiscoverySearchRequest,
   ProspectDiscoverySearchResponse,
   ProspectImportResponse,
   ProspectPreviewResponse,
-  GovernmentCompanyDiscoveryRequest,
-  GovernmentCompanyDiscoveryResponse,
 } from "@/types/api";
 
 export function searchProspects(input: ProspectDiscoverySearchRequest) {
@@ -38,5 +40,14 @@ export function importProspectCsv(file: File) {
     file,
     "text/csv",
     { "X-Prospect-Import-Confirmed": "true" },
+  );
+}
+
+export function assessCompanyDuplicates(
+  input: CompanyDuplicateAssessmentRequest,
+) {
+  return apiPost<CompanyDuplicateAssessmentResponse>(
+    "/api/v1/company-prospects/duplicate-assessment",
+    input,
   );
 }

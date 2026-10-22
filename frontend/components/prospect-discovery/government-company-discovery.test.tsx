@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GovernmentCompanyDiscovery } from "@/components/prospect-discovery/government-company-discovery";
 import { ApiError } from "@/lib/api/client";
-import { searchGovernmentCompanies } from "@/lib/api/prospect-discovery";
+import {
+  assessCompanyDuplicates,
+  searchGovernmentCompanies,
+} from "@/lib/api/prospect-discovery";
 import { getRuntimeConfiguration } from "@/lib/api/runtime";
 import type {
   GovernmentCompanyDiscoveryResponse,
@@ -13,6 +16,7 @@ import type {
 
 vi.mock("@/lib/api/prospect-discovery", () => ({
   searchGovernmentCompanies: vi.fn(),
+  assessCompanyDuplicates: vi.fn(),
 }));
 
 vi.mock("@/lib/api/runtime", () => ({
@@ -20,6 +24,7 @@ vi.mock("@/lib/api/runtime", () => ({
 }));
 
 const searchMock = vi.mocked(searchGovernmentCompanies);
+const assessMock = vi.mocked(assessCompanyDuplicates);
 const runtimeMock = vi.mocked(getRuntimeConfiguration);
 
 function configuration(
@@ -109,7 +114,13 @@ function governmentResponse(
 describe("Government Company Discovery", () => {
   beforeEach(() => {
     searchMock.mockReset();
+    assessMock.mockReset();
     runtimeMock.mockReset();
+    assessMock.mockResolvedValue({
+      assessments: [],
+      total_evaluated: 0,
+      persisted_cin_available: false,
+    });
   });
 
   it("keeps search unavailable when backend says provider disabled", async () => {
@@ -312,5 +323,185 @@ describe("Government Company Discovery", () => {
       "Government company discovery is unavailable.",
     );
     expect(alert).not.toHaveTextContent("private upstream error");
+  });
+
+  it("renders duplicate assessment review with distinct outcomes and explanations", async () => {
+    const user = userEvent.setup();
+    runtimeMock.mockResolvedValue(
+      configuration({ government_company_discovery_available: true }),
+    );
+    searchMock.mockResolvedValue(
+      governmentResponse({
+        items: [
+          {
+            CIN: "U12345DL2001PLC123456",
+            CompanyName: "Example Registry Company",
+          },
+          {
+            CIN: "U99999MH2020PTC999999",
+            CompanyName: "Acme Possible Duplicate",
+          },
+        ],
+        normalized_items: [
+          {
+            cin: "U12345DL2001PLC123456",
+            company_name: "Example Registry Company",
+            company_status: null,
+            company_class: null,
+            company_category: null,
+            company_sub_category: null,
+            authorized_capital: null,
+            paid_up_capital: null,
+            number_of_members: null,
+            date_of_incorporation: null,
+            registered_address: null,
+            company_state_code: null,
+            registrar_of_companies: null,
+            principal_business_activity: null,
+            industrial_classification_code: null,
+            attribution: governmentResponse().attribution,
+            retrieved_at: "2026-10-22T07:52:45Z",
+          },
+          {
+            cin: "U99999MH2020PTC999999",
+            company_name: "Acme Possible Duplicate",
+            company_status: null,
+            company_class: null,
+            company_category: null,
+            company_sub_category: null,
+            authorized_capital: null,
+            paid_up_capital: null,
+            number_of_members: null,
+            date_of_incorporation: null,
+            registered_address: null,
+            company_state_code: null,
+            registrar_of_companies: null,
+            principal_business_activity: null,
+            industrial_classification_code: null,
+            attribution: governmentResponse().attribution,
+            retrieved_at: "2026-10-22T07:52:45Z",
+          },
+        ],
+      }),
+    );
+    assessMock.mockResolvedValue({
+      total_evaluated: 2,
+      persisted_cin_available: false,
+      assessments: [
+        {
+          reference_id: "gov-rec-0",
+          outcome: "EXACT_MATCH",
+          reason_code: "PERSISTED_DOMAIN_MATCH",
+          explanation:
+            "Candidate website domain exactly matches existing company prospect 'p-1'.",
+          matching_fields: ["website_domain"],
+          existing_match_references: ["p-1"],
+        },
+        {
+          reference_id: "gov-rec-1",
+          outcome: "POSSIBLE_DUPLICATE",
+          reason_code: "PERSISTED_NAME_SIMILARITY",
+          explanation:
+            "Candidate company name is similar to existing company prospect 'p-2'.",
+          matching_fields: ["company_name"],
+          existing_match_references: ["p-2"],
+        },
+      ],
+    });
+
+    render(<GovernmentCompanyDiscovery />);
+    await screen.findByRole("button", { name: "Search government records" });
+    await user.type(screen.getByLabelText("CompanyStateCode"), "DL");
+    await user.click(
+      screen.getByRole("button", { name: "Search government records" }),
+    );
+
+    // Verify distinct wording for exact match and possible duplicate
+    expect(await screen.findByText("Exact duplicate found")).toBeVisible();
+    expect(screen.getByText("Possible duplicate")).toBeVisible();
+
+    // Verify explanations and matched fields
+    expect(
+      screen.getByText(
+        "Candidate website domain exactly matches existing company prospect 'p-1'.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Candidate company name is similar to existing company prospect 'p-2'.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText("Matched fields: website_domain")).toBeVisible();
+    expect(screen.getByText("Matched fields: company_name")).toBeVisible();
+
+    // Verify no import, save, or merge buttons exist for duplicate assessment
+    expect(screen.queryByRole("button", { name: /import/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /merge/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
+  });
+
+  it("handles duplicate assessment error gracefully without breaking discovery", async () => {
+    const user = userEvent.setup();
+    runtimeMock.mockResolvedValue(
+      configuration({ government_company_discovery_available: true }),
+    );
+    searchMock.mockResolvedValue(governmentResponse());
+    assessMock.mockRejectedValue(new Error("Network failure"));
+
+    render(<GovernmentCompanyDiscovery />);
+    await screen.findByRole("button", { name: "Search government records" });
+    await user.type(screen.getByLabelText("CompanyStateCode"), "DL");
+    await user.click(
+      screen.getByRole("button", { name: "Search government records" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Duplicate assessment could not be completed for this record.",
+      ),
+    ).toBeVisible();
+    // Government company record is still displayed
+    expect(
+      screen.getByRole("heading", { name: "Example Registry Company" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Exact duplicate found")).toBeNull();
+  });
+
+  it("explains the limits of a no-match assessment", async () => {
+    const user = userEvent.setup();
+    runtimeMock.mockResolvedValue(
+      configuration({ government_company_discovery_available: true }),
+    );
+    searchMock.mockResolvedValue(governmentResponse());
+    assessMock.mockResolvedValue({
+      total_evaluated: 1,
+      persisted_cin_available: false,
+      assessments: [
+        {
+          reference_id: "gov-rec-0",
+          outcome: "NEW",
+          reason_code: "NO_MATCHING_RECORDS",
+          explanation:
+            "No matching record was found using the supported evidence evaluated here. Persisted CIN matching is unavailable, so this result does not establish that the company is definitively new.",
+          matching_fields: [],
+          existing_match_references: [],
+        },
+      ],
+    });
+
+    render(<GovernmentCompanyDiscovery />);
+    await screen.findByRole("button", { name: "Search government records" });
+    await user.type(screen.getByLabelText("CompanyStateCode"), "DL");
+    await user.click(
+      screen.getByRole("button", { name: "Search government records" }),
+    );
+
+    expect(await screen.findByText("No match found")).toBeVisible();
+    expect(
+      screen.getByText(
+        /Persisted CIN matching is unavailable, so this result does not establish that the company is definitively new/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("No existing duplicate")).toBeNull();
   });
 });

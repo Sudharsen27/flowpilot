@@ -6,9 +6,14 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiError } from "@/lib/api/client";
-import { searchGovernmentCompanies } from "@/lib/api/prospect-discovery";
+import {
+  assessCompanyDuplicates,
+  searchGovernmentCompanies,
+} from "@/lib/api/prospect-discovery";
 import { getRuntimeConfiguration } from "@/lib/api/runtime";
 import type {
+  CompanyDuplicateAssessmentItem,
+  CompanyDuplicateCandidateInput,
   GovernmentCompanyDiscoveryResponse,
   NormalizedCompanyRecord,
   RuntimeConfiguration,
@@ -103,10 +108,98 @@ function NormalizedRecord({
   );
 }
 
+function DuplicateAssessmentReview({
+  assessment,
+  isLoading,
+  error,
+}: {
+  assessment?: CompanyDuplicateAssessmentItem;
+  isLoading: boolean;
+  error?: string | null;
+}) {
+  if (isLoading) {
+    return (
+      <div
+        className="border-border text-muted-foreground flex items-center gap-2 rounded-md border border-dashed p-3 text-sm"
+        aria-label="Checking duplicate status"
+      >
+        <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+        <span>Evaluating company duplicates against existing records…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="border-destructive/40 bg-destructive/5 text-danger-text flex items-center gap-2 rounded-md border p-3 text-sm"
+      >
+        <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+        <span>Duplicate assessment could not be completed for this record.</span>
+      </div>
+    );
+  }
+
+  if (!assessment) {
+    return null;
+  }
+
+  const badgeProps = (() => {
+    switch (assessment.outcome) {
+      case "EXACT_MATCH":
+        return {
+          status: "failed" as const,
+          label: "Exact duplicate found",
+        };
+      case "POSSIBLE_DUPLICATE":
+        return {
+          status: "warning" as const,
+          label: "Possible duplicate",
+        };
+      case "NEW":
+        return {
+          status: "active" as const,
+          label: "No match found",
+        };
+      case "INSUFFICIENT_DATA":
+      default:
+        return {
+          status: "draft" as const,
+          label: "Insufficient data",
+        };
+    }
+  })();
+
+  return (
+    <section
+      aria-label="Duplicate assessment review"
+      className="border-border grid gap-2 rounded-md border border-dashed p-3 text-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="font-medium">Duplicate review</h4>
+        <StatusBadge status={badgeProps.status} label={badgeProps.label} />
+      </div>
+      <p className="text-muted-foreground">{assessment.explanation}</p>
+      {assessment.matching_fields.length > 0 ? (
+        <p className="text-muted-foreground text-xs">
+          Matched fields: {assessment.matching_fields.join(", ")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function GovernmentRecords({
   response,
+  duplicateAssessments,
+  isAssessingDuplicates,
+  duplicateError,
 }: {
   response: GovernmentCompanyDiscoveryResponse;
+  duplicateAssessments: Record<string, CompanyDuplicateAssessmentItem>;
+  isAssessingDuplicates: boolean;
+  duplicateError: string | null;
 }) {
   if (response.items.length === 0) {
     return (
@@ -165,6 +258,11 @@ function GovernmentRecords({
             {normalizedRecord ? (
               <NormalizedRecord record={normalizedRecord} />
             ) : null}
+            <DuplicateAssessmentReview
+              assessment={duplicateAssessments[`gov-rec-${index}`]}
+              isLoading={isAssessingDuplicates}
+              error={duplicateError}
+            />
           </article>
         );
       })}
@@ -184,6 +282,11 @@ export function GovernmentCompanyDiscovery() {
   const [previousOffsets, setPreviousOffsets] = useState<number[]>([]);
   const [response, setResponse] =
     useState<GovernmentCompanyDiscoveryResponse | null>(null);
+  const [duplicateAssessments, setDuplicateAssessments] = useState<
+    Record<string, CompanyDuplicateAssessmentItem>
+  >({});
+  const [isAssessingDuplicates, setIsAssessingDuplicates] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const requestSequence = useRef(0);
@@ -259,6 +362,9 @@ export function GovernmentCompanyDiscovery() {
     setIsSearching(true);
     setSearchError(null);
     setResponse(null);
+    setDuplicateAssessments({});
+    setDuplicateError(null);
+    setIsAssessingDuplicates(false);
     if (resetHistory) setPreviousOffsets([]);
     setOffset(nextOffset);
     try {
@@ -267,7 +373,57 @@ export function GovernmentCompanyDiscovery() {
         offset: nextOffset,
         page_size: pageSize,
       });
-      if (sequence === requestSequence.current) setResponse(result);
+      if (sequence === requestSequence.current) {
+        setResponse(result);
+        if (result.items.length > 0) {
+          setIsAssessingDuplicates(true);
+          setDuplicateError(null);
+          setDuplicateAssessments({});
+          const candidates: CompanyDuplicateCandidateInput[] = result.items.map(
+            (record, index) => {
+              const normalized = result.normalized_items?.[index];
+              const nameKey = companyNameField(record);
+              const rawName = nameKey ? record[nameKey] : null;
+              const name =
+                normalized?.company_name ??
+                (typeof rawName === "string" ? rawName : null);
+              const cin =
+                normalized?.cin ??
+                (typeof record.CIN === "string"
+                  ? record.CIN
+                  : typeof record.cin === "string"
+                    ? record.cin
+                    : null);
+              return {
+                reference_id: `gov-rec-${index}`,
+                company_name: name,
+                website_domain: null,
+                cin: cin,
+              };
+            },
+          );
+          void assessCompanyDuplicates({ candidates })
+            .then((assessmentResp) => {
+              if (sequence === requestSequence.current) {
+                const mapping: Record<string, CompanyDuplicateAssessmentItem> =
+                  {};
+                for (const item of assessmentResp.assessments) {
+                  mapping[item.reference_id] = item;
+                }
+                setDuplicateAssessments(mapping);
+                setIsAssessingDuplicates(false);
+              }
+            })
+            .catch(() => {
+              if (sequence === requestSequence.current) {
+                setDuplicateError(
+                  "Duplicate assessment could not be completed.",
+                );
+                setIsAssessingDuplicates(false);
+              }
+            });
+        }
+      }
     } catch (error) {
       if (sequence === requestSequence.current) {
         setSearchError(safeGovernmentSearchError(error));
@@ -282,6 +438,9 @@ export function GovernmentCompanyDiscovery() {
     if (stateCode.trim().length < 1 || stateCode.trim().length > 10) {
       setSearchError("Enter a state code of 1 to 10 characters.");
       setResponse(null);
+      setDuplicateAssessments({});
+      setDuplicateError(null);
+      setIsAssessingDuplicates(false);
       return;
     }
     void searchAt(0, true);
@@ -372,6 +531,9 @@ export function GovernmentCompanyDiscovery() {
             onChange={(event) => {
               setStateCode(event.target.value);
               setResponse(null);
+              setDuplicateAssessments({});
+              setDuplicateError(null);
+              setIsAssessingDuplicates(false);
               setSearchError(null);
             }}
             className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
@@ -390,6 +552,9 @@ export function GovernmentCompanyDiscovery() {
                 setPageSize(selectedSize);
               }
               setResponse(null);
+              setDuplicateAssessments({});
+              setDuplicateError(null);
+              setIsAssessingDuplicates(false);
               setPreviousOffsets([]);
             }}
             className="border-input bg-background focus-visible:ring-ring h-9 rounded-md border px-3 outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
@@ -457,7 +622,12 @@ export function GovernmentCompanyDiscovery() {
               {response.attribution.provider}
             </p>
           </div>
-          <GovernmentRecords response={response} />
+          <GovernmentRecords
+            response={response}
+            duplicateAssessments={duplicateAssessments}
+            isAssessingDuplicates={isAssessingDuplicates}
+            duplicateError={duplicateError}
+          />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-muted-foreground text-xs">
               {response.attribution.attribution}

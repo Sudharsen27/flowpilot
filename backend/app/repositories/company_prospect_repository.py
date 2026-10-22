@@ -54,3 +54,14 @@ class CompanyProspectRepository:
             )
         )
         return items, total
+
+    def list_all_for_duplicate_assessment(
+        self, organization_id: str
+    ) -> list[CompanyProspect]:
+        return list(
+            self.session.scalars(
+                select(CompanyProspect)
+                .where(CompanyProspect.organization_id == organization_id)
+                .order_by(CompanyProspect.created_at.desc(), CompanyProspect.id.desc())
+            )
+        )

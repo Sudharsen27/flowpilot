@@ -7,6 +7,10 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus
 from app.repositories.company_prospect_repository import CompanyProspectRepository
 from app.repositories.ideal_customer_profile_repository import IdealCustomerProfileRepository
+from app.schemas.company_duplicate_assessment import (
+    CompanyDuplicateAssessmentRequest,
+    CompanyDuplicateAssessmentResponse,
+)
 from app.schemas.company_prospect import (
     CompanyProspectCreate,
     CompanyProspectListResponse,
@@ -14,6 +18,9 @@ from app.schemas.company_prospect import (
 )
 from app.schemas.company_prospect_scoring import CompanyProspectScoringInput
 from app.schemas.ideal_customer_profile import LeadFitScore
+from app.services.company_duplicate_assessment_service import (
+    CompanyDuplicateAssessmentService as DuplicateAssessmentEngine,
+)
 from app.services.lead_fit_scoring_service import score_company_prospect_fit
 
 ALLOWED_TRANSITIONS = {
@@ -112,4 +119,12 @@ class CompanyProspectService:
         return score_company_prospect_fit(
             prospect=evidence,
             configuration=profile.configuration if profile is not None else None,
+        )
+
+    def assess_duplicates(
+        self, organization_id: str, payload: CompanyDuplicateAssessmentRequest
+    ) -> CompanyDuplicateAssessmentResponse:
+        records = self.prospects.list_all_for_duplicate_assessment(organization_id)
+        return DuplicateAssessmentEngine().assess_candidates(
+            payload.candidates, records
         )
