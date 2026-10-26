@@ -74,10 +74,21 @@ class CompanyProspectService:
         return prospect
 
     def list(
-        self, organization_id: str, *, limit: int, offset: int
+        self,
+        organization_id: str,
+        *,
+        status: CompanyProspectStatus | None,
+        search: str | None,
+        limit: int,
+        offset: int,
     ) -> CompanyProspectListResponse:
+        normalized_search = " ".join(search.split()).casefold() if search else None
         rows, total = self.prospects.list_for_organization(
-            organization_id, limit=limit, offset=offset
+            organization_id,
+            status=status,
+            search=normalized_search,
+            limit=limit,
+            offset=offset,
         )
         return CompanyProspectListResponse(
             items=[CompanyProspectPublic.model_validate(row) for row in rows],

@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Bot,
+  Building2,
   CheckCheck,
   Inbox,
   LayoutDashboard,
@@ -42,6 +43,7 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
     label: "Work",
     items: [
       { href: "/prospect-discovery", label: "Prospect Discovery", icon: Search },
+      { href: "/company-prospects", label: "Company Prospects", icon: Building2 },
       { href: "/leads", label: "Leads", icon: Users },
       { href: "/inbox", label: "AI Inbox", icon: Inbox },
       { href: "/approvals", label: "Approvals", icon: CheckCheck },

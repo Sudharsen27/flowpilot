@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -110,6 +111,167 @@ def test_company_prospect_tenant_scope_comes_from_authenticated_membership(
     assert listing.status_code == 200
     assert listing.json()["total"] == 0
     assert hidden.status_code == 404
+
+
+def test_list_search_status_filter_pagination_and_totals_are_tenant_scoped(
+    client: TestClient,
+    db: Session,
+) -> None:
+    first = _auth(client, email="directory-a@example.com", organization_name="Directory A")
+    second = _auth(client, email="directory-b@example.com", organization_name="Directory B")
+    first_token = first["access_token"]
+
+    records = [
+        _create(
+            client,
+            first_token,
+            name="Alpha Works",
+            website_domain="alpha.example",
+        ),
+        _create(
+            client,
+            first_token,
+            name="Beta Holdings",
+            website_domain="beta.example",
+        ),
+        _create(
+            client,
+            first_token,
+            name="Gamma Partners",
+            website_domain="searchable.example",
+        ),
+    ]
+    assert all(response.status_code == 201 for response in records)
+    ids = [response.json()["id"] for response in records]
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for index, prospect_id in enumerate(ids):
+        row = db.scalar(select(CompanyProspect).where(CompanyProspect.id == prospect_id))
+        assert row is not None
+        row.created_at = base + timedelta(minutes=index)
+        row.updated_at = row.created_at
+    db.commit()
+
+    archived = client.patch(
+        f"/api/v1/company-prospects/{ids[1]}/lifecycle",
+        json={"status": "ARCHIVED"},
+        headers=_headers(first_token),
+    )
+    assert archived.status_code == 200
+
+    other = _create(
+        client,
+        second["access_token"],
+        name="Alpha Private",
+        website_domain="private.example",
+    )
+    assert other.status_code == 201
+
+    by_name = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "  ALPHA   WORKS  ", "limit": 20, "offset": 0},
+        headers=_headers(first_token),
+    )
+    assert by_name.status_code == 200
+    assert by_name.json()["total"] == 1
+    assert [item["id"] for item in by_name.json()["items"]] == [ids[0]]
+
+    by_domain = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "SEARCHABLE.EXAMPLE"},
+        headers=_headers(first_token),
+    )
+    assert by_domain.status_code == 200
+    assert [item["id"] for item in by_domain.json()["items"]] == [ids[2]]
+
+    archived_only = client.get(
+        "/api/v1/company-prospects",
+        params={"status": "ARCHIVED", "q": "beta"},
+        headers=_headers(first_token),
+    )
+    assert archived_only.status_code == 200
+    assert archived_only.json()["total"] == 1
+    assert [item["id"] for item in archived_only.json()["items"]] == [ids[1]]
+
+    first_page = client.get(
+        "/api/v1/company-prospects",
+        params={"limit": 1, "offset": 0},
+        headers=_headers(first_token),
+    )
+    second_page = client.get(
+        "/api/v1/company-prospects",
+        params={"limit": 1, "offset": 1},
+        headers=_headers(first_token),
+    )
+    assert first_page.json()["total"] == second_page.json()["total"] == 3
+    assert first_page.json()["items"][0]["id"] == ids[2]
+    assert second_page.json()["items"][0]["id"] == ids[1]
+
+    cross_tenant = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "alpha", "status": "IDENTIFIED"},
+        headers=_headers(second["access_token"]),
+    )
+    assert cross_tenant.status_code == 200
+    assert cross_tenant.json()["total"] == 1
+    assert cross_tenant.json()["items"][0]["id"] == other.json()["id"]
+
+
+def test_list_search_escapes_sql_wildcards_and_validates_filters(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    for name, domain in (
+        ("100% Growth", "percent.example"),
+        ("1000 Growth", "plain.example"),
+        ("Under_score", "under.example"),
+        ("Underscore", "other.example"),
+    ):
+        assert _create(client, token, name=name, website_domain=domain).status_code == 201
+
+    percent = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "100%"},
+        headers=_headers(token),
+    )
+    underscore = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "under_score"},
+        headers=_headers(token),
+    )
+    empty = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "   "},
+        headers=_headers(token),
+    )
+    invalid_status = client.get(
+        "/api/v1/company-prospects",
+        params={"status": "INVALID"},
+        headers=_headers(token),
+    )
+    too_long = client.get(
+        "/api/v1/company-prospects",
+        params={"q": "a" * 201},
+        headers=_headers(token),
+    )
+    invalid_limit = client.get(
+        "/api/v1/company-prospects",
+        params={"limit": 101},
+        headers=_headers(token),
+    )
+    invalid_offset = client.get(
+        "/api/v1/company-prospects",
+        params={"offset": -1},
+        headers=_headers(token),
+    )
+
+    assert percent.status_code == 200
+    assert percent.json()["total"] == 1
+    assert percent.json()["items"][0]["name"] == "100% Growth"
+    assert underscore.status_code == 200
+    assert underscore.json()["total"] == 1
+    assert underscore.json()["items"][0]["name"] == "Under_score"
+    assert empty.status_code == 200
+    assert empty.json()["total"] == 4
+    assert invalid_status.status_code == too_long.status_code == 422
+    assert invalid_limit.status_code == invalid_offset.status_code == 422
 
 
 def test_lifecycle_transitions_are_explicit_and_have_no_automation_side_effects(

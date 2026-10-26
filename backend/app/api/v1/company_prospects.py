@@ -34,12 +34,20 @@ def create_company_prospect(
 
 @router.get("", response_model=CompanyProspectListResponse)
 def list_company_prospects(
+    status: CompanyProspectStatus | None = None,
+    q: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     organization: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ) -> CompanyProspectListResponse:
-    return CompanyProspectService(db).list(organization.id, limit=limit, offset=offset)
+    return CompanyProspectService(db).list(
+        organization.id,
+        status=status,
+        search=q,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{prospect_id}", response_model=CompanyProspectPublic)

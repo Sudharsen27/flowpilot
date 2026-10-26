@@ -23,3 +23,18 @@ If later slices propose storing provider-sourced values or source evidence, that
 storage must remain blocked until the applicable data-use and retention terms
 are resolved. No CSV preview/import behavior, CRM import, lead workflow, webhook,
 AI, drafting, email, or outreach behavior is part of this domain foundation.
+
+## Read-only workspace (Phase 6E, Slice 1)
+
+Authenticated organization members can use `/company-prospects` to browse
+their organization’s persisted CompanyProspects. The workspace uses the
+existing tenant-scoped list and detail APIs. The list supports optional
+case-insensitive, whitespace-normalized search across company name and website
+domain, optional lifecycle-status filtering, and offset pagination ordered by
+`created_at DESC, id DESC`.
+
+The workspace displays only persisted company fields and evidence-quality
+labels. It has no create, edit, lifecycle, import, provider, lead, workflow,
+webhook, outreach, or automation action. Organization identity is derived from
+the authenticated membership; no organization identifier is accepted from the
+client.

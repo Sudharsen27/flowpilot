@@ -112,6 +112,32 @@ export type CompanyDuplicateAssessmentResponse = {
   persisted_cin_available: boolean;
 };
 
+export type CompanyProspectStatus = "IDENTIFIED" | "REVIEWED" | "ARCHIVED";
+
+export type EvidenceQuality =
+  | "SOURCE_REPORTED"
+  | "ESTIMATED"
+  | "INFERRED"
+  | "UNKNOWN";
+
+export type CompanyProspect = {
+  id: string;
+  name: string;
+  website_domain: string | null;
+  name_evidence_quality: EvidenceQuality;
+  website_domain_evidence_quality: EvidenceQuality;
+  status: CompanyProspectStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CompanyProspectListResponse = {
+  items: CompanyProspect[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
 export type MembershipPublic = {
   id: string;
   role: MembershipRole;

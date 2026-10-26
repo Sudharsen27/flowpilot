@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.company_prospect import CompanyProspect
@@ -34,10 +34,23 @@ class CompanyProspectRepository:
         self,
         organization_id: str,
         *,
+        status: str | None,
+        search: str | None,
         limit: int,
         offset: int,
     ) -> tuple[list[CompanyProspect], int]:
         conditions = [CompanyProspect.organization_id == organization_id]
+        if status is not None:
+            conditions.append(CompanyProspect.status == status)
+        if search:
+            escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{escaped}%"
+            conditions.append(
+                or_(
+                    func.lower(CompanyProspect.name).like(pattern, escape="\\"),
+                    func.lower(CompanyProspect.website_domain).like(pattern, escape="\\"),
+                )
+            )
         total = int(
             self.session.scalar(
                 select(func.count()).select_from(CompanyProspect).where(*conditions)
