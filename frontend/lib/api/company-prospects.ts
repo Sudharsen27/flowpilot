@@ -1,8 +1,9 @@
-import { apiGet } from "@/lib/api/client";
+import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
   CompanyProspect,
   CompanyProspectListResponse,
   CompanyProspectStatus,
+  EvidenceQuality,
 } from "@/types/api";
 
 export type CompanyProspectListParams = {
@@ -10,6 +11,13 @@ export type CompanyProspectListParams = {
   q?: string;
   limit?: number;
   offset?: number;
+};
+
+export type CompanyProspectCreateInput = {
+  name: string;
+  website_domain?: string | null;
+  name_evidence_quality?: EvidenceQuality;
+  website_domain_evidence_quality?: EvidenceQuality;
 };
 
 function listQuery(params: CompanyProspectListParams = {}) {
@@ -37,5 +45,19 @@ export function getCompanyProspects(params: CompanyProspectListParams = {}) {
 export function getCompanyProspect(prospectId: string) {
   return apiGet<CompanyProspect>(
     `/api/v1/company-prospects/${encodeURIComponent(prospectId)}`,
+  );
+}
+
+export function createCompanyProspect(input: CompanyProspectCreateInput) {
+  return apiPost<CompanyProspect>("/api/v1/company-prospects", input);
+}
+
+export function updateCompanyProspectLifecycle(
+  prospectId: string,
+  status: CompanyProspectStatus,
+) {
+  return apiPatch<CompanyProspect>(
+    `/api/v1/company-prospects/${encodeURIComponent(prospectId)}/lifecycle`,
+    { status },
   );
 }

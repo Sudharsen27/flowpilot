@@ -1,13 +1,16 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { CompanyProspectCreateDialog } from "@/components/company-prospects/company-prospect-create-dialog";
 import { CompanyProspectsTable } from "@/components/company-prospects/company-prospects-table";
 import { CompanyProspectsToolbar } from "@/components/company-prospects/company-prospects-toolbar";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 import { getCompanyProspects } from "@/lib/api/company-prospects";
 import type {
   CompanyProspectListResponse,
@@ -17,6 +20,10 @@ import type {
 const PAGE_SIZE = 20;
 
 export default function CompanyProspectsPage() {
+  const { session } = useAuth();
+  const role = session?.membership.role;
+  const canManage = role === "OWNER" || role === "ADMIN";
+
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<CompanyProspectStatus | "">("");
   const [offset, setOffset] = useState(0);
@@ -24,6 +31,7 @@ export default function CompanyProspectsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [page, setPage] = useState<CompanyProspectListResponse | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +78,15 @@ export default function CompanyProspectsPage() {
     <div className="gap-section flex flex-col">
       <PageHeader
         title="Company Prospects"
-        description="Browse the companies saved in this organization. This workspace is read-only."
+        description="Browse and manage companies saved in this organization."
+        primaryAction={
+          canManage ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add company prospect
+            </Button>
+          ) : undefined
+        }
       />
 
       <section className="grid gap-5">
@@ -152,6 +168,11 @@ export default function CompanyProspectsPage() {
           </>
         )}
       </section>
+
+      <CompanyProspectCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
     </div>
   );
 }

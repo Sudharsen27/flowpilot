@@ -3,8 +3,10 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus
+from app.models.membership import MembershipRole
 from app.repositories.company_prospect_repository import CompanyProspectRepository
 from app.repositories.ideal_customer_profile_repository import IdealCustomerProfileRepository
 from app.schemas.company_duplicate_assessment import (
@@ -18,10 +20,13 @@ from app.schemas.company_prospect import (
 )
 from app.schemas.company_prospect_scoring import CompanyProspectScoringInput
 from app.schemas.ideal_customer_profile import LeadFitScore
+from app.services.activity_service import ActivityService
 from app.services.company_duplicate_assessment_service import (
     CompanyDuplicateAssessmentService as DuplicateAssessmentEngine,
 )
 from app.services.lead_fit_scoring_service import score_company_prospect_fit
+
+MANAGER_ROLES = frozenset({MembershipRole.OWNER, MembershipRole.ADMIN})
 
 ALLOWED_TRANSITIONS = {
     CompanyProspectStatus.IDENTIFIED: {
@@ -36,12 +41,29 @@ ALLOWED_TRANSITIONS = {
 }
 
 
+def _require_manager(role: str) -> None:
+    try:
+        parsed = MembershipRole(role)
+    except ValueError as exc:
+        raise ForbiddenError("Not allowed to manage company prospects") from exc
+    if parsed not in MANAGER_ROLES:
+        raise ForbiddenError("Not allowed to manage company prospects")
+
+
 class CompanyProspectService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.prospects = CompanyProspectRepository(session)
 
-    def create(self, organization_id: str, payload: CompanyProspectCreate) -> CompanyProspect:
+    def create(
+        self,
+        organization_id: str,
+        *,
+        role: str,
+        user_id: str,
+        payload: CompanyProspectCreate,
+    ) -> CompanyProspect:
+        _require_manager(role)
         domain = payload.website_domain
         if domain and self.prospects.get_by_website_domain(organization_id, domain) is not None:
             raise ConflictError("A company prospect with this website domain already exists")
@@ -56,6 +78,19 @@ class CompanyProspectService:
         )
         try:
             self.prospects.add(prospect)
+            self.session.flush()
+            ActivityService(self.session).record(
+                organization_id=organization_id,
+                event_type=ActivityEventType.HUMAN_ACTION,
+                actor_type=ActivityActorType.USER,
+                actor_user_id=user_id,
+                title="Company prospect added",
+                summary=f"Company prospect '{prospect.name}' created.",
+                entity_type=ActivityEntityType.COMPANY_PROSPECT,
+                entity_id=prospect.id,
+                status="CREATED",
+                dedupe_key=f"company-prospect-{prospect.id}-created",
+            )
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
@@ -102,7 +137,11 @@ class CompanyProspectService:
         organization_id: str,
         prospect_id: str,
         new_status: CompanyProspectStatus,
+        *,
+        role: str,
+        user_id: str,
     ) -> CompanyProspect:
+        _require_manager(role)
         prospect = self.get(organization_id, prospect_id)
         current_status = CompanyProspectStatus(prospect.status)
         if new_status == current_status:
@@ -113,6 +152,18 @@ class CompanyProspectService:
             )
         prospect.status = new_status
         prospect.updated_at = datetime.now(UTC)
+        ActivityService(self.session).record(
+            organization_id=organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            actor_user_id=user_id,
+            title="Company prospect status updated",
+            summary=f"Company prospect '{prospect.name}' status changed to {new_status.value}.",
+            entity_type=ActivityEntityType.COMPANY_PROSPECT,
+            entity_id=prospect.id,
+            status=new_status.value,
+            dedupe_key=f"company-prospect-{prospect.id}-status-{new_status.value}-{int(datetime.now(UTC).timestamp())}",
+        )
         self.session.commit()
         self.session.refresh(prospect)
         return prospect

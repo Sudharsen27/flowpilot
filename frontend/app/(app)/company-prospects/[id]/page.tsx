@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { CompanyProspectActions } from "@/components/company-prospects/company-prospect-actions";
 import {
   CompanyProspectStatusBadge,
   EvidenceQualityBadge,
@@ -110,7 +111,7 @@ export default function CompanyProspectDetailPage() {
         breadcrumbs={[{ label: "Company Prospects", href: "/company-prospects" }, { label: prospect.name }]}
         title={prospect.name}
         titleBadge={<CompanyProspectStatusBadge status={prospect.status} />}
-        description="Saved company record. No enrichment, import, or automation is available here."
+        description="Saved company record."
         secondaryActions={
           <Link href="/company-prospects" className={buttonVariants({ variant: "outline" })}>
             Back to Company Prospects
@@ -153,6 +154,18 @@ export default function CompanyProspectDetailPage() {
             <dd>{formatAbsoluteTimestamp(prospect.updated_at) ?? "Date unavailable"}</dd>
           </div>
         </dl>
+      </section>
+
+      <section className="border-border grid gap-5 rounded-lg border p-4 sm:p-5" aria-labelledby="lifecycle-management-title">
+        <div>
+          <h2 id="lifecycle-management-title" className="text-section-title font-semibold tracking-tight">
+            Lifecycle management
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Update this company prospect&apos;s status.
+          </p>
+        </div>
+        <CompanyProspectActions prospect={prospect} onUpdated={setProspect} />
       </section>
     </div>
   );

@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_organization
+from app.api.deps import get_current_membership, get_current_organization
 from app.db.session import get_db
 from app.models.company_prospect import CompanyProspectStatus
+from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.company_duplicate_assessment import (
     CompanyDuplicateAssessmentRequest,
@@ -26,9 +27,15 @@ router = APIRouter(prefix="/api/v1/company-prospects", tags=["company-prospects"
 def create_company_prospect(
     payload: CompanyProspectCreate,
     organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> CompanyProspectPublic:
-    prospect = CompanyProspectService(db).create(organization.id, payload)
+    prospect = CompanyProspectService(db).create(
+        organization.id,
+        role=membership.role,
+        user_id=membership.user_id,
+        payload=payload,
+    )
     return CompanyProspectPublic.model_validate(prospect)
 
 
@@ -65,10 +72,15 @@ def transition_company_prospect(
     prospect_id: str,
     payload: CompanyProspectLifecycleRequest,
     organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> CompanyProspectPublic:
     prospect = CompanyProspectService(db).transition(
-        organization.id, prospect_id, CompanyProspectStatus(payload.status)
+        organization.id,
+        prospect_id,
+        CompanyProspectStatus(payload.status),
+        role=membership.role,
+        user_id=membership.user_id,
     )
     return CompanyProspectPublic.model_validate(prospect)
 

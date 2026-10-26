@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from app.models.activity_event import ActivityEvent
 from app.models.company_prospect import CompanyProspect
 from app.models.lead import Lead
+from app.models.membership import MembershipRole
 from app.models.webhook import WebhookDelivery
 from app.models.workflow import WorkflowRun
+from tests.test_agent_api import _add_org_member
 from tests.test_agent_runtime import _headers
 from tests.test_leads import _auth
 
@@ -299,6 +301,57 @@ def test_lifecycle_transitions_are_explicit_and_have_no_automation_side_effects(
     assert invalid.status_code == 409
     assert restored.status_code == 200
     assert db.scalar(select(func.count()).select_from(Lead)) == lead_count
-    assert db.scalar(select(func.count()).select_from(ActivityEvent)) == activity_count
+    assert db.scalar(select(func.count()).select_from(ActivityEvent)) == activity_count + 4
     assert db.scalar(select(func.count()).select_from(WebhookDelivery)) == webhook_count
     assert db.scalar(select(func.count()).select_from(WorkflowRun)) == workflow_count
+
+
+def test_company_prospect_rbac_and_activity_events(client: TestClient, db: Session) -> None:
+    org_data = _auth(client, email="owner@example.com", organization_name="RBAC Org")
+    org_id = org_data["organization"]["id"]
+    owner_token = org_data["access_token"]
+    member_token = _add_org_member(
+        db, org_id, email="member@example.com", role=MembershipRole.MEMBER
+    )
+
+    # Member cannot create prospect
+    member_create = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Member Company", "website_domain": "member.example"},
+        headers=_headers(member_token),
+    )
+    assert member_create.status_code == 403
+
+    # Owner creates prospect
+    owner_create = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Owner Company", "website_domain": "owner.example"},
+        headers=_headers(owner_token),
+    )
+    assert owner_create.status_code == 201
+    prospect_id = owner_create.json()["id"]
+
+    # Member cannot change lifecycle
+    member_transition = client.patch(
+        f"/api/v1/company-prospects/{prospect_id}/lifecycle",
+        json={"status": "REVIEWED"},
+        headers=_headers(member_token),
+    )
+    assert member_transition.status_code == 403
+
+    # Owner can change lifecycle
+    owner_transition = client.patch(
+        f"/api/v1/company-prospects/{prospect_id}/lifecycle",
+        json={"status": "REVIEWED"},
+        headers=_headers(owner_token),
+    )
+    assert owner_transition.status_code == 200
+    assert owner_transition.json()["status"] == "REVIEWED"
+
+    # Verify activity events recorded
+    events = db.scalars(
+        select(ActivityEvent).where(ActivityEvent.organization_id == org_id)
+    ).all()
+    assert len(events) == 2
+    assert events[0].entity_type == "COMPANY_PROSPECT"
+    assert events[1].entity_type == "COMPANY_PROSPECT"
