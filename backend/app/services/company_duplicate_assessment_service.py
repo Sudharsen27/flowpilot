@@ -253,17 +253,27 @@ class CompanyDuplicateAssessmentService:
                     in_batch_match_reference=conflicting_cin_prior.raw.reference_id,
                 )
 
-        conflicting_pair = next(
+        shared_identifier_prior = next(
             (
-                (cin_prior, domain_prior)
-                for cin_prior in in_batch_cin_matches
-                for domain_prior in in_batch_domain_matches
-                if cin_prior is not domain_prior
+                prior
+                for prior in prior_candidates
+                if prior in in_batch_cin_matches and prior in in_batch_domain_matches
             ),
             None,
         )
-        if conflicting_pair is not None:
-            cin_prior, domain_prior = conflicting_pair
+
+        # Matching CIN and domain lists can contain more than one identical prior
+        # candidate. Different list entries are not themselves contradictory: an
+        # exact shared prior resolves both identifiers. A conflict exists only
+        # when the identifiers resolve to separate records without such a shared
+        # resolution.
+        if (
+            shared_identifier_prior is None
+            and in_batch_cin_matches
+            and in_batch_domain_matches
+        ):
+            cin_prior = in_batch_cin_matches[0]
+            domain_prior = in_batch_domain_matches[0]
             return CompanyDuplicateAssessmentItem(
                 reference_id=ref_id,
                 outcome=DuplicateAssessmentOutcome.POSSIBLE_DUPLICATE,
@@ -348,10 +358,10 @@ class CompanyDuplicateAssessmentService:
 
         # 5b. In-batch exact match
         if in_batch_cin_matches:
-            earliest_cin = in_batch_cin_matches[0]
+            earliest_cin = shared_identifier_prior or in_batch_cin_matches[0]
             fields = ["cin"]
             reason = "IN_BATCH_CIN_MATCH"
-            if in_batch_domain_matches and in_batch_domain_matches[0] == earliest_cin:
+            if shared_identifier_prior is not None:
                 fields.append("website_domain")
                 reason = "IN_BATCH_CIN_AND_DOMAIN_MATCH"
 

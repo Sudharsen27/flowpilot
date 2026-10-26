@@ -278,6 +278,102 @@ def test_in_batch_exact_cin_match_and_earliest_occurrence_reference() -> None:
     assert response.assessments[2].in_batch_match_reference == "c-first"
 
 
+def test_identical_in_batch_candidates_always_reference_the_first_match() -> None:
+    candidates = [
+        {
+            "reference_id": f"c-{index}",
+            "company_name": f"Candidate {index}",
+            "cin": "U12345DL2001PLC123456",
+            "website_domain": "same.example.com",
+        }
+        for index in range(1, 5)
+    ]
+
+    response = _assess_domain(candidates)
+
+    assert response.assessments[0].outcome == DuplicateAssessmentOutcome.NEW
+    assert [item.outcome for item in response.assessments[1:]] == [
+        DuplicateAssessmentOutcome.EXACT_MATCH,
+        DuplicateAssessmentOutcome.EXACT_MATCH,
+        DuplicateAssessmentOutcome.EXACT_MATCH,
+    ]
+    assert [item.reason_code for item in response.assessments[1:]] == [
+        "IN_BATCH_CIN_AND_DOMAIN_MATCH",
+        "IN_BATCH_CIN_AND_DOMAIN_MATCH",
+        "IN_BATCH_CIN_AND_DOMAIN_MATCH",
+    ]
+    assert [item.in_batch_match_reference for item in response.assessments[1:]] == [
+        "c-1",
+        "c-1",
+        "c-1",
+    ]
+
+
+def test_shared_exact_match_does_not_hide_a_conflicting_identifier() -> None:
+    candidates = [
+        {
+            "reference_id": "c-first",
+            "company_name": "First Candidate",
+            "cin": "U12345DL2001PLC123456",
+            "website_domain": "first.example.com",
+        },
+        {
+            "reference_id": "c-conflict",
+            "company_name": "Conflicting Candidate",
+            "cin": "U12345DL2001PLC123456",
+            "website_domain": "other.example.com",
+        },
+        {
+            "reference_id": "c-repeat",
+            "company_name": "Repeated Candidate",
+            "cin": "U12345DL2001PLC123456",
+            "website_domain": "first.example.com",
+        },
+    ]
+
+    response = _assess_domain(candidates)
+
+    item = response.assessments[2]
+    assert item.outcome == DuplicateAssessmentOutcome.POSSIBLE_DUPLICATE
+    assert item.reason_code == "CONFLICTING_IDENTIFIERS"
+    assert item.in_batch_match_reference == "c-conflict"
+
+
+def test_in_batch_resolution_is_deterministic_with_persisted_domain_matches() -> None:
+    persisted = [
+        MockPersistedRecord(id="p-z", name="Persisted Z", website_domain="other.example.com"),
+        MockPersistedRecord(id="p-a", name="Persisted A", website_domain="same.example.com"),
+    ]
+    candidates = [
+        {
+            "reference_id": "c-first",
+            "company_name": "First Candidate",
+            "cin": "U12345DL2001PLC123456",
+            "website_domain": "same.example.com",
+        },
+        {
+            "reference_id": "c-repeat",
+            "company_name": "Repeated Candidate",
+            "cin": "U12345DL2001PLC123456",
+            "website_domain": "same.example.com",
+        },
+    ]
+
+    first = _assess_domain(candidates, persisted=persisted)
+    second = _assess_domain(candidates, persisted=list(reversed(persisted)))
+
+    for response in (first, second):
+        assert [item.outcome for item in response.assessments] == [
+            DuplicateAssessmentOutcome.EXACT_MATCH,
+            DuplicateAssessmentOutcome.EXACT_MATCH,
+        ]
+        assert [item.existing_match_references for item in response.assessments] == [
+            ["p-a"],
+            ["p-a"],
+        ]
+        assert response.assessments[1].in_batch_match_reference is None
+
+
 def test_conflicting_identifiers_in_batch_candidates() -> None:
     # Candidate 2 has same CIN as Candidate 1, but a conflicting domain
     candidates = [
