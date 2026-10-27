@@ -15,6 +15,7 @@ class ActivityEventPublic(BaseModel):
     occurred_at: datetime
     actor_type: ActivityActorType
     actor_user_id: str | None = None
+    actor_name: str | None = None
     agent_id: str | None = None
     entity_type: ActivityEntityType
     entity_id: str

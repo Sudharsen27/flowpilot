@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import delete, func, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.activity_event import ActivityEntityType, ActivityEvent, ActivityEventType
@@ -21,7 +21,9 @@ class ActivityEventRepository:
 
     def get_by_id(self, organization_id: str, activity_id: str) -> ActivityEvent | None:
         return self.session.scalar(
-            select(ActivityEvent).where(
+            select(ActivityEvent)
+            .options(selectinload(ActivityEvent.actor_user))
+            .where(
                 ActivityEvent.organization_id == organization_id,
                 ActivityEvent.id == activity_id,
             )
@@ -156,6 +158,7 @@ class ActivityEventRepository:
         items = list(
             self.session.scalars(
                 select(ActivityEvent)
+                .options(selectinload(ActivityEvent.actor_user))
                 .where(*filters)
                 .order_by(*order)
                 .limit(limit)
@@ -200,6 +203,7 @@ class ActivityEventRepository:
         rows = list(
             self.session.scalars(
                 select(ActivityEvent)
+                .options(selectinload(ActivityEvent.actor_user))
                 .where(
                     ActivityEvent.organization_id == organization_id,
                     ActivityEvent.lead_id.in_(lead_ids),

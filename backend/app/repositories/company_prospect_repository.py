@@ -69,12 +69,13 @@ class CompanyProspectRepository:
         return items, total
 
     def list_all_for_duplicate_assessment(
-        self, organization_id: str
+        self, organization_id: str, exclude_id: str | None = None
     ) -> list[CompanyProspect]:
+        query = select(CompanyProspect).where(CompanyProspect.organization_id == organization_id)
+        if exclude_id:
+            query = query.where(CompanyProspect.id != exclude_id)
         return list(
             self.session.scalars(
-                select(CompanyProspect)
-                .where(CompanyProspect.organization_id == organization_id)
-                .order_by(CompanyProspect.created_at.desc(), CompanyProspect.id.desc())
+                query.order_by(CompanyProspect.created_at.desc(), CompanyProspect.id.desc())
             )
         )
