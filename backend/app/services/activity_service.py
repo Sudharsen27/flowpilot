@@ -131,6 +131,7 @@ class ActivityService:
 
 def to_activity_public(row: ActivityEvent, *, include_summary: bool) -> ActivityEventPublic:
     entity_type = ActivityEntityType(row.entity_type)
+    actor_name = row.actor_user.name if row.actor_user else None
     return ActivityEventPublic(
         id=row.id,
         type=ActivityEventType(row.type),
@@ -139,6 +140,7 @@ def to_activity_public(row: ActivityEvent, *, include_summary: bool) -> Activity
         occurred_at=row.occurred_at,
         actor_type=ActivityActorType(row.actor_type),
         actor_user_id=row.actor_user_id,
+        actor_name=actor_name,
         agent_id=row.agent_id,
         entity_type=entity_type,
         entity_id=row.entity_id,
