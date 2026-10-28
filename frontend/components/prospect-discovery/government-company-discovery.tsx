@@ -3,6 +3,7 @@
 import { AlertCircle, Building2, LoaderCircle, Search } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { DuplicateOutcomeBadge } from "@/components/company-prospects/duplicate-outcome-badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiError } from "@/lib/api/client";
@@ -145,32 +146,6 @@ function DuplicateAssessmentReview({
     return null;
   }
 
-  const badgeProps = (() => {
-    switch (assessment.outcome) {
-      case "EXACT_MATCH":
-        return {
-          status: "failed" as const,
-          label: "Exact duplicate found",
-        };
-      case "POSSIBLE_DUPLICATE":
-        return {
-          status: "warning" as const,
-          label: "Possible duplicate",
-        };
-      case "NEW":
-        return {
-          status: "active" as const,
-          label: "No match found",
-        };
-      case "INSUFFICIENT_DATA":
-      default:
-        return {
-          status: "draft" as const,
-          label: "Insufficient data",
-        };
-    }
-  })();
-
   return (
     <section
       aria-label="Duplicate assessment review"
@@ -178,7 +153,7 @@ function DuplicateAssessmentReview({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-medium">Duplicate review</h4>
-        <StatusBadge status={badgeProps.status} label={badgeProps.label} />
+        <DuplicateOutcomeBadge outcome={assessment.outcome} />
       </div>
       <p className="text-muted-foreground">{assessment.explanation}</p>
       {assessment.matching_fields.length > 0 ? (

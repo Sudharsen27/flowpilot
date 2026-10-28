@@ -1,5 +1,6 @@
 import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
+  CompanyDuplicateAssessmentResponse,
   CompanyProspect,
   CompanyProspectListResponse,
   CompanyProspectStatus,
@@ -45,6 +46,12 @@ export function getCompanyProspects(params: CompanyProspectListParams = {}) {
 export function getCompanyProspect(prospectId: string) {
   return apiGet<CompanyProspect>(
     `/api/v1/company-prospects/${encodeURIComponent(prospectId)}`,
+  );
+}
+
+export function getCompanyProspectDuplicateAssessment(prospectId: string) {
+  return apiGet<CompanyDuplicateAssessmentResponse>(
+    `/api/v1/company-prospects/${encodeURIComponent(prospectId)}/duplicate-assessment`,
   );
 }
 

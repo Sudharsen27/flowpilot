@@ -9,6 +9,7 @@ import {
   CompanyProspectStatusBadge,
   EvidenceQualityBadge,
 } from "@/components/company-prospects/company-prospect-badges";
+import { CompanyProspectDuplicateReview } from "@/components/company-prospects/company-prospect-duplicate-review";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -155,6 +156,8 @@ export default function CompanyProspectDetailPage() {
           </div>
         </dl>
       </section>
+
+      <CompanyProspectDuplicateReview prospectId={prospect.id} />
 
       <section className="border-border grid gap-5 rounded-lg border p-4 sm:p-5" aria-labelledby="lifecycle-management-title">
         <div>

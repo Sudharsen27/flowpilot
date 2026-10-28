@@ -12,6 +12,7 @@ from app.repositories.ideal_customer_profile_repository import IdealCustomerProf
 from app.schemas.company_duplicate_assessment import (
     CompanyDuplicateAssessmentRequest,
     CompanyDuplicateAssessmentResponse,
+    CompanyDuplicateCandidateInput,
 )
 from app.schemas.company_prospect import (
     CompanyProspectCreate,
@@ -190,3 +191,18 @@ class CompanyProspectService:
         return DuplicateAssessmentEngine().assess_candidates(
             payload.candidates, records
         )
+
+    def assess_prospect_duplicate(
+        self, organization_id: str, prospect_id: str
+    ) -> CompanyDuplicateAssessmentResponse:
+        target = self.get(organization_id, prospect_id)
+        records = self.prospects.list_all_for_duplicate_assessment(
+            organization_id, exclude_id=prospect_id
+        )
+        candidate = CompanyDuplicateCandidateInput(
+            reference_id=target.id,
+            company_name=target.name,
+            website_domain=target.website_domain,
+            cin=None,
+        )
+        return DuplicateAssessmentEngine().assess_candidates([candidate], records)
