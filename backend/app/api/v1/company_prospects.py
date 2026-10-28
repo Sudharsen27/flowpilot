@@ -102,3 +102,15 @@ def assess_company_duplicates(
     db: Session = Depends(get_db),
 ) -> CompanyDuplicateAssessmentResponse:
     return CompanyProspectService(db).assess_duplicates(organization.id, payload)
+
+
+@router.get(
+    "/{prospect_id}/duplicate-assessment",
+    response_model=CompanyDuplicateAssessmentResponse,
+)
+def assess_single_prospect_duplicate(
+    prospect_id: str,
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> CompanyDuplicateAssessmentResponse:
+    return CompanyProspectService(db).assess_prospect_duplicate(organization.id, prospect_id)

@@ -612,3 +612,152 @@ def test_api_read_only_side_effect_audit(client: TestClient, db: Session) -> Non
     assert db.scalar(select(func.count()).select_from(ActivityEvent)) == activity_count_before
     assert db.scalar(select(func.count()).select_from(WebhookDelivery)) == webhook_count_before
     assert db.scalar(select(func.count()).select_from(WorkflowRun)) == workflow_count_before
+
+
+def test_api_single_prospect_duplicate_assessment_success_and_self_exclusion(
+    client: TestClient,
+) -> None:
+    auth = _auth(client)
+    token = auth["access_token"]
+
+    # 1. Create a target prospect
+    target_resp = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Acme Technologies Pvt Ltd", "website_domain": "acme.example.com"},
+        headers=_headers(token),
+    )
+    assert target_resp.status_code == 201
+    target_id = target_resp.json()["id"]
+
+    # 2. Assess as the only record -> NEW proves the target never matches itself
+    assess_new = client.get(
+        f"/api/v1/company-prospects/{target_id}/duplicate-assessment",
+        headers=_headers(token),
+    )
+    assert assess_new.status_code == 200
+    body_new = assess_new.json()
+    assert body_new["total_evaluated"] == 1
+    assert body_new["assessments"][0]["reference_id"] == target_id
+    assert body_new["assessments"][0]["outcome"] == "NEW"
+    assert body_new["assessments"][0]["existing_match_references"] == []
+
+    # 3. Create a similarly named prospect. Domains are unique per organization,
+    # so a persisted duplicate can only surface through name similarity.
+    similar_resp = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Acme Technologies Limited", "website_domain": "acme-tech.example.com"},
+        headers=_headers(token),
+    )
+    assert similar_resp.status_code == 201
+    similar_id = similar_resp.json()["id"]
+
+    # 4. Assess again -> POSSIBLE_DUPLICATE referencing only the other prospect
+    assess_match = client.get(
+        f"/api/v1/company-prospects/{target_id}/duplicate-assessment",
+        headers=_headers(token),
+    )
+    assert assess_match.status_code == 200
+    body_match = assess_match.json()
+    assert body_match["total_evaluated"] == 1
+    item = body_match["assessments"][0]
+    assert item["reference_id"] == target_id
+    assert item["outcome"] == "POSSIBLE_DUPLICATE"
+    assert item["reason_code"] == "PERSISTED_NAME_SIMILARITY"
+    assert item["matching_fields"] == ["company_name"]
+    assert item["existing_match_references"] == [similar_id]
+    assert target_id not in item["existing_match_references"]
+
+
+def test_api_single_prospect_duplicate_assessment_tenant_isolation(
+    client: TestClient,
+) -> None:
+    tenant_a = _auth(client, email="a@example.com", organization_name="Org A")
+    tenant_b = _auth(client, email="b@example.com", organization_name="Org B")
+
+    # Org A creates a prospect
+    resp_a = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Org A Co", "website_domain": "shared.example.com"},
+        headers=_headers(tenant_a["access_token"]),
+    )
+    assert resp_a.status_code == 201
+    id_a = resp_a.json()["id"]
+
+    # Org B creates a prospect with same domain
+    resp_b = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Org B Co", "website_domain": "shared.example.com"},
+        headers=_headers(tenant_b["access_token"]),
+    )
+    assert resp_b.status_code == 201
+
+    # 1. Org A assesses their prospect -> Should NOT match Org B's record
+    assess_a = client.get(
+        f"/api/v1/company-prospects/{id_a}/duplicate-assessment",
+        headers=_headers(tenant_a["access_token"]),
+    )
+    assert assess_a.status_code == 200
+    assert assess_a.json()["assessments"][0]["outcome"] == "NEW"
+
+    # 2. Org B tries to access Org A's prospect assessment -> 404
+    assess_cross = client.get(
+        f"/api/v1/company-prospects/{id_a}/duplicate-assessment",
+        headers=_headers(tenant_b["access_token"]),
+    )
+    assert assess_cross.status_code == 404
+
+
+def test_api_single_prospect_duplicate_assessment_errors(client: TestClient) -> None:
+    auth = _auth(client)
+    token = auth["access_token"]
+
+    # Unauthenticated
+    assert client.get("/api/v1/company-prospects/some-id/duplicate-assessment").status_code == 401
+
+    # Not Found
+    assert client.get(
+        "/api/v1/company-prospects/non-existent-id/duplicate-assessment",
+        headers=_headers(token),
+    ).status_code == 404
+
+
+def test_api_single_prospect_duplicate_assessment_read_only_side_effect_audit(
+    client: TestClient, db: Session
+) -> None:
+    auth = _auth(client)
+    token = auth["access_token"]
+
+    target_resp = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Audit Target Pvt Ltd", "website_domain": "audit-target.example.com"},
+        headers=_headers(token),
+    )
+    assert target_resp.status_code == 201
+    target_id = target_resp.json()["id"]
+
+    similar_resp = client.post(
+        "/api/v1/company-prospects",
+        json={"name": "Audit Target Limited", "website_domain": "audit-other.example.com"},
+        headers=_headers(token),
+    )
+    assert similar_resp.status_code == 201
+
+    prospect_count_before = db.scalar(select(func.count()).select_from(CompanyProspect))
+    lead_count_before = db.scalar(select(func.count()).select_from(Lead))
+    activity_count_before = db.scalar(select(func.count()).select_from(ActivityEvent))
+    webhook_count_before = db.scalar(select(func.count()).select_from(WebhookDelivery))
+    workflow_count_before = db.scalar(select(func.count()).select_from(WorkflowRun))
+
+    response = client.get(
+        f"/api/v1/company-prospects/{target_id}/duplicate-assessment",
+        headers=_headers(token),
+    )
+    assert response.status_code == 200
+    assert response.json()["assessments"][0]["outcome"] == "POSSIBLE_DUPLICATE"
+
+    # Verify zero database mutations
+    assert db.scalar(select(func.count()).select_from(CompanyProspect)) == prospect_count_before
+    assert db.scalar(select(func.count()).select_from(Lead)) == lead_count_before
+    assert db.scalar(select(func.count()).select_from(ActivityEvent)) == activity_count_before
+    assert db.scalar(select(func.count()).select_from(WebhookDelivery)) == webhook_count_before
+    assert db.scalar(select(func.count()).select_from(WorkflowRun)) == workflow_count_before
