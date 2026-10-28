@@ -117,6 +117,27 @@ class AgentExecutionListResponse(BaseModel):
     total: int
 
 
+class OrganizationExecutionListItem(AgentExecutionListItem):
+    """Organization-wide row: safe list fields plus the agent and lead they belong to."""
+
+    agent_id: str
+    agent_name: str | None = None
+    lead_id: str | None = None
+    lead_name: str | None = None
+    initiated_by_user_id: str | None = None
+    is_stale: bool = False
+
+
+class OrganizationExecutionListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[OrganizationExecutionListItem]
+    limit: int
+    offset: int
+    total: int
+    status_counts: dict[str, int]
+
+
 class AgentExecutionDetail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

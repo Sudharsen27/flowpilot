@@ -109,6 +109,48 @@ class AgentExecutionRepository:
         )
         return items, int(total or 0)
 
+    def list_for_organization(
+        self,
+        organization_id: str,
+        *,
+        status: AgentExecutionStatus | None = None,
+        agent_id: str | None = None,
+        lead_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[AgentExecution], int]:
+        filters = [AgentExecution.organization_id == organization_id]
+        if status is not None:
+            filters.append(AgentExecution.status == status)
+        if agent_id is not None:
+            filters.append(AgentExecution.agent_id == agent_id)
+        if lead_id is not None:
+            filters.append(AgentExecution.lead_id == lead_id)
+        total = self.session.scalar(
+            select(func.count()).select_from(AgentExecution).where(*filters)
+        )
+        items = list(
+            self.session.scalars(
+                select(AgentExecution)
+                .where(*filters)
+                .order_by(AgentExecution.created_at.desc(), AgentExecution.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        return items, int(total or 0)
+
+    def status_counts(self, organization_id: str) -> dict[str, int]:
+        rows = self.session.execute(
+            select(AgentExecution.status, func.count())
+            .where(AgentExecution.organization_id == organization_id)
+            .group_by(AgentExecution.status)
+        ).all()
+        counts = {status.value: 0 for status in AgentExecutionStatus}
+        for status, count in rows:
+            counts[str(status)] = int(count)
+        return counts
+
     def probe_status(
         self,
         organization_id: str,

@@ -27,6 +27,19 @@ class LeadRepository:
             )
         )
 
+    def get_by_ids(self, organization_id: str, lead_ids: list[str]) -> dict[str, Lead]:
+        if not lead_ids:
+            return {}
+        rows = list(
+            self.session.scalars(
+                select(Lead).where(
+                    Lead.organization_id == organization_id,
+                    Lead.id.in_(lead_ids),
+                )
+            )
+        )
+        return {row.id: row for row in rows}
+
     def list_by_email(self, organization_id: str, email: str) -> list[Lead]:
         normalized = email.strip().casefold()
         if not normalized:

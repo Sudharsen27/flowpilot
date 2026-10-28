@@ -48,6 +48,8 @@ from app.schemas.agents import (
     AgentExecutionListItem,
     AgentExecutionListResponse,
     AgentExecutionResult,
+    OrganizationExecutionListItem,
+    OrganizationExecutionListResponse,
     ToolInvocationListItem,
     ToolInvocationListResponse,
 )
@@ -661,6 +663,56 @@ class AgentExecutionService:
             total=total,
         )
 
+    def list_for_organization(
+        self,
+        *,
+        organization_id: str,
+        status: AgentExecutionStatus | None = None,
+        agent_id: str | None = None,
+        lead_id: str | None = None,
+        limit: int = EXECUTION_LIST_DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> OrganizationExecutionListResponse:
+        """Read-only: stale RUNNING rows are flagged, never recovered, on this path."""
+        safe_limit = min(max(limit, 1), EXECUTION_LIST_MAX_LIMIT)
+        safe_offset = max(offset, 0)
+        items, total = self.executions.list_for_organization(
+            organization_id,
+            status=status,
+            agent_id=agent_id,
+            lead_id=lead_id,
+            limit=safe_limit,
+            offset=safe_offset,
+        )
+        agents = self.agents.get_by_ids(
+            organization_id, sorted({item.agent_id for item in items})
+        )
+        leads = self.leads.get_by_ids(
+            organization_id, sorted({item.lead_id for item in items if item.lead_id})
+        )
+        stale_cutoff = datetime.now(UTC) - timedelta(
+            seconds=self._effective_stale_timeout_seconds()
+        )
+        return OrganizationExecutionListResponse(
+            items=[
+                _to_organization_list_item(
+                    item,
+                    agent_name=agents[item.agent_id].name if item.agent_id in agents else None,
+                    lead_name=(
+                        leads[item.lead_id].name
+                        if item.lead_id is not None and item.lead_id in leads
+                        else None
+                    ),
+                    stale_cutoff=stale_cutoff,
+                )
+                for item in items
+            ],
+            limit=safe_limit,
+            offset=safe_offset,
+            total=total,
+            status_counts=self.executions.status_counts(organization_id),
+        )
+
     def get_for_agent(
         self,
         *,
@@ -834,6 +886,34 @@ def _to_list_item(execution: AgentExecution) -> AgentExecutionListItem:
         duration_ms=duration_ms(execution.started_at, execution.completed_at),
         failure_category=_failure_category(execution),
     )
+
+
+def _to_organization_list_item(
+    execution: AgentExecution,
+    *,
+    agent_name: str | None,
+    lead_name: str | None,
+    stale_cutoff: datetime,
+) -> OrganizationExecutionListItem:
+    return OrganizationExecutionListItem(
+        **_to_list_item(execution).model_dump(),
+        agent_id=execution.agent_id,
+        agent_name=agent_name,
+        lead_id=execution.lead_id,
+        lead_name=lead_name,
+        initiated_by_user_id=execution.initiated_by_user_id,
+        is_stale=_is_stale(execution, stale_cutoff),
+    )
+
+
+def _is_stale(execution: AgentExecution, cutoff: datetime) -> bool:
+    """Mirror AgentExecutionRepository.recover_stale_running without writing."""
+    if execution.status != AgentExecutionStatus.RUNNING:
+        return False
+    started = execution.started_at or execution.created_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    return started <= cutoff
 
 
 def _to_detail(execution: AgentExecution) -> AgentExecutionDetail:
