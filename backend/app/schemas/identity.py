@@ -16,6 +16,7 @@ class OrganizationPublic(BaseModel):
     name: str
     slug: str
     website_capture_enabled: bool
+    default_currency: str
 
 
 class MembershipPublic(BaseModel):

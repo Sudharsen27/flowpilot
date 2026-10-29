@@ -7,6 +7,7 @@ from app.models.activity_event import (
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus, EvidenceQuality
+from app.models.deal import Deal, DealStage, DealStageEvent
 from app.models.ideal_customer_profile import IdealCustomerProfile
 from app.models.inbound_email import InboundEmail
 from app.models.knowledge_entry import KnowledgeEntry
@@ -19,6 +20,7 @@ from app.models.lead_response_draft import LeadResponseDraft
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
+from app.models.sales_target import SalesTarget
 from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
 from app.models.webhook import WebhookDelivery, WebhookEndpoint
@@ -35,6 +37,9 @@ __all__ = [
     "AgentStatus",
     "AgentType",
     "CompanyProspect",
+    "Deal",
+    "DealStage",
+    "DealStageEvent",
     "CompanyProspectStatus",
     "EvidenceQuality",
     "InboundEmail",
@@ -53,6 +58,7 @@ __all__ = [
     "MembershipRole",
     "Organization",
     "SalesRun",
+    "SalesTarget",
     "SalesRunStage",
     "SalesRunStatus",
     "ToolInvocation",
