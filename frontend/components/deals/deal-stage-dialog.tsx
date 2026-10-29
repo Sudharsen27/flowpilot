@@ -16,8 +16,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { changeDealStage, isRevisionConflict, validationErrors } from "@/lib/api/deals";
-import { DEAL_STAGES, DEAL_STAGE_LABELS, isClosedStage } from "@/lib/deals";
+import {
+  changeDealStage,
+  forbiddenMessage,
+  isRevisionConflict,
+  validationErrors,
+} from "@/lib/api/deals";
+import {
+  DEAL_STAGES,
+  DEAL_STAGE_LABELS,
+  WON_STAGE_LOCKED_MESSAGE,
+  canChangeStage,
+  isClosedStage,
+} from "@/lib/deals";
 import type { Deal, DealStage } from "@/types/api";
 
 type DealStageDialogProps = {
@@ -29,6 +40,8 @@ type DealStageDialogProps = {
   onReload: () => Promise<Deal | null>;
   /** Preselect the target stage, e.g. after dropping a card on a closed column. */
   initialStage?: DealStage;
+  /** The viewer's membership role; leaving CLOSED_WON is manager-only. */
+  role: string | undefined;
 };
 
 type Errors = Partial<Record<"stage" | "probability" | "lostReason" | "form", string>>;
@@ -40,6 +53,7 @@ export function DealStageDialog({
   onSaved,
   onReload,
   initialStage,
+  role,
 }: DealStageDialogProps) {
   const [current, setCurrent] = useState(deal);
   const [stage, setStage] = useState<DealStage | "">(
@@ -52,6 +66,7 @@ export function DealStageDialog({
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
 
+  const locked = !canChangeStage(current, role);
   const closing = stage !== "" && isClosedStage(stage);
   const reopening = stage !== "" && !closing && isClosedStage(current.stage);
   const submitLabel =
@@ -100,12 +115,14 @@ export function DealStageDialog({
         setErrors({});
         setConflict(true);
       } else {
+        const forbidden = forbiddenMessage(cause);
         const fields = validationErrors(cause);
         setErrors({
           stage: fields.stage,
           probability: fields.probability,
           lostReason: fields.lost_reason,
           form:
+            forbidden ??
             fields.form ??
             (Object.keys(fields).length === 0
               ? "The stage could not be changed. Please try again."
@@ -141,113 +158,126 @@ export function DealStageDialog({
             {errors.form}
           </p>
         ) : null}
-        <form className="mt-6 grid gap-4" onSubmit={handleSubmit} noValidate>
-          <FormField label="New stage" htmlFor="deal-new-stage" required error={errors.stage}>
-            <Select
-              id="deal-new-stage"
-              value={stage}
-              aria-invalid={errors.stage ? true : undefined}
-              aria-describedby={errors.stage ? "deal-new-stage-error" : undefined}
-              onChange={(event) => {
-                const value = event.target.value as DealStage | "";
-                setStage(value);
-                if (value === "" || isClosedStage(value)) setProbability("");
-                if (value !== "CLOSED_LOST") setLostReason("");
-              }}
-            >
-              <option value="">Choose a stage</option>
-              {DEAL_STAGES.filter((value) => value !== current.stage).map((value) => (
-                <option key={value} value={value}>
-                  {DEAL_STAGE_LABELS[value]}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-
-          {closing ? (
+        {locked ? (
+          <>
             <p
-              className="border-border bg-surface-subtle rounded-md border px-3 py-2 text-sm"
+              className="border-border bg-surface-subtle mt-6 rounded-md border px-3 py-2 text-sm"
               role="note"
             >
-              {stage === "CLOSED_WON"
-                ? "Marking this deal as won closes it and records today as the close date. Closed deals use a fixed probability."
-                : "Marking this deal as lost closes it and records today as the close date. Closed deals use a fixed probability."}{" "}
-              You can reopen it later by moving it to an open stage.
+              {WON_STAGE_LOCKED_MESSAGE}
             </p>
-          ) : null}
-          {reopening ? (
-            <p className="text-muted-foreground text-sm" role="note">
-              Reopening clears the close date
-              {current.stage === "CLOSED_LOST" ? " and the lost reason" : ""}.
-            </p>
-          ) : null}
+            <DialogFooter>
+              <DialogCancel>Close</DialogCancel>
+            </DialogFooter>
+          </>
+        ) : (
+          <form className="mt-6 grid gap-4" onSubmit={handleSubmit} noValidate>
+            <FormField label="New stage" htmlFor="deal-new-stage" required error={errors.stage}>
+              <Select
+                id="deal-new-stage"
+                value={stage}
+                aria-invalid={errors.stage ? true : undefined}
+                aria-describedby={errors.stage ? "deal-new-stage-error" : undefined}
+                onChange={(event) => {
+                  const value = event.target.value as DealStage | "";
+                  setStage(value);
+                  if (value === "" || isClosedStage(value)) setProbability("");
+                  if (value !== "CLOSED_LOST") setLostReason("");
+                }}
+              >
+                <option value="">Choose a stage</option>
+                {DEAL_STAGES.filter((value) => value !== current.stage).map((value) => (
+                  <option key={value} value={value}>
+                    {DEAL_STAGE_LABELS[value]}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
 
-          {stage && !closing ? (
+            {closing ? (
+              <p
+                className="border-border bg-surface-subtle rounded-md border px-3 py-2 text-sm"
+                role="note"
+              >
+                {stage === "CLOSED_WON"
+                  ? "Marking this deal as won closes it and records today as the close date. Closed deals use a fixed probability. Only owners and admins can reopen or change a won deal or correct its amount."
+                  : "Marking this deal as lost closes it and records today as the close date. Closed deals use a fixed probability. You can reopen it later by moving it to an open stage."}
+              </p>
+            ) : null}
+            {reopening ? (
+              <p className="text-muted-foreground text-sm" role="note">
+                Reopening clears the close date
+                {current.stage === "CLOSED_LOST" ? " and the lost reason" : ""}.
+              </p>
+            ) : null}
+
+            {stage && !closing ? (
+              <FormField
+                label="Probability override (%)"
+                htmlFor="deal-stage-probability"
+                error={errors.probability}
+                description="Optional. Any existing override is cleared on a stage change; leave blank to use the new stage's default."
+              >
+                <Input
+                  id="deal-stage-probability"
+                  inputMode="numeric"
+                  placeholder="Stage default"
+                  value={probability}
+                  aria-invalid={errors.probability ? true : undefined}
+                  aria-describedby={
+                    errors.probability
+                      ? "deal-stage-probability-error"
+                      : "deal-stage-probability-description"
+                  }
+                  onChange={(event) => setProbability(event.target.value)}
+                />
+              </FormField>
+            ) : null}
+
+            {stage === "CLOSED_LOST" ? (
+              <FormField
+                label="Lost reason"
+                htmlFor="deal-stage-lost-reason"
+                required
+                error={errors.lostReason}
+              >
+                <Textarea
+                  id="deal-stage-lost-reason"
+                  value={lostReason}
+                  maxLength={1000}
+                  aria-invalid={errors.lostReason ? true : undefined}
+                  aria-describedby={errors.lostReason ? "deal-stage-lost-reason-error" : undefined}
+                  onChange={(event) => setLostReason(event.target.value)}
+                />
+              </FormField>
+            ) : null}
+
             <FormField
-              label="Probability override (%)"
-              htmlFor="deal-stage-probability"
-              error={errors.probability}
-              description="Optional. Any existing override is cleared on a stage change; leave blank to use the new stage's default."
+              label="Reason for change"
+              htmlFor="deal-stage-change-reason"
+              description="Optional note saved in the deal history."
             >
               <Input
-                id="deal-stage-probability"
-                inputMode="numeric"
-                placeholder="Stage default"
-                value={probability}
-                aria-invalid={errors.probability ? true : undefined}
-                aria-describedby={
-                  errors.probability
-                    ? "deal-stage-probability-error"
-                    : "deal-stage-probability-description"
-                }
-                onChange={(event) => setProbability(event.target.value)}
-              />
-            </FormField>
-          ) : null}
-
-          {stage === "CLOSED_LOST" ? (
-            <FormField
-              label="Lost reason"
-              htmlFor="deal-stage-lost-reason"
-              required
-              error={errors.lostReason}
-            >
-              <Textarea
-                id="deal-stage-lost-reason"
-                value={lostReason}
+                id="deal-stage-change-reason"
+                aria-describedby="deal-stage-change-reason-description"
+                value={changeReason}
                 maxLength={1000}
-                aria-invalid={errors.lostReason ? true : undefined}
-                aria-describedby={errors.lostReason ? "deal-stage-lost-reason-error" : undefined}
-                onChange={(event) => setLostReason(event.target.value)}
+                onChange={(event) => setChangeReason(event.target.value)}
               />
             </FormField>
-          ) : null}
 
-          <FormField
-            label="Reason for change"
-            htmlFor="deal-stage-change-reason"
-            description="Optional note saved in the deal history."
-          >
-            <Input
-              id="deal-stage-change-reason"
-              aria-describedby="deal-stage-change-reason-description"
-              value={changeReason}
-              maxLength={1000}
-              onChange={(event) => setChangeReason(event.target.value)}
-            />
-          </FormField>
-
-          <DialogFooter>
-            <DialogCancel>Cancel</DialogCancel>
-            <Button
-              type="submit"
-              disabled={pending}
-              variant={stage === "CLOSED_LOST" ? "destructive" : "default"}
-            >
-              {pending ? "Saving…" : submitLabel}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <DialogCancel>Cancel</DialogCancel>
+              <Button
+                type="submit"
+                disabled={pending}
+                variant={stage === "CLOSED_LOST" ? "destructive" : "default"}
+              >
+                {pending ? "Saving…" : submitLabel}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

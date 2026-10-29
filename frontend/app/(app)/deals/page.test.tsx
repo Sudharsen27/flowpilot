@@ -342,6 +342,94 @@ describe("Deals page", () => {
       expect(memberOptions).toEqual(["Me", "Unassigned"]);
     });
 
+    it.each([
+      ["OWNER", ["Qualification", "Discovery", "Proposal", "Negotiation", "Closed won", "Closed lost"]],
+      ["ADMIN", ["Qualification", "Discovery", "Proposal", "Negotiation", "Closed won", "Closed lost"]],
+      ["MEMBER", ["Qualification", "Discovery", "Proposal", "Negotiation"]],
+    ])("offers %s the stages the API allows at creation", async (role, expected) => {
+      const user = userEvent.setup();
+      authMock.role = role;
+      const dialog = await openForm(user);
+      const stage = within(dialog).getByLabelText("Stage");
+      expect(within(stage).getAllByRole("option").map((option) => option.textContent)).toEqual(expected);
+      expect(stage).toHaveValue("QUALIFICATION");
+      if (role === "MEMBER") {
+        expect(stage).toHaveAccessibleDescription(
+          "Create the deal in an open stage, then mark it won or lost when it closes.",
+        );
+      } else {
+        expect(stage).not.toHaveAccessibleDescription();
+      }
+    });
+
+    it("keeps lead-prefilled creation working for members", async () => {
+      const user = userEvent.setup();
+      authMock.role = "MEMBER";
+      currentSearch = "create=1&lead_id=lead-7";
+      getLeadMock.mockResolvedValue({ id: "lead-7", name: "Linked Lead" } as never);
+      createMock.mockResolvedValue(deal({ id: "deal-new", name: "From lead" }));
+      renderPage();
+      const dialog = await screen.findByRole("dialog", { name: "Create deal" });
+      expect(within(dialog).getByText("Linked Lead")).toBeInTheDocument();
+      expect(
+        within(within(dialog).getByLabelText("Stage")).queryByRole("option", { name: "Closed won" }),
+      ).not.toBeInTheDocument();
+      await user.type(within(dialog).getByLabelText(/Deal name/), "From lead");
+      await user.type(within(dialog).getByLabelText(/Amount/), "500");
+      await user.type(within(dialog).getByLabelText(/Expected close date/), "2027-01-31");
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "QUALIFICATION", lead_id: "lead-7" }),
+      );
+    });
+
+    it("shows the API's reason when creation is not permitted", async () => {
+      const user = userEvent.setup();
+      createMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 403", 403, {
+          detail: "Only owners and admins can create a deal that is already won",
+        }),
+      );
+      const dialog = await openForm(user);
+      await user.type(within(dialog).getByLabelText(/Deal name/), "Deal");
+      await user.type(within(dialog).getByLabelText(/Amount/), "10");
+      await user.type(within(dialog).getByLabelText(/Expected close date/), "2027-01-31");
+      await user.selectOptions(within(dialog).getByLabelText("Stage"), "CLOSED_WON");
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      expect(
+        await within(dialog).findByText("Only owners and admins can create a deal that is already won"),
+      ).toBeInTheDocument();
+
+      createMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 403", 403, {
+          detail: "Only owners and admins can assign deals to other members",
+        }),
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      const owner = within(dialog).getByLabelText("Owner");
+      await waitFor(() => expect(owner).toHaveAttribute("aria-invalid", "true"));
+      expect(
+        within(dialog).getByText("Only owners and admins can assign deals to other members"),
+      ).toBeInTheDocument();
+    });
+
+    it.each([
+      "Only owners and admins can create a deal that is already won",
+      "Only owners and admins can create a deal that is already lost",
+      // Mentions assignment but is not an owner-assignment rule: stays form-level.
+      "Deals assigned to archived pipelines cannot be created",
+    ])("keeps unrelated permission errors off the Owner field: %s", async (detail) => {
+      const user = userEvent.setup();
+      createMock.mockRejectedValueOnce(new ApiError("Request failed: 403", 403, { detail }));
+      const dialog = await openForm(user);
+      await user.type(within(dialog).getByLabelText(/Deal name/), "Deal");
+      await user.type(within(dialog).getByLabelText(/Amount/), "10");
+      await user.type(within(dialog).getByLabelText(/Expected close date/), "2027-01-31");
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(detail);
+      expect(within(dialog).getByLabelText("Owner")).not.toHaveAttribute("aria-invalid");
+    });
+
     it("searches for and links a lead", async () => {
       const user = userEvent.setup();
       getLeadsMock.mockResolvedValue({

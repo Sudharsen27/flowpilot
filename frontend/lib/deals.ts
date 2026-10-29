@@ -47,3 +47,31 @@ export function dealStagePresentation(stage: DealStage) {
 export function canManageDeals(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
+
+export const OPEN_DEAL_STAGES: readonly DealStage[] = DEAL_STAGES.filter(
+  (stage) => !CLOSED_DEAL_STAGES.has(stage),
+);
+
+/**
+ * Stages a role may create a deal in, mirroring the API: members create open deals
+ * and close them later through a stage change. The API remains the authority.
+ */
+export function creatableStages(role: string | undefined): readonly DealStage[] {
+  return canManageDeals(role) ? DEAL_STAGES : OPEN_DEAL_STAGES;
+}
+
+/**
+ * Whether this role may move the deal to another stage. Leaving CLOSED_WON (reopening
+ * or marking lost) is manager-only in the API; every other move is open to all roles.
+ */
+export function canChangeStage(deal: { stage: DealStage }, role: string | undefined): boolean {
+  return deal.stage !== "CLOSED_WON" || canManageDeals(role);
+}
+
+/** OWNER/ADMIN record an audited correction; nobody edits a won amount directly. */
+export function canCorrectWonAmount(deal: { stage: DealStage }, role: string | undefined): boolean {
+  return deal.stage === "CLOSED_WON" && canManageDeals(role);
+}
+
+export const WON_STAGE_LOCKED_MESSAGE =
+  "Only owners and admins can reopen or change a won deal.";

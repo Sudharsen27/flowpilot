@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowRightLeft, Pencil } from "lucide-react";
+import { ArrowRightLeft, Pencil, Receipt } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { DealAmountCorrectionDialog } from "@/components/deals/deal-amount-correction-dialog";
 import { DealFormDialog } from "@/components/deals/deal-form-dialog";
 import { DealHistoryList } from "@/components/deals/deal-history";
 import { DealProbability, DealStageBadge } from "@/components/deals/deal-stage-badge";
@@ -21,6 +22,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import { getDeal, getDealHistory } from "@/lib/api/deals";
 import { listOrganizationMembers } from "@/lib/api/organizations";
+import { WON_STAGE_LOCKED_MESSAGE, canChangeStage, canCorrectWonAmount } from "@/lib/deals";
 import { buildLeadHref } from "@/lib/lead-url";
 import { formatDateOnly, formatMoney } from "@/lib/money";
 import type { Deal, DealHistoryResponse, MemberPublic } from "@/types/api";
@@ -44,6 +46,7 @@ export default function DealDetailPage() {
   const [members, setMembers] = useState<MemberPublic[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [stageOpen, setStageOpen] = useState(false);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
   const [dialogKey, setDialogKey] = useState(0);
 
   useEffect(() => {
@@ -171,6 +174,10 @@ export default function DealDetailPage() {
 
   const deal = state.deal;
   const leadHref = deal.lead_id ? buildLeadHref(deal.lead_id) : null;
+  const role = session?.membership.role;
+  // The API enforces both rules; hiding the controls just avoids offering a dead end.
+  const stageChangeAllowed = canChangeStage(deal, role);
+  const correctionAllowed = canCorrectWonAmount(deal, role);
 
   return (
     <div className="gap-section flex flex-col">
@@ -180,29 +187,46 @@ export default function DealDetailPage() {
         titleBadge={<DealStageBadge stage={deal.stage} />}
         description={`${formatMoney(deal.amount, deal.currency)} · expected to close ${formatDateOnly(deal.expected_close_date)}`}
         secondaryActions={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setDialogKey((key) => key + 1);
-              setEditOpen(true);
-            }}
-          >
-            <Pencil aria-hidden="true" />
-            Edit
-          </Button>
+          <>
+            {correctionAllowed ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDialogKey((key) => key + 1);
+                  setCorrectionOpen(true);
+                }}
+              >
+                <Receipt aria-hidden="true" />
+                Correct amount
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDialogKey((key) => key + 1);
+                setEditOpen(true);
+              }}
+            >
+              <Pencil aria-hidden="true" />
+              Edit
+            </Button>
+          </>
         }
         primaryAction={
-          <Button
-            type="button"
-            onClick={() => {
-              setDialogKey((key) => key + 1);
-              setStageOpen(true);
-            }}
-          >
-            <ArrowRightLeft aria-hidden="true" />
-            Change stage
-          </Button>
+          stageChangeAllowed ? (
+            <Button
+              type="button"
+              onClick={() => {
+                setDialogKey((key) => key + 1);
+                setStageOpen(true);
+              }}
+            >
+              <ArrowRightLeft aria-hidden="true" />
+              Change stage
+            </Button>
+          ) : undefined
         }
       />
 
@@ -252,6 +276,14 @@ export default function DealDetailPage() {
             <DetailRow label="Created" value={<RelativeTime value={deal.created_at} />} />
             <DetailRow label="Revision" value={`#${deal.revision}`} muted />
           </dl>
+          {stageChangeAllowed ? null : (
+            <p
+              className="border-border bg-surface-subtle rounded-md border px-3 py-2 text-sm"
+              role="note"
+            >
+              {WON_STAGE_LOCKED_MESSAGE}
+            </p>
+          )}
           {deal.description ? (
             <div className="grid gap-1">
               <h3 className="text-muted-foreground text-xs font-medium">Description</h3>
@@ -266,7 +298,7 @@ export default function DealDetailPage() {
               History
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Stage, amount and close-date changes, oldest first.
+              Stage, amount, close-date and probability changes, oldest first.
             </p>
           </div>
           {historyFailed ? (
@@ -307,7 +339,7 @@ export default function DealDetailPage() {
           currency={deal.currency}
           members={members}
           currentUserId={session?.user.id}
-          role={session?.membership.role}
+          role={role}
           onSaved={(saved) => applySaved(saved, "Deal updated")}
           onReload={reload}
         />
@@ -318,7 +350,18 @@ export default function DealDetailPage() {
           open
           onOpenChange={setStageOpen}
           deal={deal}
+          role={role}
           onSaved={(saved) => applySaved(saved, "Stage changed")}
+          onReload={reload}
+        />
+      ) : null}
+      {correctionOpen ? (
+        <DealAmountCorrectionDialog
+          key={`correction-${dialogKey}`}
+          open
+          onOpenChange={setCorrectionOpen}
+          deal={deal}
+          onSaved={(saved) => applySaved(saved, "Amount corrected")}
           onReload={reload}
         />
       ) : null}

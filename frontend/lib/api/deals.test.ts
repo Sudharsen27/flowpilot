@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import {
   changeDealStage,
+  correctWonDealAmount,
   createDeal,
+  forbiddenMessage,
   getDealHistory,
   isRevisionConflict,
   listDeals,
@@ -98,5 +100,40 @@ describe("deals API client", () => {
       validationErrors(new ApiError("x", 422, { detail: "Lost deals require a lost reason" })),
     ).toEqual({ form: "Lost deals require a lost reason" });
     expect(validationErrors(new ApiError("x", 500))).toEqual({});
+  });
+
+  it("posts won-amount corrections with the amount as a string and the reason", async () => {
+    const fetchMock = mockFetch({});
+    await correctWonDealAmount("deal/1", {
+      expected_revision: 4,
+      amount: "118500.00",
+      reason: "Invoice discount",
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:8000/api/v1/deals/deal%2F1/amount-correction",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        expected_revision: 4,
+        amount: "118500.00",
+        reason: "Invoice discount",
+      }),
+    });
+  });
+
+  it("returns the API's reason for permission errors only", () => {
+    expect(
+      forbiddenMessage(
+        new ApiError("x", 403, {
+          detail: "Only owners and admins can move a won deal to another stage",
+        }),
+      ),
+    ).toBe("Only owners and admins can move a won deal to another stage");
+    expect(forbiddenMessage(new ApiError("x", 403, null))).toBe(
+      "You do not have permission to make this change.",
+    );
+    expect(forbiddenMessage(new ApiError("x", 422, { detail: "Nope" }))).toBeNull();
+    expect(forbiddenMessage(new Error("network"))).toBeNull();
   });
 });

@@ -1,8 +1,14 @@
 import { DealStageBadge } from "@/components/deals/deal-stage-badge";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { DEAL_STAGE_LABELS } from "@/lib/deals";
 import { formatDateOnly, formatMoney } from "@/lib/money";
 import type { DealHistoryEvent } from "@/types/api";
+
+/** An override value, or the stage default when there is none. */
+function probabilityLabel(value: number | null | undefined): string {
+  return value === null || value === undefined ? "the stage default" : `${value}% (override)`;
+}
 
 function describe(event: DealHistoryEvent, currency: string): string[] {
   if (event.changes.includes("CREATED")) {
@@ -18,7 +24,7 @@ function describe(event: DealHistoryEvent, currency: string): string[] {
   }
   if (event.changes.includes("AMOUNT")) {
     lines.push(
-      `Amount changed from ${formatMoney(event.previous_amount, currency)} to ${formatMoney(event.new_amount, currency)}.`,
+      `Amount ${event.is_correction ? "corrected" : "changed"} from ${formatMoney(event.previous_amount, currency)} to ${formatMoney(event.new_amount, currency)}.`,
     );
   }
   if (event.changes.includes("EXPECTED_CLOSE_DATE")) {
@@ -26,7 +32,14 @@ function describe(event: DealHistoryEvent, currency: string): string[] {
       `Expected close moved from ${formatDateOnly(event.previous_expected_close_date)} to ${formatDateOnly(event.new_expected_close_date)}.`,
     );
   }
-  return lines;
+  // Rows from before probability history was recorded have no PROBABILITY change.
+  if (event.changes.includes("PROBABILITY")) {
+    lines.push(
+      `Probability changed from ${probabilityLabel(event.previous_probability)} to ${probabilityLabel(event.new_probability)}.`,
+    );
+  }
+  // Never render an empty entry, e.g. for a change type this screen does not know yet.
+  return lines.length > 0 ? lines : ["Deal details were updated."];
 }
 
 export function DealHistoryList({
@@ -49,6 +62,7 @@ export function DealHistoryList({
           />
           <div className="flex flex-wrap items-center gap-2">
             <DealStageBadge stage={event.new_stage} />
+            {event.is_correction ? <StatusBadge status="warning" label="Correction" /> : null}
             <RelativeTime value={event.created_at} />
             <span className="text-muted-foreground text-xs">
               by {event.changed_by_name ?? "a former member"}
@@ -60,7 +74,9 @@ export function DealHistoryList({
             ))}
           </ul>
           {event.change_reason ? (
-            <p className="text-muted-foreground mt-1 text-sm">Reason: {event.change_reason}</p>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {event.is_correction ? "Correction reason" : "Reason"}: {event.change_reason}
+            </p>
           ) : null}
         </li>
       ))}

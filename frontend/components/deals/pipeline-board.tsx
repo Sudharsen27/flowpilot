@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
+import { Lock, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { type DragEvent, useCallback, useEffect, useState } from "react";
 
@@ -20,15 +20,24 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
+import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import {
   changeDealStage,
+  forbiddenMessage,
   getDeal,
   isRevisionConflict,
   listDeals,
 } from "@/lib/api/deals";
 import { getPipelineSummary } from "@/lib/api/pipeline";
-import { DEAL_STAGES, DEAL_STAGE_LABELS, isClosedStage } from "@/lib/deals";
+import {
+  DEAL_STAGES,
+  DEAL_STAGE_LABELS,
+  WON_STAGE_LOCKED_MESSAGE,
+  canChangeStage,
+  canManageDeals,
+  isClosedStage,
+} from "@/lib/deals";
 import { DEALS_PATH } from "@/lib/deals-url";
 import { formatDateOnly, formatMoney, formatMoneyCompact } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -65,18 +74,25 @@ function DealCard({
   onOpen,
   onMove,
   moving,
+  locked,
 }: {
   deal: Deal;
   onOpen: (deal: Deal) => void;
   onMove: (deal: Deal, stage: DealStage) => void;
   moving: boolean;
+  /** The viewer may not move this deal (a won deal, for members). */
+  locked: boolean;
 }) {
   const overdue =
     !isClosedStage(deal.stage) && deal.expected_close_date < todayIso();
   return (
     <li
-      draggable={!moving}
+      draggable={!moving && !locked}
       onDragStart={(event) => {
+        if (locked) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData(DRAG_TYPE, deal.id);
         event.dataTransfer.effectAllowed = "move";
       }}
@@ -94,36 +110,47 @@ function DealCard({
         >
           {deal.name}
         </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Move ${deal.name}`}
-                disabled={moving}
-              />
-            }
+        {locked ? (
+          <span
+            role="img"
+            aria-label={WON_STAGE_LOCKED_MESSAGE}
+            title={WON_STAGE_LOCKED_MESSAGE}
+            className="text-muted-foreground inline-flex size-6 shrink-0 items-center justify-center"
           >
-            <MoreHorizontal aria-hidden="true" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Move to</DropdownMenuLabel>
-              {DEAL_STAGES.filter((stage) => stage !== deal.stage).map(
-                (stage) => (
-                  <DropdownMenuItem
-                    key={stage}
-                    onClick={() => onMove(deal, stage)}
-                  >
-                    {DEAL_STAGE_LABELS[stage]}
-                  </DropdownMenuItem>
-                ),
-              )}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <Lock aria-hidden="true" className="size-3.5" />
+          </span>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Move ${deal.name}`}
+                  disabled={moving}
+                />
+              }
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Move to</DropdownMenuLabel>
+                {DEAL_STAGES.filter((stage) => stage !== deal.stage).map(
+                  (stage) => (
+                    <DropdownMenuItem
+                      key={stage}
+                      onClick={() => onMove(deal, stage)}
+                    >
+                      {DEAL_STAGE_LABELS[stage]}
+                    </DropdownMenuItem>
+                  ),
+                )}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
       <p className="text-base font-semibold tracking-tight tabular-nums">
         {formatMoney(deal.amount, deal.currency)}
@@ -153,6 +180,8 @@ function DealCard({
 
 export function PipelineBoard() {
   const toast = useToast();
+  const { session } = useAuth();
+  const role = session?.membership.role;
   const [board, setBoard] = useState<BoardState>({ status: "loading" });
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -214,6 +243,14 @@ export function PipelineBoard() {
 
   async function moveDeal(deal: Deal, stage: DealStage) {
     if (stage === deal.stage || moving || board.status !== "ready") return;
+    if (!canChangeStage(deal, role)) {
+      // The API would refuse with 403; say why instead of trying.
+      toast.error({
+        title: "This deal cannot be moved",
+        description: WON_STAGE_LOCKED_MESSAGE,
+      });
+      return;
+    }
     if (isClosedStage(stage)) {
       // Closing is consequential (and lost needs a reason): confirm in the dialog.
       setClosing({ deal, stage });
@@ -266,7 +303,8 @@ export function PipelineBoard() {
           ? "The board has been refreshed with the latest version. Try the move again if it is still needed."
           : cause instanceof ApiError && cause.status === 404
             ? "The deal no longer exists."
-            : "Nothing was changed. Please try again.",
+            : (forbiddenMessage(cause) ??
+              "Nothing was changed. Please try again."),
       });
       if (
         isRevisionConflict(cause) ||
@@ -327,6 +365,9 @@ export function PipelineBoard() {
       <p className="text-muted-foreground text-xs" id="pipeline-board-help">
         Drag a card to another stage, or use its menu. Moving to Closed won or
         Closed lost asks for confirmation.
+        {canManageDeals(role)
+          ? null
+          : " Only owners and admins can move won deals."}
       </p>
       <div
         className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-3 sm:mx-0 sm:px-0"
@@ -391,6 +432,7 @@ export function PipelineBoard() {
                     <DealCard
                       key={deal.id}
                       deal={deal}
+                      locked={!canChangeStage(deal, role)}
                       moving={moving === deal.id}
                       onOpen={setDrawerDeal}
                       onMove={(target, next) => void moveDeal(target, next)}
@@ -428,6 +470,7 @@ export function PipelineBoard() {
           }}
           deal={closing.deal}
           initialStage={closing.stage}
+          role={role}
           onSaved={(saved) => {
             toast.success({
               title: `Moved to ${DEAL_STAGE_LABELS[saved.stage]}`,

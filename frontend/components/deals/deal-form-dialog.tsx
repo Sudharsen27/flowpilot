@@ -18,9 +18,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError } from "@/lib/api/client";
-import { createDeal, isRevisionConflict, updateDeal, validationErrors } from "@/lib/api/deals";
+import {
+  createDeal,
+  forbiddenMessage,
+  isRevisionConflict,
+  updateDeal,
+  validationErrors,
+} from "@/lib/api/deals";
 import { getLeads } from "@/lib/api/leads";
-import { DEAL_STAGES, DEAL_STAGE_LABELS, canManageDeals, isClosedStage } from "@/lib/deals";
+import {
+  DEAL_STAGES,
+  DEAL_STAGE_LABELS,
+  canManageDeals,
+  creatableStages,
+  isClosedStage,
+} from "@/lib/deals";
 import { decimalEquals, parseAmountInput } from "@/lib/money";
 import type {
   Deal,
@@ -136,6 +148,16 @@ const SERVER_FIELD: Record<string, keyof FormState | "form"> = {
   form: "form",
 };
 
+/**
+ * The API's 403 details for owner assignment (backend deal_service.py). Matched exactly so
+ * no other permission error lands on the Owner field; a reworded message falls back to
+ * a form-level error.
+ */
+const OWNER_PERMISSION_DETAILS: ReadonlySet<string> = new Set([
+  "Only owners and admins can assign deals to other members",
+  "Only owners and admins can reassign deal owners",
+]);
+
 function serverErrors(cause: unknown): FieldErrors {
   const mapped: FieldErrors = {};
   for (const [field, message] of Object.entries(validationErrors(cause))) {
@@ -145,8 +167,10 @@ function serverErrors(cause: unknown): FieldErrors {
   if (cause instanceof ApiError && cause.status === 404) {
     return { lead: "This lead no longer exists or is not in your organization." };
   }
-  if (cause instanceof ApiError && cause.status === 403) {
-    return { owner: "Only owners and admins can assign or reassign deal owners." };
+  const forbidden = forbiddenMessage(cause);
+  if (forbidden) {
+    // Show the API's reason where it applies: owner assignment, or the whole form.
+    return OWNER_PERMISSION_DETAILS.has(forbidden) ? { owner: forbidden } : { form: forbidden };
   }
   return { form: "The deal could not be saved. Please try again." };
 }
@@ -283,6 +307,9 @@ export function DealFormDialog({
 
   const closed = isClosedStage(form.stage);
   const lost = form.stage === "CLOSED_LOST";
+  // Won amounts change only through the audited correction (OWNER/ADMIN).
+  const amountLocked = baseline?.stage === "CLOSED_WON";
+  const stageOptions = isEdit ? DEAL_STAGES : creatableStages(role);
   const others = members.filter((member) => member.user.id !== currentUserId);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -344,7 +371,9 @@ export function DealFormDialog({
     if (name !== current.name) payload.name = name;
     const description = trimmedOrNull(state.description);
     if (description !== current.description) payload.description = description;
-    if (!decimalEquals(amount, current.amount)) payload.amount = amount;
+    if (current.stage !== "CLOSED_WON" && !decimalEquals(amount, current.amount)) {
+      payload.amount = amount;
+    }
     if (state.expectedCloseDate !== current.expected_close_date) {
       payload.expected_close_date = state.expectedCloseDate;
     }
@@ -432,13 +461,26 @@ export function DealFormDialog({
             />
           </FormField>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
-            <FormField label="Amount" htmlFor="deal-amount" required error={errors.amount}>
+            <FormField
+              label="Amount"
+              htmlFor="deal-amount"
+              required
+              error={errors.amount}
+              description={
+                amountLocked
+                  ? canAssign
+                    ? "Won amounts are locked. Use Correct amount on the deal page to record a change with a reason."
+                    : "Won amounts are locked. An owner or admin can record a correction."
+                  : undefined
+              }
+            >
               <Input
-                {...fieldProps("amount")}
+                {...fieldProps("amount", amountLocked)}
                 inputMode="decimal"
                 autoComplete="off"
                 placeholder="125000.50"
                 value={form.amount}
+                readOnly={amountLocked}
                 onChange={(event) => update("amount", event.target.value)}
               />
             </FormField>
@@ -461,10 +503,16 @@ export function DealFormDialog({
               label="Stage"
               htmlFor="deal-stage"
               error={errors.stage}
-              description={isEdit ? "Change the stage from the deal page." : undefined}
+              description={
+                isEdit
+                  ? "Change the stage from the deal page."
+                  : canAssign
+                    ? undefined
+                    : "Create the deal in an open stage, then mark it won or lost when it closes."
+              }
             >
               <Select
-                {...fieldProps("stage", isEdit)}
+                {...fieldProps("stage", isEdit || !canAssign)}
                 value={form.stage}
                 disabled={isEdit}
                 onChange={(event) => {
@@ -477,7 +525,7 @@ export function DealFormDialog({
                   }));
                 }}
               >
-                {DEAL_STAGES.map((stage) => (
+                {stageOptions.map((stage) => (
                   <option key={stage} value={stage}>
                     {DEAL_STAGE_LABELS[stage]}
                   </option>

@@ -1,6 +1,7 @@
 import { ApiError, apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import type {
   Deal,
+  DealAmountCorrectionRequest,
   DealCreateRequest,
   DealHistoryResponse,
   DealListResponse,
@@ -59,6 +60,14 @@ export function changeDealStage(dealId: string, input: DealStageChangeRequest) {
   return apiPost<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}/stage`, input);
 }
 
+/** OWNER/ADMIN only: the audited way to change a won deal's amount. */
+export function correctWonDealAmount(dealId: string, input: DealAmountCorrectionRequest) {
+  return apiPost<Deal>(
+    `/api/v1/deals/${encodeURIComponent(dealId)}/amount-correction`,
+    input,
+  );
+}
+
 export function getDealHistory(dealId: string, params: { limit?: number; offset?: number } = {}) {
   const query = new URLSearchParams();
   if (params.limit !== undefined) {
@@ -76,6 +85,15 @@ export function getDealHistory(dealId: string, params: { limit?: number; offset?
 /** True when the API rejected a write because the deal changed since it was loaded. */
 export function isRevisionConflict(cause: unknown): cause is ApiError {
   return cause instanceof ApiError && cause.status === 409;
+}
+
+/** The API's reason for a 403, e.g. "Only owners and admins can …"; null otherwise. */
+export function forbiddenMessage(cause: unknown): string | null {
+  if (!(cause instanceof ApiError) || cause.status !== 403) return null;
+  const detail = (cause.body as { detail?: unknown } | null)?.detail;
+  return typeof detail === "string" && detail.trim()
+    ? detail
+    : "You do not have permission to make this change.";
 }
 
 /** Field name → message from a FastAPI 422 body; "form" holds non-field errors. */

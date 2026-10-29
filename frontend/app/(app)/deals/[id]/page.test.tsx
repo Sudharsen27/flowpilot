@@ -5,7 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import DealDetailPage from "@/app/(app)/deals/[id]/page";
 import { ToastProvider } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
-import { changeDealStage, getDeal, getDealHistory, updateDeal } from "@/lib/api/deals";
+import {
+  changeDealStage,
+  correctWonDealAmount,
+  getDeal,
+  getDealHistory,
+  updateDeal,
+} from "@/lib/api/deals";
 import { listOrganizationMembers } from "@/lib/api/organizations";
 import type { Deal, DealHistoryEvent, MemberPublic } from "@/types/api";
 
@@ -30,6 +36,7 @@ vi.mock("@/lib/api/deals", async (importOriginal) => {
     getDealHistory: vi.fn(),
     updateDeal: vi.fn(),
     changeDealStage: vi.fn(),
+    correctWonDealAmount: vi.fn(),
   };
 });
 vi.mock("@/lib/api/organizations", () => ({ listOrganizationMembers: vi.fn() }));
@@ -39,6 +46,7 @@ const getDealMock = vi.mocked(getDeal);
 const historyMock = vi.mocked(getDealHistory);
 const updateMock = vi.mocked(updateDeal);
 const stageMock = vi.mocked(changeDealStage);
+const correctMock = vi.mocked(correctWonDealAmount);
 
 const members: MemberPublic[] = [
   { membership_id: "m-1", role: "OWNER", user: { id: "user-owner", name: "Olivia Owner", email: "o@example.com" } },
@@ -354,5 +362,229 @@ describe("Deal detail page", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Acme expansion" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Retry history" }));
     expect(await screen.findByRole("list", { name: "Deal history, oldest first" })).toBeInTheDocument();
+  });
+
+  describe("won deals", () => {
+    const won = () =>
+      deal({
+        stage: "CLOSED_WON",
+        amount: "120000.00",
+        probability: null,
+        effective_probability: 100,
+        probability_source: "STAGE_DEFAULT",
+        closed_at: "2026-10-25T10:00:00Z",
+      });
+
+    beforeEach(() => {
+      getDealMock.mockResolvedValue(won());
+    });
+
+    it.each(["OWNER", "ADMIN", "MEMBER"])(
+      "keeps the amount read-only in the edit form for %s",
+      async (role) => {
+        const user = userEvent.setup();
+        authMock.role = role;
+        updateMock.mockResolvedValue({ ...won(), name: "Renamed", revision: 4 });
+        renderPage();
+        await user.click(await screen.findByRole("button", { name: "Edit" }));
+        const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
+        const amount = within(dialog).getByLabelText(/Amount/);
+        expect(amount).toHaveAttribute("readonly");
+        expect(amount).toHaveAccessibleDescription(
+          role === "MEMBER"
+            ? "Won amounts are locked. An owner or admin can record a correction."
+            : "Won amounts are locked. Use Correct amount on the deal page to record a change with a reason.",
+        );
+        await user.type(amount, "5");
+        expect(amount).toHaveValue("120000.00");
+        const name = within(dialog).getByLabelText(/Deal name/);
+        await user.clear(name);
+        await user.type(name, "Renamed");
+        await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+        expect(updateMock).toHaveBeenCalledWith("deal-1", { expected_revision: 3, name: "Renamed" });
+      },
+    );
+
+    it.each(["OWNER", "ADMIN"])(
+      "lets %s record an audited correction with a required reason",
+      async (role) => {
+        const user = userEvent.setup();
+        authMock.role = role;
+        correctMock.mockResolvedValue({ ...won(), amount: "118500.00", revision: 4 });
+        renderPage();
+        await user.click(await screen.findByRole("button", { name: "Correct amount" }));
+        const dialog = await screen.findByRole("dialog", { name: "Correct won amount" });
+        expect(within(dialog).getByText(/was won at ₹1,20,000.00/)).toBeInTheDocument();
+        const amount = within(dialog).getByLabelText(/Corrected amount \(INR\)/);
+        expect(amount).toHaveValue("120000.00");
+
+        await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+        expect(within(dialog).getByText("Enter an amount different from the current amount.")).toBeInTheDocument();
+        expect(within(dialog).getByText("Explain why the amount is being corrected.")).toBeInTheDocument();
+
+        await user.clear(amount);
+        await user.type(amount, "12.345");
+        await user.type(within(dialog).getByLabelText(/Correction reason/), "   ");
+        await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+        expect(within(dialog).getByText("Use at most 2 decimal places.")).toBeInTheDocument();
+        expect(within(dialog).getByText("Explain why the amount is being corrected.")).toBeInTheDocument();
+        expect(correctMock).not.toHaveBeenCalled();
+
+        await user.clear(amount);
+        await user.type(amount, "1,18,500.00");
+        await user.clear(within(dialog).getByLabelText(/Correction reason/));
+        await user.type(within(dialog).getByLabelText(/Correction reason/), "  Invoice discount  ");
+        await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+        expect(correctMock).toHaveBeenCalledWith("deal-1", {
+          expected_revision: 3,
+          amount: "118500.00",
+          reason: "Invoice discount",
+        });
+        expect(await screen.findByText("Amount corrected")).toBeInTheDocument();
+        await waitFor(() => expect(historyMock).toHaveBeenCalledTimes(2));
+        const details = screen.getByRole("region", { name: "Deal details" });
+        expect(within(details).getByText("₹1,18,500.00")).toBeInTheDocument();
+      },
+    );
+
+    it("shows members no correction or stage controls on a won deal", async () => {
+      authMock.role = "MEMBER";
+      renderPage();
+      await screen.findByRole("heading", { level: 1, name: "Acme expansion" });
+      expect(screen.queryByRole("button", { name: "Correct amount" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Change stage" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+      expect(screen.getByRole("note")).toHaveTextContent(
+        "Only owners and admins can reopen or change a won deal.",
+      );
+    });
+
+    it("offers corrections only on won deals", async () => {
+      getDealMock.mockResolvedValue(deal());
+      renderPage();
+      await screen.findByRole("heading", { level: 1, name: "Acme expansion" });
+      expect(screen.queryByRole("button", { name: "Correct amount" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Change stage" })).toBeInTheDocument();
+      expect(screen.queryByRole("note")).not.toBeInTheDocument();
+    });
+
+    it("handles correction conflicts, permission and validation errors", async () => {
+      const user = userEvent.setup();
+      correctMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 409", 409, { current_revision: 4 }),
+      );
+      renderPage();
+      await user.click(await screen.findByRole("button", { name: "Correct amount" }));
+      const dialog = await screen.findByRole("dialog", { name: "Correct won amount" });
+      const amount = within(dialog).getByLabelText(/Corrected amount/);
+      await user.clear(amount);
+      await user.type(amount, "100000");
+      await user.type(within(dialog).getByLabelText(/Correction reason/), "Credit note");
+      getDealMock.mockResolvedValue({ ...won(), amount: "119000.00", revision: 4 });
+      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      expect(
+        await within(dialog).findByText(/Someone else changed this deal, so the correction was not saved/),
+      ).toBeInTheDocument();
+      expect(amount).toHaveValue("119000.00");
+
+      correctMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 403", 403, {
+          detail: "Only owners and admins can correct a won deal amount",
+        }),
+      );
+      await user.clear(amount);
+      await user.type(amount, "100000");
+      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      expect(
+        await within(dialog).findByText("Only owners and admins can correct a won deal amount"),
+      ).toBeInTheDocument();
+      expect(correctMock).toHaveBeenLastCalledWith("deal-1", {
+        expected_revision: 4,
+        amount: "100000",
+        reason: "Credit note",
+      });
+
+      correctMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 422", 422, {
+          detail: [{ loc: ["body", "amount"], msg: "Input should be less than or equal to 999999999999.99" }],
+        }),
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      expect(
+        await within(dialog).findByText("Input should be less than or equal to 999999999999.99"),
+      ).toBeInTheDocument();
+
+      correctMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 422", 422, {
+          detail: "Only won deals use amount corrections; use PATCH",
+        }),
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      expect(
+        await within(dialog).findByText("Only won deals use amount corrections; use PATCH"),
+      ).toBeInTheDocument();
+      expect(dialog).toBeInTheDocument();
+    });
+
+    it.each(["OWNER", "ADMIN"])("lets %s reopen a won deal", async (role) => {
+      const user = userEvent.setup();
+      authMock.role = role;
+      stageMock.mockResolvedValue(deal({ stage: "NEGOTIATION", revision: 4 }));
+      renderPage();
+      await user.click(await screen.findByRole("button", { name: "Change stage" }));
+      const dialog = await screen.findByRole("dialog", { name: "Change stage" });
+      await user.selectOptions(within(dialog).getByLabelText(/New stage/), "NEGOTIATION");
+      expect(within(dialog).getByText(/Reopening clears the close date/)).toBeInTheDocument();
+      await user.click(within(dialog).getByRole("button", { name: "Move to Negotiation" }));
+      expect(stageMock).toHaveBeenCalledWith(
+        "deal-1",
+        expect.objectContaining({ stage: "NEGOTIATION", expected_revision: 3 }),
+      );
+    });
+
+    it("shows the API's reason when a stage change is refused", async () => {
+      const user = userEvent.setup();
+      stageMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 403", 403, {
+          detail: "Only owners and admins can move a won deal to another stage",
+        }),
+      );
+      renderPage();
+      await user.click(await screen.findByRole("button", { name: "Change stage" }));
+      const dialog = await screen.findByRole("dialog", { name: "Change stage" });
+      await user.selectOptions(within(dialog).getByLabelText(/New stage/), "PROPOSAL");
+      await user.click(within(dialog).getByRole("button", { name: "Move to Proposal" }));
+      expect(
+        await within(dialog).findByText("Only owners and admins can move a won deal to another stage"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("shows probability changes and corrections from the history API", async () => {
+    historyMock.mockResolvedValue({
+      items: [
+        ...history,
+        {
+          ...history[2]!,
+          id: "e4",
+          changes: ["PROBABILITY"],
+          previous_stage: "PROPOSAL",
+          previous_probability: null,
+          new_probability: 65,
+          is_correction: false,
+        },
+      ],
+      limit: 200,
+      offset: 0,
+      total: 4,
+    });
+    renderPage();
+    const timeline = await screen.findByRole("list", { name: "Deal history, oldest first" });
+    const entries = within(timeline).getAllByRole("listitem").filter((item) => item.parentElement === timeline);
+    // Rows from before probability history keep rendering as before.
+    expect(entries[1]).toHaveTextContent("Amount changed from ₹1,00,000.00 to ₹1,25,000.50.");
+    expect(entries[3]).toHaveTextContent(
+      "Probability changed from the stage default to 65% (override).",
+    );
   });
 });

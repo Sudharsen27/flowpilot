@@ -21,6 +21,18 @@ vi.mock("@/lib/api/deals", async (importOriginal) => {
 });
 vi.mock("@/lib/api/pipeline", () => ({ getPipelineSummary: vi.fn() }));
 
+const authMock = vi.hoisted(() => ({ role: "OWNER" as string }));
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({
+    session: {
+      user: { id: "user-1", name: "Olivia Owner", email: "o@example.com" },
+      organization: { id: "org-1", name: "Acme", slug: "acme" },
+      membership: { role: authMock.role },
+    },
+    isLoading: false,
+  }),
+}));
+
 const listMock = vi.mocked(listDeals);
 const stageMock = vi.mocked(changeDealStage);
 
@@ -91,6 +103,7 @@ function column(name: RegExp) {
 describe("Pipeline board", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authMock.role = "OWNER";
     vi.mocked(getPipelineSummary).mockResolvedValue(summary);
     vi.mocked(getDealHistory).mockResolvedValue({ items: [], limit: 50, offset: 0, total: 0 });
     boardData({
@@ -209,5 +222,105 @@ describe("Pipeline board", () => {
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("region", { name: /^Qualification/ })).toBeInTheDocument();
     expect(vi.mocked(getDeal)).not.toHaveBeenCalled();
+  });
+
+  describe("won deals by role", () => {
+    const won = deal({
+      id: "deal-won",
+      name: "Signed renewal",
+      stage: "CLOSED_WON",
+      effective_probability: 100,
+      closed_at: "2026-10-20T00:00:00Z",
+    });
+
+    function transfer() {
+      const data = new Map<string, string>();
+      return {
+        setData: (type: string, value: string) => data.set(type, value),
+        getData: (type: string) => data.get(type) ?? "",
+        get types() {
+          return [...data.keys()];
+        },
+        effectAllowed: "",
+      };
+    }
+
+    beforeEach(() => {
+      boardData({ QUALIFICATION: { items: [deal()] }, CLOSED_WON: { items: [won] } });
+    });
+
+    it.each(["OWNER", "ADMIN"])("lets %s move a won deal", async (role) => {
+      const user = userEvent.setup();
+      authMock.role = role;
+      stageMock.mockResolvedValue({ ...won, stage: "NEGOTIATION", closed_at: null, revision: 3 });
+      renderPage();
+      await screen.findByRole("region", { name: /^Closed won/ });
+      const card = screen.getByRole("button", { name: "Signed renewal" }).closest("li")!;
+      expect(card).toHaveAttribute("draggable", "true");
+      expect(screen.queryByText(/Only owners and admins can move won deals/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Move Signed renewal" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Negotiation" }));
+      expect(stageMock).toHaveBeenCalledWith("deal-won", expect.objectContaining({ stage: "NEGOTIATION" }));
+    });
+
+    it("gives members no way to move a won deal, by menu or drag and drop", async () => {
+      authMock.role = "MEMBER";
+      renderPage();
+      await screen.findByRole("region", { name: /^Closed won/ });
+      expect(screen.getByText(/Only owners and admins can move won deals/)).toBeInTheDocument();
+      const card = screen.getByRole("button", { name: "Signed renewal" }).closest("li")!;
+      expect(card).toHaveAttribute("draggable", "false");
+      expect(screen.queryByRole("button", { name: "Move Signed renewal" })).not.toBeInTheDocument();
+      expect(
+        within(card).getByRole("img", { name: "Only owners and admins can reopen or change a won deal." }),
+      ).toBeInTheDocument();
+
+      // Even a forged drop (e.g. dragged in from elsewhere) never reaches the API.
+      const dataTransfer = transfer();
+      dataTransfer.setData("application/x-flowpilot-deal", "deal-won");
+      const target = column(/^Proposal/);
+      fireEvent.dragOver(target, { dataTransfer });
+      await act(async () => {
+        fireEvent.drop(target, { dataTransfer });
+      });
+      expect(stageMock).not.toHaveBeenCalled();
+      expect((await screen.findAllByText("This deal cannot be moved")).length).toBeGreaterThan(0);
+      expect(within(column(/^Closed won/)).getByText("Signed renewal")).toBeInTheDocument();
+    });
+
+    it("still lets members move open deals, including closing them", async () => {
+      const user = userEvent.setup();
+      authMock.role = "MEMBER";
+      stageMock.mockResolvedValue(deal({ stage: "DISCOVERY", revision: 3 }));
+      renderPage();
+      await screen.findByRole("region", { name: /^Qualification/ });
+      const card = screen.getByRole("button", { name: "Acme expansion" }).closest("li")!;
+      expect(card).toHaveAttribute("draggable", "true");
+      await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Closed won" }));
+      const dialog = await screen.findByRole("dialog", { name: "Change stage" });
+      expect(within(dialog).getByRole("button", { name: "Mark as won" })).toBeInTheDocument();
+      expect(within(dialog).getByRole("note")).toHaveTextContent(
+        "Only owners and admins can reopen or change a won deal",
+      );
+    });
+
+    it("shows the API's reason when it refuses a move", async () => {
+      const user = userEvent.setup();
+      stageMock.mockRejectedValue(
+        new ApiError("Request failed: 403", 403, {
+          detail: "Only owners and admins can move a won deal to another stage",
+        }),
+      );
+      renderPage();
+      await screen.findByRole("region", { name: /^Closed won/ });
+      await user.click(screen.getByRole("button", { name: "Move Signed renewal" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Proposal" }));
+      expect(
+        (await screen.findAllByText("Only owners and admins can move a won deal to another stage"))
+          .length,
+      ).toBeGreaterThan(0);
+      expect(within(column(/^Closed won/)).getByText("Signed renewal")).toBeInTheDocument();
+    });
   });
 });

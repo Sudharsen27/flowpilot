@@ -1576,7 +1576,12 @@ export type DealStageChangeRequest = {
   change_reason?: string | null;
 };
 
-export type DealHistoryChange = "CREATED" | "STAGE" | "AMOUNT" | "EXPECTED_CLOSE_DATE";
+export type DealHistoryChange =
+  | "CREATED"
+  | "STAGE"
+  | "AMOUNT"
+  | "EXPECTED_CLOSE_DATE"
+  | "PROBABILITY";
 
 export type DealHistoryEvent = {
   id: string;
@@ -1588,10 +1593,25 @@ export type DealHistoryEvent = {
   new_amount: MoneyString;
   previous_expected_close_date: string | null;
   new_expected_close_date: string;
+  /**
+   * Probability override before/after the event; null means the stage default.
+   * Rows recorded before probability history existed have null (or omit) both.
+   */
+  previous_probability?: number | null;
+  new_probability?: number | null;
+  /** A manager's audited amount correction on a won deal. */
+  is_correction?: boolean;
   changed_by_user_id: string | null;
   changed_by_name: string | null;
   change_reason: string | null;
   created_at: string;
+};
+
+export type DealAmountCorrectionRequest = {
+  expected_revision: number;
+  amount: MoneyString;
+  /** Required; kept in the deal history. */
+  reason: string;
 };
 
 export type DealHistoryResponse = {
