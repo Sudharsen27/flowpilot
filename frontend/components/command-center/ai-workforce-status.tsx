@@ -1,6 +1,11 @@
 import { ArrowRight, Bot } from "lucide-react";
 import Link from "next/link";
 
+import { EXECUTION_STATUS_LABELS } from "@/components/agents/execution-status";
+import {
+  executionCount,
+  type ExecutionStatusCounts,
+} from "@/components/agents/organization-execution-summary";
 import { AiBadge } from "@/components/ai/ai-badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -12,17 +17,69 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  AGENT_EXECUTION_STATUSES,
+  buildAgentExecutionsHref,
+} from "@/lib/agent-executions-url";
 import { statusPresentation } from "@/lib/status";
 import type { Agent } from "@/types/api";
 
 type AiWorkforceStatusProps = {
   loading?: boolean;
   agents: Agent[];
+  /** Organization-wide execution counts; `undefined` while loading, `null` when unavailable. */
+  executionCounts?: ExecutionStatusCounts | null;
 };
+
+function ExecutionCounts({
+  counts,
+}: {
+  counts: ExecutionStatusCounts | null | undefined;
+}) {
+  if (counts === undefined) {
+    return (
+      <p className="text-muted-foreground text-sm" role="status">
+        Loading agent runs…
+      </p>
+    );
+  }
+  if (counts === null) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Agent run counts are unavailable right now.
+      </p>
+    );
+  }
+  return (
+    <ul
+      className="flex flex-wrap gap-2"
+      aria-label="Agent runs by status across your organization"
+    >
+      {AGENT_EXECUTION_STATUSES.map((status) => {
+        const label = EXECUTION_STATUS_LABELS[status];
+        const count = executionCount(counts, status);
+        const presentation = statusPresentation(status, label);
+        return (
+          <li key={status}>
+            <Link
+              href={buildAgentExecutionsHref({ status })}
+              aria-label={`${label}: ${count} agent runs`}
+              className="border-border hover:bg-muted/60 focus-visible:ring-ring inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2"
+            >
+              <StatusBadge status={presentation.status} label={label} />
+              <span className="font-semibold tabular-nums">{count}</span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export function AiWorkforceStatus({
   loading = false,
   agents,
+  executionCounts,
 }: AiWorkforceStatusProps) {
   const active = agents.filter((agent) => agent.status === "ACTIVE").length;
   const ready = agents.filter((agent) => agent.status === "READY").length;
@@ -72,8 +129,7 @@ export function AiWorkforceStatus({
           <p className="text-muted-foreground max-w-2xl text-sm leading-6">
             {agents.length} configured agent{agents.length === 1 ? "" : "s"} in
             this organization. {active ? `${active} active` : "No active agents"}
-            {ready ? `, ${ready} ready` : ""}. Per-agent execution history is
-            available on each agent detail page.
+            {ready ? `, ${ready} ready` : ""}.
           </p>
         ) : (
           <p className="text-muted-foreground max-w-2xl text-sm leading-6">
@@ -81,10 +137,21 @@ export function AiWorkforceStatus({
             enquiries.
           </p>
         )}
+        <div className="mt-4 grid gap-2">
+          <h3 className="text-sm font-medium">Agent runs</h3>
+          <ExecutionCounts counts={executionCounts} />
+        </div>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="flex flex-wrap gap-2">
         <Link href="/agents" className={buttonVariants({ variant: "outline" })}>
           Review AI Agents
+          <ArrowRight aria-hidden="true" />
+        </Link>
+        <Link
+          href={buildAgentExecutionsHref()}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          View all agent runs
           <ArrowRight aria-hidden="true" />
         </Link>
       </CardFooter>

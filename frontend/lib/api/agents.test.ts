@@ -10,6 +10,7 @@ import {
   getAgentExecution,
   getAgents,
   listAgentExecutions,
+  listOrganizationExecutions,
   listToolInvocations,
   markAgentReady,
   orchestrateAgent,
@@ -20,6 +21,7 @@ import {
 import type {
   AgentExecutionDetail,
   AgentExecutionListResponse,
+  OrganizationExecutionListResponse,
   ToolInvocationListResponse,
 } from "@/types/api";
 
@@ -620,5 +622,111 @@ describe("Agent API client", () => {
     });
     expect(body).not.toHaveProperty("enquiry");
     expect(body).not.toHaveProperty("organization_id");
+  });
+
+  describe("listOrganizationExecutions", () => {
+    const organizationPage: OrganizationExecutionListResponse = {
+      items: [
+        {
+          id: "exec-1",
+          status: "RUNNING",
+          provider: "anthropic",
+          model: "claude",
+          started_at: "2026-10-28T10:00:00Z",
+          completed_at: null,
+          created_at: "2026-10-28T10:00:00Z",
+          input_preview: "Qualify Acme",
+          error_preview: null,
+          duration_ms: null,
+          failure_category: null,
+          agent_id: "agent-1",
+          agent_name: "Sales Agent",
+          lead_id: "lead-1",
+          lead_name: "Acme",
+          initiated_by_user_id: "user-1",
+          is_stale: true,
+        },
+      ],
+      limit: 20,
+      offset: 0,
+      total: 1,
+      status_counts: {
+        QUEUED: 0,
+        RUNNING: 1,
+        COMPLETED: 0,
+        FAILED: 0,
+        CANCELLED: 0,
+      },
+    };
+
+    function mockPage() {
+      return vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+        new Response(JSON.stringify(organizationPage), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+
+    it("gets the authenticated organization endpoint without filters", async () => {
+      const fetchMock = mockPage();
+      const result = await listOrganizationExecutions();
+      expect(result).toEqual(organizationPage);
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/agent-executions",
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer agent-token",
+          }),
+        }),
+      );
+    });
+
+    it("sends backend filter names and pagination", async () => {
+      const fetchMock = mockPage();
+      await listOrganizationExecutions({
+        status: "FAILED",
+        agentId: "agent/1",
+        leadId: "lead 1",
+        limit: 20,
+        offset: 40,
+      });
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(
+        "http://localhost:8000/api/v1/agent-executions?status=FAILED&agent_id=agent%2F1&lead_id=lead+1&limit=20&offset=40",
+      );
+    });
+
+    it("clamps pagination to the backend bounds", async () => {
+      const fetchMock = mockPage();
+      await listOrganizationExecutions({ limit: 500, offset: -10 });
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(
+        "http://localhost:8000/api/v1/agent-executions?limit=50&offset=0",
+      );
+      await listOrganizationExecutions({ limit: 0 });
+      expect(fetchMock.mock.calls[1]?.[0]).toBe(
+        "http://localhost:8000/api/v1/agent-executions?limit=1",
+      );
+    });
+
+    it("omits blank agent and lead filters and never sends organization_id", async () => {
+      const fetchMock = mockPage();
+      await listOrganizationExecutions({ agentId: "  ", leadId: "" });
+      const url = String(fetchMock.mock.calls[0]?.[0]);
+      expect(url).toBe("http://localhost:8000/api/v1/agent-executions");
+      expect(url).not.toContain("organization_id");
+    });
+
+    it("surfaces API errors with their status", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      await expect(listOrganizationExecutions()).rejects.toMatchObject({
+        status: 403,
+      });
+    });
   });
 });

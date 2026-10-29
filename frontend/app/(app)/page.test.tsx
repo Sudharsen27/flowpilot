@@ -3,7 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandCenterPage from "@/app/(app)/dashboard/page";
-import { getAgents, orchestrateAgent } from "@/lib/api/agents";
+import {
+  getAgents,
+  listOrganizationExecutions,
+  orchestrateAgent,
+} from "@/lib/api/agents";
 import { getApprovals } from "@/lib/api/approvals";
 import { getInbox } from "@/lib/api/inbox";
 import { listActivity } from "@/lib/api/activity";
@@ -23,6 +27,7 @@ vi.mock("@/lib/api/activity", () => ({
 
 vi.mock("@/lib/api/agents", () => ({
   getAgents: vi.fn(),
+  listOrganizationExecutions: vi.fn(),
   orchestrateAgent: vi.fn(),
 }));
 
@@ -57,6 +62,7 @@ vi.mock("@/lib/api/sales-runs", () => ({
 const getAgentsMock = vi.mocked(getAgents);
 const getApprovalsMock = vi.mocked(getApprovals);
 const orchestrateAgentMock = vi.mocked(orchestrateAgent);
+const listOrganizationExecutionsMock = vi.mocked(listOrganizationExecutions);
 const getInboxMock = vi.mocked(getInbox);
 const listActivityMock = vi.mocked(listActivity);
 const getLeadsMock = vi.mocked(getLeads);
@@ -120,7 +126,21 @@ describe("Command Center", () => {
     getLeadsMock.mockReset();
     getFollowUpOperationsMock.mockReset();
     listOrganizationSalesRunsMock.mockReset();
+    listOrganizationExecutionsMock.mockReset();
     getAgentsMock.mockResolvedValue([]);
+    listOrganizationExecutionsMock.mockResolvedValue({
+      items: [],
+      limit: 1,
+      offset: 0,
+      total: 0,
+      status_counts: {
+        QUEUED: 0,
+        RUNNING: 0,
+        COMPLETED: 0,
+        FAILED: 0,
+        CANCELLED: 0,
+      },
+    });
     getInboxMock.mockResolvedValue({
       items: [],
       limit: 20,
@@ -436,5 +456,54 @@ describe("Command Center", () => {
     }
     expect(hrefs).not.toContain("/workflows");
     expect(hrefs.every((href) => href?.startsWith("/"))).toBe(true);
+  });
+
+  it("summarizes organization-wide agent runs with filtered links", async () => {
+    listOrganizationExecutionsMock.mockResolvedValue({
+      items: [],
+      limit: 1,
+      offset: 0,
+      total: 0,
+      status_counts: {
+        QUEUED: 1,
+        RUNNING: 2,
+        COMPLETED: 12,
+        FAILED: 3,
+        CANCELLED: 0,
+      },
+    });
+    render(<CommandCenterPage />);
+    const runs = await screen.findByRole("list", {
+      name: "Agent runs by status across your organization",
+    });
+    expect(
+      within(runs).getByRole("link", { name: "Failed: 3 agent runs" }),
+    ).toHaveAttribute("href", "/agents/executions?status=FAILED");
+    expect(
+      within(runs).getByRole("link", { name: "Completed: 12 agent runs" }),
+    ).toHaveAttribute("href", "/agents/executions?status=COMPLETED");
+    expect(
+      screen.getByRole("link", { name: "View all agent runs" }),
+    ).toHaveAttribute("href", "/agents/executions");
+    expect(listOrganizationExecutionsMock).toHaveBeenCalledWith({ limit: 1 });
+  });
+
+  it("keeps Command Center metrics when agent run counts fail", async () => {
+    listOrganizationExecutionsMock.mockRejectedValue(new Error("network"));
+    getAgentsMock.mockResolvedValue([agent]);
+    getLeadsMock.mockResolvedValue(leads(5, 2));
+    render(<CommandCenterPage />);
+    expect(
+      await screen.findByText("Agent run counts are unavailable right now."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Command Center metrics could not be loaded."),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("There are 2 leads with New status."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "View all agent runs" }),
+    ).toHaveAttribute("href", "/agents/executions");
   });
 });

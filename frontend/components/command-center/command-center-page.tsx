@@ -4,6 +4,7 @@ import { Bot, CheckCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import type { ExecutionStatusCounts } from "@/components/agents/organization-execution-summary";
 import { AiWorkforceStatus } from "@/components/command-center/ai-workforce-status";
 import { BusinessOverview } from "@/components/command-center/business-overview";
 import { NeedsAttention } from "@/components/command-center/needs-attention";
@@ -14,7 +15,7 @@ import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getAgents } from "@/lib/api/agents";
+import { getAgents, listOrganizationExecutions } from "@/lib/api/agents";
 import { getApprovals } from "@/lib/api/approvals";
 import { getLeads } from "@/lib/api/leads";
 import type { Agent } from "@/types/api";
@@ -169,6 +170,25 @@ export function CommandCenterPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [metricsKey, setMetricsKey] = useState(0);
+  const [executionCounts, setExecutionCounts] = useState<
+    ExecutionStatusCounts | null | undefined
+  >(undefined);
+
+  // Separate from the metrics Promise.all so a failure here never hides them.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => listOrganizationExecutions({ limit: 1 }))
+      .then((page) => {
+        if (!cancelled) setExecutionCounts(page?.status_counts ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setExecutionCounts(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [metricsKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,7 +253,11 @@ export function CommandCenterPage() {
         ) : null}
       </section>
 
-      <AiWorkforceStatus loading={loading} agents={data?.agents ?? []} />
+      <AiWorkforceStatus
+        loading={loading}
+        agents={data?.agents ?? []}
+        executionCounts={executionCounts}
+      />
 
       <NeedsAttention
         onChanged={() => {

@@ -7,7 +7,7 @@ import type {
   ToolInvocationStatus,
 } from "@/types/api";
 
-const executionLabels: Record<AgentExecutionStatus, string> = {
+export const EXECUTION_STATUS_LABELS: Record<AgentExecutionStatus, string> = {
   QUEUED: "Queued",
   RUNNING: "Running",
   COMPLETED: "Completed",
@@ -27,7 +27,7 @@ export function ExecutionStatusBadge({
 }: {
   status: AgentExecutionStatus;
 }) {
-  const presentation = statusPresentation(status, executionLabels[status]);
+  const presentation = statusPresentation(status, EXECUTION_STATUS_LABELS[status]);
   return (
     <StatusBadge status={presentation.status} label={presentation.label} />
   );

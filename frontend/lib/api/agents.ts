@@ -14,6 +14,8 @@ import type {
   AgentUpdateRequest,
   ExecutionFailureCategory,
   OrchestrationResult,
+  OrganizationExecutionListParams,
+  OrganizationExecutionListResponse,
   ToolInvocationListResponse,
 } from "@/types/api";
 
@@ -210,6 +212,30 @@ export function listAgentExecutions(
 ) {
   return apiGet<AgentExecutionListResponse>(
     `/api/v1/agents/${encodeURIComponent(agentId)}/executions${historyQuery(params)}`,
+  );
+}
+
+/** Read-only organization-wide execution history; the backend scopes rows to the caller's organization. */
+export function listOrganizationExecutions(
+  params: OrganizationExecutionListParams = {},
+) {
+  const filters = new URLSearchParams();
+  if (params.status) {
+    filters.set("status", params.status);
+  }
+  const agentId = params.agentId?.trim();
+  if (agentId) {
+    filters.set("agent_id", agentId);
+  }
+  const leadId = params.leadId?.trim();
+  if (leadId) {
+    filters.set("lead_id", leadId);
+  }
+  const page = historyQuery({ limit: params.limit, offset: params.offset });
+  const pageQuery = page ? page.slice(1) : "";
+  const query = [filters.toString(), pageQuery].filter(Boolean).join("&");
+  return apiGet<OrganizationExecutionListResponse>(
+    `/api/v1/agent-executions${query ? `?${query}` : ""}`,
   );
 }
 

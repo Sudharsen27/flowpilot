@@ -333,6 +333,33 @@ export type AgentExecutionListResponse = {
   total: number;
 };
 
+/** Organization-wide row: safe list fields plus the agent and lead it belongs to. */
+export type OrganizationExecutionListItem = AgentExecutionListItem & {
+  agent_id: string;
+  agent_name: string | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  initiated_by_user_id: string | null;
+  is_stale: boolean;
+};
+
+export type OrganizationExecutionListResponse = {
+  items: OrganizationExecutionListItem[];
+  limit: number;
+  offset: number;
+  total: number;
+  /** Organization-wide counts per status; never narrowed by list filters. */
+  status_counts: Partial<Record<AgentExecutionStatus, number>>;
+};
+
+export type OrganizationExecutionListParams = {
+  status?: AgentExecutionStatus;
+  agentId?: string;
+  leadId?: string;
+  limit?: number;
+  offset?: number;
+};
+
 export type AgentExecutionDetail = {
   id: string;
   agent_id: string;

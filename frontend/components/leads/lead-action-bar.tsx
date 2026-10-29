@@ -1,4 +1,7 @@
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+
+import { Button, buttonVariants } from "@/components/ui/button";
+import { buildAgentExecutionsHref } from "@/lib/agent-executions-url";
 import { leadNextStep } from "@/lib/lead-next-step";
 import type { Lead } from "@/types/api";
 
@@ -67,6 +70,12 @@ export function LeadActionBar({
         <Button type="button" variant="outline" onClick={onSalesAgentHistory}>
           Sales Agent history
         </Button>
+        <Link
+          href={buildAgentExecutionsHref({ leadId: lead.id })}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          Agent runs for this lead
+        </Link>
       </div>
       <ul className="text-muted-foreground grid gap-1 text-xs leading-5">
         <li>Analyze and Draft use AI and are saved as history. Neither sends email.</li>

@@ -327,6 +327,17 @@ describe("Agent Detail page", () => {
       .getAllByRole("button", { name: "Save configuration" })
       .forEach((button) => expect(button).toBeDisabled());
     expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
+    expect(
+      screen.getByRole("link", { name: "View in all agent runs" }),
+    ).toHaveAttribute("href", "/agents/executions?agent_id=agent-real-1");
+  });
+
+  it("links execution history to organization runs filtered by this agent", async () => {
+    getAgentMock.mockResolvedValue(agent);
+    render(<AgentDetailPage />);
+    expect(
+      await screen.findByRole("link", { name: "View in all agent runs" }),
+    ).toHaveAttribute("href", "/agents/executions?agent_id=agent-real-1");
   });
 
   it("shows Mark Ready for draft agents", async () => {

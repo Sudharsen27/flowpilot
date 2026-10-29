@@ -1,4 +1,4 @@
-import { ExecutionStatusBadge, formatDuration, formatFailureCategory, formatTimestamp } from "@/components/agents/execution-status";
+import { EXECUTION_STATUS_LABELS, ExecutionStatusBadge, formatDuration, formatFailureCategory, formatTimestamp } from "@/components/agents/execution-status";
 import { cn } from "@/lib/utils";
 import type { AgentExecutionListItem } from "@/types/api";
 
@@ -16,16 +16,7 @@ export function AgentExecutionHistoryItem({
   const created = formatTimestamp(item.created_at);
   const duration = formatDuration(item.duration_ms);
   const failure = formatFailureCategory(item.failure_category);
-  const statusLabel =
-    item.status === "COMPLETED"
-      ? "Completed"
-      : item.status === "FAILED"
-        ? "Failed"
-        : item.status === "CANCELLED"
-          ? "Cancelled"
-          : item.status === "RUNNING"
-            ? "Running"
-            : "Queued";
+  const statusLabel = EXECUTION_STATUS_LABELS[item.status];
   const summary = [statusLabel, failure, duration].filter(Boolean).join(" · ");
   return (
     <li>

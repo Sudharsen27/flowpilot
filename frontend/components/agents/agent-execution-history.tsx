@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { AgentExecutionDetailPanel } from "@/components/agents/agent-execution-detail";
 import { AgentExecutionHistoryItem } from "@/components/agents/agent-execution-history-item";
 import { historyErrorMessage } from "@/components/agents/execution-status";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -14,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { buildAgentExecutionsHref } from "@/lib/agent-executions-url";
 import { listAgentExecutions } from "@/lib/api/agents";
 import type { AgentExecutionListItem } from "@/types/api";
 
@@ -86,11 +88,21 @@ export function AgentExecutionHistory({ agentId }: AgentExecutionHistoryProps) {
   return (
     <Card as="section" aria-labelledby="execution-history-title">
       <CardHeader>
-        <CardTitle id="execution-history-title">Execution history</CardTitle>
-        <CardDescription>
-          Recorded runs for this agent. Open a run to inspect the stored input,
-          output, and tool activity.
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle id="execution-history-title">Execution history</CardTitle>
+            <CardDescription>
+              Recorded runs for this agent. Open a run to inspect the stored input,
+              output, and tool activity.
+            </CardDescription>
+          </div>
+          <Link
+            href={buildAgentExecutionsHref({ agentId })}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            View in all agent runs
+          </Link>
+        </div>
       </CardHeader>
       <CardContent className="grid min-w-0 gap-4">
         {error ? (
