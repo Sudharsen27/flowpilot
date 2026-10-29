@@ -5,18 +5,25 @@ import { Input } from "@/components/forms/input";
 import { Label } from "@/components/forms/label";
 import { SearchInput } from "@/components/forms/search-input";
 import { Select } from "@/components/forms/select";
-import { DEAL_STAGES, DEAL_STAGE_LABELS } from "@/lib/deals";
-import type { DealStage, MemberPublic } from "@/types/api";
+import {
+  DEAL_STAGES,
+  DEAL_STAGE_LABELS,
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_LABELS,
+} from "@/lib/deals";
+import type { DealStage, ForecastCategory, MemberPublic } from "@/types/api";
 
 type DealsToolbarProps = {
   query: string;
   stage: DealStage | null;
+  forecastCategory: ForecastCategory | null;
   ownerUserId: string | null;
   closeDateFrom: string | null;
   closeDateTo: string | null;
   members: MemberPublic[];
   onQueryChange: (value: string) => void;
   onStageChange: (value: DealStage | null) => void;
+  onForecastCategoryChange: (value: ForecastCategory | null) => void;
   onOwnerChange: (value: string | null) => void;
   onCloseDateFromChange: (value: string | null) => void;
   onCloseDateToChange: (value: string | null) => void;
@@ -26,12 +33,14 @@ type DealsToolbarProps = {
 export function DealsToolbar({
   query,
   stage,
+  forecastCategory,
   ownerUserId,
   closeDateFrom,
   closeDateTo,
   members,
   onQueryChange,
   onStageChange,
+  onForecastCategoryChange,
   onOwnerChange,
   onCloseDateFromChange,
   onCloseDateToChange,
@@ -40,6 +49,7 @@ export function DealsToolbar({
   const activeFilterCount = [
     query.trim() !== "",
     stage !== null,
+    forecastCategory !== null,
     ownerUserId !== null,
     closeDateFrom !== null,
     closeDateTo !== null,
@@ -82,6 +92,25 @@ export function DealsToolbar({
             ))}
           </Select>
         </div>
+        <div className="w-full sm:w-40">
+          <Label htmlFor="deal-category-filter" className="sr-only">
+            Forecast category
+          </Label>
+          <Select
+            id="deal-category-filter"
+            value={forecastCategory ?? ""}
+            onChange={(event) =>
+              onForecastCategoryChange((event.target.value || null) as ForecastCategory | null)
+            }
+          >
+            <option value="">All categories</option>
+            {FORECAST_CATEGORIES.map((value) => (
+              <option key={value} value={value}>
+                {FORECAST_CATEGORY_LABELS[value]}
+              </option>
+            ))}
+          </Select>
+        </div>
         <div className="w-full sm:w-44">
           <Label htmlFor="deal-owner-filter" className="sr-only">
             Owner
@@ -102,33 +131,39 @@ export function DealsToolbar({
             ))}
           </Select>
         </div>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
-          <Label htmlFor="deal-close-from" className="text-muted-foreground shrink-0 text-xs">
-            Closing
-          </Label>
-          <Input
-            id="deal-close-from"
-            type="date"
-            aria-label="Expected close from"
-            className="sm:w-36"
-            value={closeDateFrom ?? ""}
-            onChange={(event) => onCloseDateFromChange(event.target.value || null)}
-            aria-invalid={rangeInvalid || undefined}
-            aria-describedby={rangeInvalid ? "deal-close-range-error" : undefined}
-          />
-          <span className="text-muted-foreground text-xs" aria-hidden="true">
-            to
-          </span>
-          <Input
-            id="deal-close-to"
-            type="date"
-            aria-label="Expected close to"
-            className="sm:w-36"
-            value={closeDateTo ?? ""}
-            onChange={(event) => onCloseDateToChange(event.target.value || null)}
-            aria-invalid={rangeInvalid || undefined}
-            aria-describedby={rangeInvalid ? "deal-close-range-error" : undefined}
-          />
+        {/* Two pairs that wrap onto separate lines on narrow screens, so the native date
+            inputs keep their full width instead of clipping. */}
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+          <div className="flex min-w-48 flex-1 items-center gap-2 sm:min-w-0 sm:flex-none">
+            <Label htmlFor="deal-close-from" className="text-muted-foreground shrink-0 text-xs">
+              Closing
+            </Label>
+            <Input
+              id="deal-close-from"
+              type="date"
+              aria-label="Expected close from"
+              className="min-w-0 flex-1 sm:w-36 sm:flex-none"
+              value={closeDateFrom ?? ""}
+              onChange={(event) => onCloseDateFromChange(event.target.value || null)}
+              aria-invalid={rangeInvalid || undefined}
+              aria-describedby={rangeInvalid ? "deal-close-range-error" : undefined}
+            />
+          </div>
+          <div className="flex min-w-48 flex-1 items-center gap-2 sm:min-w-0 sm:flex-none">
+            <span className="text-muted-foreground text-xs" aria-hidden="true">
+              to
+            </span>
+            <Input
+              id="deal-close-to"
+              type="date"
+              aria-label="Expected close to"
+              className="min-w-0 flex-1 sm:w-36 sm:flex-none"
+              value={closeDateTo ?? ""}
+              onChange={(event) => onCloseDateToChange(event.target.value || null)}
+              aria-invalid={rangeInvalid || undefined}
+              aria-describedby={rangeInvalid ? "deal-close-range-error" : undefined}
+            />
+          </div>
         </div>
       </FilterBar>
       {rangeInvalid ? (

@@ -503,8 +503,8 @@ def test_deal_api_round_trip_on_postgres(pg_client: TestClient, pg_engine: Any) 
     assert [event["changes"] for event in history["items"]] == [
         ["CREATED"],
         ["AMOUNT"],
-        # Winning clears the 30% override, and that reset is recorded.
-        ["STAGE", "PROBABILITY"],
+        # Winning clears the 30% override and the forecast category; both are recorded.
+        ["STAGE", "PROBABILITY", "FORECAST_CATEGORY"],
     ]
     won_event = history["items"][2]
     assert (won_event["previous_probability"], won_event["new_probability"]) == (30, None)
@@ -682,6 +682,287 @@ def test_migration_035_adds_probability_history_without_rewriting_rows(schema: s
         engine.dispose()
 
 
+_ALL_STAGES = (
+    "QUALIFICATION",
+    "DISCOVERY",
+    "PROPOSAL",
+    "NEGOTIATION",
+    "CLOSED_WON",
+    "CLOSED_LOST",
+)
+
+
+def test_migration_036_backfills_open_deals_and_keeps_history(schema: str) -> None:
+    _alembic(schema, "upgrade", "035_deal_history_probability")
+    engine = create_engine(
+        settings.database_url, connect_args={"options": f"-csearch_path={schema}"}
+    )
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, website_capture_enabled, "
+                    "sales_agent_auto_start_enabled) VALUES ('org-1', 'Existing', 'existing', "
+                    "false, false)"
+                )
+            )
+            for stage in _ALL_STAGES:
+                closed = stage.startswith("CLOSED_")
+                connection.execute(
+                    text(
+                        "INSERT INTO deals (id, organization_id, name, amount, currency, stage, "
+                        "expected_close_date, closed_at, lost_reason, revision, "
+                        "stage_entered_at) VALUES (:id, 'org-1', 'Old', 10.00, 'INR', :stage, "
+                        "'2026-12-01', :closed_at, :lost_reason, 3, now())"
+                    ),
+                    {
+                        "id": stage.lower(),
+                        "stage": stage,
+                        "closed_at": datetime(2026, 10, 1, tzinfo=UTC) if closed else None,
+                        "lost_reason": "Budget" if stage == "CLOSED_LOST" else None,
+                    },
+                )
+            # History rows recorded before 036: a creation, and closing events.
+            for event_id, deal_id, previous, new in (
+                ("event-created", "qualification", None, "QUALIFICATION"),
+                ("event-won", "closed_won", "NEGOTIATION", "CLOSED_WON"),
+                ("event-lost", "closed_lost", "PROPOSAL", "CLOSED_LOST"),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO deal_stage_events (id, organization_id, deal_id, "
+                        "previous_stage, new_stage, new_amount, new_expected_close_date) "
+                        "VALUES (:id, 'org-1', :deal, :previous, :new, 10.00, '2026-12-01')"
+                    ),
+                    {"id": event_id, "deal": deal_id, "previous": previous, "new": new},
+                )
+            history_before = connection.execute(
+                text("SELECT * FROM deal_stage_events ORDER BY id")
+            ).all()
+
+        _alembic(schema, "upgrade", "036_deal_forecast_category")
+        inspector = inspect(engine)
+        assert "forecast_category" in {c["name"] for c in inspector.get_columns("deals")}
+        assert {"previous_forecast_category", "new_forecast_category"} <= {
+            c["name"] for c in inspector.get_columns("deal_stage_events")
+        }
+        deal_checks = {check["name"] for check in inspector.get_check_constraints("deals")}
+        assert "ck_deals_forecast_category" in deal_checks
+        # Expand step only: the open-only rule waits for the contract migration.
+        assert "ck_deals_forecast_category_open_only" not in deal_checks
+        assert {
+            "ck_deal_stage_events_forecast_category",
+            "ck_deal_stage_events_forecast_category_open_only",
+        } <= {check["name"] for check in inspector.get_check_constraints("deal_stage_events")}
+        with engine.connect() as connection:
+            rows = dict(
+                connection.execute(text("SELECT stage, forecast_category FROM deals")).all()
+            )
+            assert rows == {
+                "QUALIFICATION": "PIPELINE",
+                "DISCOVERY": "PIPELINE",
+                "PROPOSAL": "PIPELINE",
+                "NEGOTIATION": "PIPELINE",
+                "CLOSED_WON": None,
+                "CLOSED_LOST": None,
+            }
+            # Only the new column is written: revisions and history stay as they were.
+            assert set(
+                connection.execute(text("SELECT DISTINCT revision FROM deals")).scalars()
+            ) == {3}
+            history_after = connection.execute(
+                text(
+                    "SELECT previous_forecast_category, new_forecast_category "
+                    "FROM deal_stage_events ORDER BY id"
+                )
+            ).all()
+            assert [tuple(row) for row in history_after] == [(None, None)] * 3
+            original_columns = connection.execute(
+                text(
+                    "SELECT id, organization_id, deal_id, previous_stage, new_stage, new_amount, "
+                    "new_expected_close_date, created_at FROM deal_stage_events ORDER BY id"
+                )
+            ).all()
+            assert [tuple(row) for row in original_columns] == [
+                (
+                    r.id,
+                    r.organization_id,
+                    r.deal_id,
+                    r.previous_stage,
+                    r.new_stage,
+                    r.new_amount,
+                    r.new_expected_close_date,
+                    r.created_at,
+                )
+                for r in history_before
+            ]
+
+        # The previous release keeps serving after this migration. Its writes never name
+        # forecast_category; every one of them must still succeed.
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO deals (id, organization_id, name, amount, currency, stage, "
+                    "expected_close_date, revision, stage_entered_at) VALUES ('old-new', "
+                    "'org-1', 'New', 5.00, 'INR', 'DISCOVERY', '2026-12-01', 1, now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE deals SET stage = 'CLOSED_WON', closed_at = now() WHERE id = 'proposal'"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE deals SET stage = 'CLOSED_LOST', closed_at = now(), "
+                    "lost_reason = 'Budget' WHERE id = 'negotiation'"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE deals SET stage = 'PROPOSAL', closed_at = NULL, lost_reason = NULL "
+                    "WHERE id = 'closed_lost'"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO deal_stage_events (id, organization_id, deal_id, "
+                    "previous_stage, new_stage, new_amount, new_expected_close_date) VALUES "
+                    "('event-old-close', 'org-1', 'proposal', 'PROPOSAL', 'CLOSED_WON', 10.00, "
+                    "'2026-12-01')"
+                )
+            )
+        with engine.connect() as connection:
+            assert dict(
+                connection.execute(
+                    text(
+                        "SELECT id, forecast_category FROM deals WHERE id IN "
+                        "('old-new', 'proposal', 'negotiation', 'closed_lost')"
+                    )
+                ).all()
+            ) == {
+                "old-new": None,
+                "proposal": "PIPELINE",
+                "negotiation": "PIPELINE",
+                "closed_lost": None,
+            }
+        with engine.begin() as connection, pytest.raises(IntegrityError):
+            connection.execute(
+                text("UPDATE deals SET forecast_category = 'OMITTED' WHERE id = 'discovery'")
+            )
+
+        _alembic(schema, "downgrade", "035_deal_history_probability")
+        inspector = inspect(engine)
+        assert "forecast_category" not in {c["name"] for c in inspector.get_columns("deals")}
+        assert not {"previous_forecast_category", "new_forecast_category"} & {
+            c["name"] for c in inspector.get_columns("deal_stage_events")
+        }
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM deals")).scalar() == 7
+            assert connection.execute(text("SELECT count(*) FROM deal_stage_events")).scalar() == 4
+        _alembic(schema, "upgrade", "head")
+    finally:
+        engine.dispose()
+
+
+def test_concurrent_category_changes_with_the_same_revision_conflict(pg_engine: Any) -> None:
+    factory = sessionmaker(bind=pg_engine, expire_on_commit=False)
+    setup = factory()
+    organization, owner = _org_with_owner(setup)
+    deal = DealService(setup).create(
+        organization,
+        role=MembershipRole.MEMBER,
+        user_id=owner.id,
+        payload=DealCreate(
+            name="Race", amount=Decimal("1.00"), expected_close_date=date(2026, 12, 1)
+        ),
+    )
+    setup.close()
+
+    holder = factory()
+    contender_result: dict[str, Any] = {}
+    locked = holder.get(Deal, deal.id, with_for_update=True)
+    assert locked is not None
+
+    def contend() -> None:
+        session = factory()
+        try:
+            DealService(session).update(
+                organization.id,
+                deal.id,
+                role=MembershipRole.MEMBER,
+                user_id=owner.id,
+                payload=DealUpdate(expected_revision=1, forecast_category="BEST_CASE"),
+            )
+            contender_result["outcome"] = "updated"
+        except ConflictError:
+            contender_result["outcome"] = "conflict"
+        finally:
+            session.close()
+
+    thread = threading.Thread(target=contend)
+    thread.start()
+    time.sleep(0.5)
+    assert thread.is_alive()  # waiting on the row lock
+    locked.forecast_category = "COMMIT"
+    locked.revision = 2
+    holder.commit()
+    holder.close()
+    thread.join(timeout=10)
+    assert contender_result["outcome"] == "conflict"
+
+    check = factory()
+    stored = check.get(Deal, deal.id)
+    assert stored is not None
+    assert (stored.forecast_category, stored.revision) == ("COMMIT", 2)
+    # The losing writer recorded nothing.
+    events = check.query(DealStageEvent).filter_by(deal_id=deal.id).all()
+    assert [(e.previous_forecast_category, e.new_forecast_category) for e in events] == [
+        (None, "PIPELINE")
+    ]
+    check.close()
+
+
+def test_forecast_category_lifecycle_on_postgres(pg_engine: Any) -> None:
+    session = sessionmaker(bind=pg_engine, expire_on_commit=False)()
+    try:
+        organization, user = _org_with_owner(session)
+        service = DealService(session)
+        deal = service.create(
+            organization,
+            role=MembershipRole.MEMBER,
+            user_id=user.id,
+            payload=DealCreate(
+                name="Category", amount=Decimal("10.00"), expected_close_date=date(2026, 12, 1)
+            ),
+        )
+        assert deal.forecast_category == "PIPELINE"
+        deal = service.update(
+            organization.id,
+            deal.id,
+            role=MembershipRole.MEMBER,
+            user_id=user.id,
+            payload=DealUpdate(expected_revision=deal.revision, forecast_category="COMMIT"),
+        )
+        deal = service.change_stage(
+            organization.id,
+            deal.id,
+            role=MembershipRole.MEMBER,
+            user_id=user.id,
+            payload=DealStageChangeRequest(stage="CLOSED_WON", expected_revision=deal.revision),
+        )
+        assert deal.forecast_category is None
+        history = [
+            (row.previous_forecast_category, row.new_forecast_category)
+            for row in session.query(DealStageEvent)
+            .filter_by(deal_id=deal.id)
+            .order_by(DealStageEvent.created_at, DealStageEvent.id)
+        ]
+        assert history == [(None, "PIPELINE"), ("PIPELINE", "COMMIT"), ("COMMIT", None)]
+    finally:
+        session.close()
+
+
 def test_forecast_buckets_in_utc_regardless_of_session_timezone(pg_session: Session) -> None:
     organization, _ = _org_with_owner(pg_session)
     pg_session.execute(text("SET TIME ZONE 'Asia/Kolkata'"))
@@ -811,7 +1092,7 @@ def test_won_amount_correction_and_probability_history_on_postgres(pg_engine: An
         ] == [
             (["CREATED"], None, 20, False),
             (["PROBABILITY"], 20, 30, False),
-            (["STAGE", "PROBABILITY"], 30, None, False),
+            (["STAGE", "PROBABILITY", "FORECAST_CATEGORY"], 30, None, False),
             (["AMOUNT"], None, None, True),
         ]
         assert history[-1].change_reason == "Discount applied"

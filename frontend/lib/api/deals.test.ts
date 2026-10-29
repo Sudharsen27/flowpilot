@@ -34,6 +34,7 @@ describe("deals API client", () => {
     const fetchMock = mockFetch({ items: [], limit: 20, offset: 0, total: 0 });
     await listDeals({
       stage: "PROPOSAL",
+      forecastCategory: "COMMIT",
       ownerUserId: "user/1",
       closeDateFrom: "2026-11-01",
       closeDateTo: "2026-12-31",
@@ -42,7 +43,7 @@ describe("deals API client", () => {
       offset: -4,
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/deals?stage=PROPOSAL&owner_user_id=user%2F1&close_date_from=2026-11-01&close_date_to=2026-12-31&q=acme&limit=100&offset=0",
+      "http://localhost:8000/api/v1/deals?stage=PROPOSAL&forecast_category=COMMIT&owner_user_id=user%2F1&close_date_from=2026-11-01&close_date_to=2026-12-31&q=acme&limit=100&offset=0",
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({ Authorization: "Bearer deal-token" }),

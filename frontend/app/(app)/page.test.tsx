@@ -678,6 +678,7 @@ describe("Command Center", () => {
         probability: null,
         effective_probability: 50,
         probability_source: "STAGE_DEFAULT",
+        forecast_category: "PIPELINE",
         expected_close_date: "2026-09-30",
         closed_at: null,
         owner_user_id: null,

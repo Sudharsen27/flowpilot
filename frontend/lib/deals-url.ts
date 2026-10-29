@@ -1,9 +1,11 @@
-import { isDealStage } from "@/lib/deals";
-import type { DealStage } from "@/types/api";
+import { isDealStage, isForecastCategory } from "@/lib/deals";
+import type { DealStage, ForecastCategory } from "@/types/api";
 
 export type DealsUrlState = {
   q: string;
   stage: DealStage | null;
+  /** Open deals in this category (closed deals have none). */
+  forecastCategory: ForecastCategory | null;
   ownerUserId: string | null;
   closeDateFrom: string | null;
   closeDateTo: string | null;
@@ -32,11 +34,13 @@ function parseDate(raw: string | null): string | null {
 
 export function parseDealsSearchParams(searchParams: URLSearchParams): DealsUrlState {
   const stage = searchParams.get("stage")?.trim().toUpperCase() ?? "";
+  const category = searchParams.get("category")?.trim().toUpperCase() ?? "";
   const offsetRaw = searchParams.get("offset")?.trim() ?? "";
   const offset = /^\d+$/.test(offsetRaw) ? Number.parseInt(offsetRaw, 10) : 0;
   return {
     q: (searchParams.get("q") ?? "").trim().slice(0, 200),
     stage: isDealStage(stage) ? stage : null,
+    forecastCategory: isForecastCategory(category) ? category : null,
     ownerUserId: parseId(searchParams.get("owner")),
     closeDateFrom: parseDate(searchParams.get("from")),
     closeDateTo: parseDate(searchParams.get("to")),
@@ -50,6 +54,7 @@ export function serializeDealsSearchParams(state: DealsUrlState): string {
   const query = new URLSearchParams();
   if (state.q.trim()) query.set("q", state.q.trim());
   if (state.stage) query.set("stage", state.stage);
+  if (state.forecastCategory) query.set("category", state.forecastCategory);
   if (state.ownerUserId) query.set("owner", state.ownerUserId);
   if (state.closeDateFrom) query.set("from", state.closeDateFrom);
   if (state.closeDateTo) query.set("to", state.closeDateTo);
@@ -61,7 +66,12 @@ export function serializeDealsSearchParams(state: DealsUrlState): string {
 
 export function hasDealFilters(state: DealsUrlState): boolean {
   return Boolean(
-    state.q || state.stage || state.ownerUserId || state.closeDateFrom || state.closeDateTo,
+    state.q ||
+      state.stage ||
+      state.forecastCategory ||
+      state.ownerUserId ||
+      state.closeDateFrom ||
+      state.closeDateTo,
   );
 }
 
@@ -70,6 +80,7 @@ export function buildCreateDealHref(leadId: string): string {
   const query = serializeDealsSearchParams({
     q: "",
     stage: null,
+    forecastCategory: null,
     ownerUserId: null,
     closeDateFrom: null,
     closeDateTo: null,

@@ -472,10 +472,23 @@ def test_history_records_creation_stage_amount_and_date_changes(client: TestClie
         ["AMOUNT"],
         ["EXPECTED_CLOSE_DATE"],
         ["STAGE"],
-        ["STAGE"],
-        ["STAGE"],
+        # Closing clears the forecast category; reopening restores the default.
+        ["STAGE", "FORECAST_CATEGORY"],
+        ["STAGE", "FORECAST_CATEGORY"],
     ]
     created, amount, close_date, proposal, lost, reopen = events
+    assert (proposal["previous_forecast_category"], proposal["new_forecast_category"]) == (
+        "PIPELINE",
+        "PIPELINE",
+    )
+    assert (lost["previous_forecast_category"], lost["new_forecast_category"]) == (
+        "PIPELINE",
+        None,
+    )
+    assert (reopen["previous_forecast_category"], reopen["new_forecast_category"]) == (
+        None,
+        "PIPELINE",
+    )
     assert created["previous_stage"] is None
     assert created["new_stage"] == "QUALIFICATION"
     assert created["previous_amount"] is None
@@ -869,8 +882,13 @@ def test_managers_reopen_won_deals_with_recorded_history(
     assert body["revision"] == won["revision"] + 1
 
     event = _history(client, roles["owner"], won["id"])[-1]
-    assert event["changes"] == ["STAGE", "PROBABILITY"]
+    assert event["changes"] == ["STAGE", "PROBABILITY", "FORECAST_CATEGORY"]
     assert (event["previous_stage"], event["new_stage"]) == ("CLOSED_WON", "NEGOTIATION")
+    assert (event["previous_forecast_category"], event["new_forecast_category"]) == (
+        None,
+        "PIPELINE",
+    )
+    assert body["forecast_category"] == "PIPELINE"
     assert (event["previous_probability"], event["new_probability"]) == (None, 60)
     assert event["change_reason"] == "Re-scoped"
     assert event["changed_by_user_id"] == roles[f"{role}_id"]
@@ -985,10 +1003,10 @@ def test_manager_reopen_and_amount_correction_coexist(client: TestClient, db: Se
     events = _history(client, roles["owner"], won["id"])
     assert [(e["changes"], e["is_correction"]) for e in events] == [
         (["CREATED"], False),
-        (["STAGE", "PROBABILITY"], False),
+        (["STAGE", "PROBABILITY", "FORECAST_CATEGORY"], False),
         (["AMOUNT"], True),
-        (["STAGE"], False),
-        (["STAGE"], False),
+        (["STAGE", "FORECAST_CATEGORY"], False),
+        (["STAGE", "FORECAST_CATEGORY"], False),
         (["AMOUNT"], True),
     ]
 

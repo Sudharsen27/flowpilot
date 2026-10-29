@@ -3,10 +3,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.deal import DealStage
+from app.models.deal import DealStage, ForecastCategory
 from app.schemas.money import CurrencyCode, Money, MoneyOut
 
-DealHistoryChange = Literal["CREATED", "STAGE", "AMOUNT", "EXPECTED_CLOSE_DATE", "PROBABILITY"]
+DealHistoryChange = Literal[
+    "CREATED", "STAGE", "AMOUNT", "EXPECTED_CLOSE_DATE", "PROBABILITY", "FORECAST_CATEGORY"
+]
 ProbabilitySource = Literal["STAGE_DEFAULT", "OVERRIDE"]
 
 
@@ -33,6 +35,8 @@ class DealCreate(BaseModel):
     currency: CurrencyCode | None = None
     stage: DealStage = DealStage.QUALIFICATION
     probability: int | None = Field(default=None, ge=0, le=100)
+    # Open deals only; omitted means PIPELINE. Closed deals have no category.
+    forecast_category: ForecastCategory | None = None
     expected_close_date: date
     owner_user_id: str | None = Field(default=None, min_length=1, max_length=36)
     lead_id: str | None = Field(default=None, min_length=1, max_length=36)
@@ -45,7 +49,8 @@ class DealCreate(BaseModel):
 
 class DealUpdate(BaseModel):
     """Partial update. Stage changes go through POST /deals/{id}/stage; currency and
-    lead links are fixed at creation. An explicit null clears probability or owner."""
+    lead links are fixed at creation. An explicit null clears probability or owner; a
+    forecast category can be changed on an open deal but never cleared."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -55,6 +60,7 @@ class DealUpdate(BaseModel):
     amount: Money | None = None
     expected_close_date: date | None = None
     probability: int | None = Field(default=None, ge=0, le=100)
+    forecast_category: ForecastCategory | None = None
     owner_user_id: str | None = Field(default=None, min_length=1, max_length=36)
     lost_reason: str | None = Field(default=None, max_length=1000)
     change_reason: str | None = Field(default=None, max_length=1000)
@@ -75,6 +81,9 @@ class DealStageChangeRequest(BaseModel):
     stage: DealStage
     expected_revision: int = Field(ge=1)
     probability: int | None = Field(default=None, ge=0, le=100)
+    # Only for an open target stage. Omitted: open -> open keeps the current category and
+    # reopening a closed deal starts at PIPELINE.
+    forecast_category: ForecastCategory | None = None
     lost_reason: str | None = Field(default=None, max_length=1000)
     change_reason: str | None = Field(default=None, max_length=1000)
 
@@ -110,6 +119,8 @@ class DealPublic(BaseModel):
     probability: int | None
     effective_probability: int
     probability_source: ProbabilitySource
+    # Set on every open deal; null on closed deals ("Closed" is derived from the stage).
+    forecast_category: ForecastCategory | None
     expected_close_date: date
     closed_at: datetime | None
     owner_user_id: str | None
@@ -143,6 +154,9 @@ class DealHistoryEvent(BaseModel):
     # Probability override before/after (null = stage default; null for pre-035 rows).
     previous_probability: int | None
     new_probability: int | None
+    # Category before/after (null on closed deals; null for pre-036 rows).
+    previous_forecast_category: ForecastCategory | None
+    new_forecast_category: ForecastCategory | None
     is_correction: bool
     changed_by_user_id: str | None
     changed_by_name: str | None

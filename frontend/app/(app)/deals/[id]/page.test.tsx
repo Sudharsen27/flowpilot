@@ -64,6 +64,7 @@ function deal(overrides: Partial<Deal> = {}): Deal {
     probability: 65,
     effective_probability: 65,
     probability_source: "OVERRIDE",
+    forecast_category: "PIPELINE",
     expected_close_date: "2026-12-15",
     closed_at: null,
     owner_user_id: "user-owner",
@@ -204,6 +205,22 @@ describe("Deal detail page", () => {
     });
     expect(await screen.findByText("Deal updated")).toBeInTheDocument();
     await waitFor(() => expect(historyMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the forecast category and changes only it", async () => {
+    const user = userEvent.setup();
+    updateMock.mockResolvedValue(deal({ forecast_category: "BEST_CASE", revision: 4 }));
+    renderPage();
+    const label = await screen.findByText("Forecast category", { selector: "dt" });
+    expect(label.nextElementSibling).toHaveTextContent("Pipeline");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
+    await user.selectOptions(within(dialog).getByLabelText("Forecast category"), "BEST_CASE");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    expect(updateMock).toHaveBeenCalledWith("deal-1", {
+      expected_revision: 3,
+      forecast_category: "BEST_CASE",
+    });
   });
 
   it("does not resend an unchanged amount written differently", async () => {
@@ -372,11 +389,30 @@ describe("Deal detail page", () => {
         probability: null,
         effective_probability: 100,
         probability_source: "STAGE_DEFAULT",
+        forecast_category: null,
         closed_at: "2026-10-25T10:00:00Z",
       });
 
     beforeEach(() => {
       getDealMock.mockResolvedValue(won());
+    });
+
+    it("shows a won deal as Closed and never sends a category for it", async () => {
+      const user = userEvent.setup();
+      updateMock.mockResolvedValue({ ...won(), name: "Renamed", revision: 4 });
+      renderPage();
+      const label = await screen.findByText("Forecast category", { selector: "dt" });
+      expect(label.nextElementSibling).toHaveTextContent("Closed");
+      await user.click(screen.getByRole("button", { name: "Edit" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
+      const category = within(dialog).getByLabelText("Forecast category");
+      expect(category).toBeDisabled();
+      expect(category).toHaveDisplayValue("Closed");
+      const name = within(dialog).getByLabelText(/Deal name/);
+      await user.clear(name);
+      await user.type(name, "Renamed");
+      await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+      expect(updateMock).toHaveBeenCalledWith("deal-1", { expected_revision: 3, name: "Renamed" });
     });
 
     it.each(["OWNER", "ADMIN", "MEMBER"])(

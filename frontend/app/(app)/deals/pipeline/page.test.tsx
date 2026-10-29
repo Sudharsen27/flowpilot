@@ -47,6 +47,7 @@ function deal(overrides: Partial<Deal> = {}): Deal {
     probability: null,
     effective_probability: 10,
     probability_source: "STAGE_DEFAULT",
+    forecast_category: "PIPELINE",
     expected_close_date: "2099-12-15",
     closed_at: null,
     owner_user_id: "user-1",
@@ -126,6 +127,59 @@ describe("Pipeline board", () => {
     expect(within(column(/^Discovery/)).getByText(/Overdue ·/)).toBeInTheDocument();
     expect(listMock).toHaveBeenCalledWith({ stage: "PROPOSAL", limit: 50 });
     expect(getPipelineSummary).toHaveBeenCalledWith(1);
+  });
+
+  it("shows the forecast category on open deal cards", async () => {
+    boardData({
+      QUALIFICATION: { items: [deal({ forecast_category: "COMMIT" })] },
+      CLOSED_WON: {
+        items: [deal({ id: "deal-won", name: "Won", stage: "CLOSED_WON", forecast_category: null })],
+      },
+    });
+    renderPage();
+    const qualification = await screen.findByRole("region", { name: /^Qualification, 1 deal/ });
+    expect(within(qualification).getByText("Commit")).toBeInTheDocument();
+    // The Closed won column already says the outcome; no badge repeats it.
+    const won = screen.getByRole("region", { name: /^Closed won, 1 deal/ });
+    expect(won.querySelector("[data-slot=forecast-category-badge]")).toBeNull();
+  });
+
+  it("shows Pipeline on a reopened card while the move is pending", async () => {
+    const user = userEvent.setup();
+    authMock.role = "MEMBER"; // lost deals reopen for every role
+    boardData({
+      CLOSED_LOST: {
+        items: [
+          deal({
+            stage: "CLOSED_LOST",
+            forecast_category: null,
+            lost_reason: "Budget",
+            closed_at: "2026-10-01T00:00:00Z",
+          }),
+        ],
+      },
+    });
+    let resolve: (value: Deal) => void = () => {};
+    stageMock.mockReturnValue(new Promise((done) => (resolve = done)));
+    renderPage();
+    await screen.findByRole("region", { name: /^Closed lost, 1 deal/ });
+    await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Qualification" }));
+    const qualification = await screen.findByRole("region", { name: /^Qualification, 1 deal/ });
+    const badge = qualification.querySelector("[data-slot=forecast-category-badge]");
+    expect(badge).toHaveTextContent("Pipeline");
+    expect(within(qualification).queryByText("—")).not.toBeInTheDocument();
+    await act(async () => resolve(deal({ forecast_category: "PIPELINE", revision: 3 })));
+  });
+
+  it("shows the forecast category in the deal drawer", async () => {
+    const user = userEvent.setup();
+    boardData({ QUALIFICATION: { items: [deal({ forecast_category: "BEST_CASE" })] } });
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Acme expansion" }));
+    const drawer = await screen.findByRole("dialog", { name: "Acme expansion" });
+    const label = within(drawer).getByText("Forecast category", { selector: "dt" });
+    expect(label.nextElementSibling).toHaveTextContent("Best case");
   });
 
   it("moves a deal to an open stage with its current revision", async () => {

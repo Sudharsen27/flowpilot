@@ -7,9 +7,12 @@ from app.models.activity_event import ActivityActorType, ActivityEntityType, Act
 from app.models.deal import (
     CLOSED_DEAL_STAGES,
     DEAL_STAGE_DEFAULT_PROBABILITY,
+    DEFAULT_FORECAST_CATEGORY,
     Deal,
     DealStage,
     DealStageEvent,
+    ForecastCategory,
+    effective_forecast_category,
     effective_probability,
 )
 from app.models.lead import LeadStatus
@@ -36,6 +39,10 @@ STALE_DEAL_DETAIL = "This deal changed. Refresh and review the latest version."
 WON_CREATE_FORBIDDEN_DETAIL = "Only owners and admins can create a deal that is already won"
 LOST_CREATE_FORBIDDEN_DETAIL = "Only owners and admins can create a deal that is already lost"
 WON_REOPEN_FORBIDDEN_DETAIL = "Only owners and admins can move a won deal to another stage"
+CLOSED_CATEGORY_DETAIL = (
+    "Closed deals have no forecast category; a won deal counts as Closed automatically"
+)
+CATEGORY_REQUIRED_DETAIL = "Open deals always have a forecast category; choose one instead"
 WON_AMOUNT_LOCKED_DETAIL = (
     "The amount of a won deal is locked. An owner or admin can record a correction with a reason."
 )
@@ -62,6 +69,8 @@ class DealService:
         elif stage == DealStage.CLOSED_LOST:
             _require_manager(role, LOST_CREATE_FORBIDDEN_DETAIL)
         _validate_stage_fields(stage, payload.probability, payload.lost_reason)
+        _reject_explicit_null_category(payload, stage)
+        forecast_category = _category_for_stage(stage, payload.forecast_category, current=None)
         owner_user_id = (
             payload.owner_user_id if "owner_user_id" in payload.model_fields_set else user_id
         )
@@ -83,6 +92,7 @@ class DealService:
                     currency=currency,
                     stage=stage,
                     probability=payload.probability,
+                    forecast_category=forecast_category,
                     expected_close_date=payload.expected_close_date,
                     closed_at=now if stage in CLOSED_DEAL_STAGES else None,
                     owner_user_id=owner_user_id,
@@ -100,6 +110,7 @@ class DealService:
                 previous_amount=None,
                 previous_expected_close_date=None,
                 previous_probability=None,
+                previous_forecast_category=None,
                 changed_by_user_id=user_id,
                 change_reason=None,
                 created_at=now,
@@ -128,6 +139,7 @@ class DealService:
         search: str | None,
         limit: int,
         offset: int,
+        forecast_category: ForecastCategory | None = None,
     ) -> DealListResponse:
         if close_date_from and close_date_to and close_date_from > close_date_to:
             raise UnprocessableError("close_date_from must be on or before close_date_to")
@@ -135,6 +147,7 @@ class DealService:
         rows, total = self.deals.list_for_organization(
             organization_id,
             stage=stage,
+            forecast_category=forecast_category,
             owner_user_id=owner_user_id,
             close_date_from=close_date_from,
             close_date_to=close_date_to,
@@ -165,6 +178,10 @@ class DealService:
             previous_amount = deal.amount
             previous_close_date = deal.expected_close_date
             previous_probability = deal.probability
+            # Rows written by the release before migration 036 may be missing a category
+            # (open) or keep a stale one (closed); any write stores the effective value.
+            previous_category = _effective_category(deal)
+            deal.forecast_category = previous_category
             changed = False
 
             for field in ("name", "amount", "expected_close_date"):
@@ -192,6 +209,15 @@ class DealService:
                     raise UnprocessableError("Closed deals use a fixed probability")
                 deal.probability = payload.probability
                 changed = True
+            if "forecast_category" in fields:
+                # Same rule as probability: any role may set it, but only on open deals.
+                if stage in CLOSED_DEAL_STAGES:
+                    raise UnprocessableError(CLOSED_CATEGORY_DETAIL)
+                if payload.forecast_category is None:
+                    raise UnprocessableError(CATEGORY_REQUIRED_DETAIL)
+                if payload.forecast_category != deal.forecast_category:
+                    deal.forecast_category = payload.forecast_category
+                    changed = True
             if "owner_user_id" in fields and payload.owner_user_id != deal.owner_user_id:
                 _require_manager(role, "Only owners and admins can reassign deal owners")
                 self._require_member(organization_id, payload.owner_user_id)
@@ -216,6 +242,7 @@ class DealService:
                 deal.amount != previous_amount
                 or deal.expected_close_date != previous_close_date
                 or deal.probability != previous_probability
+                or deal.forecast_category != previous_category
             ):
                 self._record_event(
                     deal,
@@ -223,6 +250,7 @@ class DealService:
                     previous_amount=previous_amount,
                     previous_expected_close_date=previous_close_date,
                     previous_probability=previous_probability,
+                    previous_forecast_category=previous_category,
                     changed_by_user_id=user_id,
                     change_reason=payload.change_reason,
                     created_at=now,
@@ -246,8 +274,13 @@ class DealService:
         try:
             deal = self._lock(organization_id, deal_id, payload.expected_revision)
             previous_stage = DealStage(deal.stage)
+            _reject_explicit_null_category(payload, new_stage)
             if new_stage == previous_stage:
-                if payload.probability is not None or payload.lost_reason is not None:
+                if (
+                    payload.probability is not None
+                    or payload.lost_reason is not None
+                    or payload.forecast_category is not None
+                ):
                     raise UnprocessableError(
                         "The deal is already in this stage; use PATCH to change other fields"
                     )
@@ -258,6 +291,12 @@ class DealService:
                 # amount and win the deal again, so it is a manager action.
                 _require_manager(role, WON_REOPEN_FORBIDDEN_DETAIL)
             _validate_stage_fields(new_stage, payload.probability, payload.lost_reason)
+            previous_category = _effective_category(deal)
+            # Open -> open keeps the category (it is independent of stage); closing clears
+            # it; reopening starts at the default unless one is given.
+            forecast_category = _category_for_stage(
+                new_stage, payload.forecast_category, current=previous_category
+            )
 
             now = datetime.now(UTC)
             previous_probability = deal.probability
@@ -266,6 +305,7 @@ class DealService:
             deal.closed_at = now if new_stage in CLOSED_DEAL_STAGES else None
             # An override belongs to the stage it was set for.
             deal.probability = payload.probability
+            deal.forecast_category = forecast_category
             deal.lost_reason = payload.lost_reason if new_stage == DealStage.CLOSED_LOST else None
             deal.revision += 1
             deal.updated_at = now
@@ -275,6 +315,7 @@ class DealService:
                 previous_amount=deal.amount,
                 previous_expected_close_date=deal.expected_close_date,
                 previous_probability=previous_probability,
+                previous_forecast_category=previous_category,
                 changed_by_user_id=user_id,
                 change_reason=payload.change_reason,
                 created_at=now,
@@ -305,6 +346,7 @@ class DealService:
             now = datetime.now(UTC)
             previous_amount = deal.amount
             deal.amount = payload.amount
+            deal.forecast_category = None  # repairs a stale pre-036 value
             deal.revision += 1
             deal.updated_at = now
             self._record_event(
@@ -313,6 +355,7 @@ class DealService:
                 previous_amount=previous_amount,
                 previous_expected_close_date=deal.expected_close_date,
                 previous_probability=deal.probability,
+                previous_forecast_category=None,
                 changed_by_user_id=user_id,
                 change_reason=payload.reason,
                 created_at=now,
@@ -387,6 +430,7 @@ class DealService:
         previous_amount: object,
         previous_expected_close_date: date | None,
         previous_probability: int | None,
+        previous_forecast_category: str | None,
         changed_by_user_id: str | None,
         change_reason: str | None,
         created_at: datetime,
@@ -404,6 +448,8 @@ class DealService:
                 new_expected_close_date=deal.expected_close_date,
                 previous_probability=previous_probability,
                 new_probability=deal.probability,
+                previous_forecast_category=previous_forecast_category,
+                new_forecast_category=deal.forecast_category,
                 changed_by_user_id=changed_by_user_id,
                 change_reason=change_reason,
                 created_at=created_at,
@@ -430,6 +476,7 @@ def to_deal_public(deal: Deal) -> DealPublic:
         probability=deal.probability,
         effective_probability=probability,
         probability_source="OVERRIDE" if uses_override else "STAGE_DEFAULT",
+        forecast_category=effective_forecast_category(deal.stage, deal.forecast_category),
         expected_close_date=deal.expected_close_date,
         closed_at=as_utc(deal.closed_at) if deal.closed_at else None,
         owner_user_id=deal.owner_user_id,
@@ -457,6 +504,9 @@ def to_history_event(row: DealStageEvent) -> DealHistoryEvent:
             changes.append("EXPECTED_CLOSE_DATE")
         if row.previous_probability != row.new_probability:
             changes.append("PROBABILITY")
+        # Includes closing (category -> none) and reopening; pre-036 rows have neither.
+        if row.previous_forecast_category != row.new_forecast_category:
+            changes.append("FORECAST_CATEGORY")
     return DealHistoryEvent(
         id=row.id,
         deal_id=row.deal_id,
@@ -469,6 +519,8 @@ def to_history_event(row: DealStageEvent) -> DealHistoryEvent:
         new_expected_close_date=row.new_expected_close_date,
         previous_probability=row.previous_probability,
         new_probability=row.new_probability,
+        previous_forecast_category=_category_or_none(row.previous_forecast_category),
+        new_forecast_category=_category_or_none(row.new_forecast_category),
         is_correction=row.is_correction,
         changed_by_user_id=row.changed_by_user_id,
         changed_by_name=row.changed_by.name if row.changed_by else None,
@@ -498,6 +550,40 @@ def _validate_stage_fields(
         raise UnprocessableError("Lost deals require a lost reason")
     if stage != DealStage.CLOSED_LOST and lost_reason is not None:
         raise UnprocessableError("Only lost deals have a lost reason")
+
+
+def _category_for_stage(
+    stage: DealStage, requested: ForecastCategory | None, *, current: str | None
+) -> str | None:
+    """The category a deal holds in `stage`: none when closed (asking for one is an
+    error), else the requested one, else the current one, else the default."""
+    if stage in CLOSED_DEAL_STAGES:
+        if requested is not None:
+            raise UnprocessableError(CLOSED_CATEGORY_DETAIL)
+        return None
+    if requested is not None:
+        return requested.value
+    return current if current is not None else DEFAULT_FORECAST_CATEGORY.value
+
+
+def _effective_category(deal: Deal) -> str | None:
+    category = effective_forecast_category(deal.stage, deal.forecast_category)
+    return category.value if category is not None else None
+
+
+def _reject_explicit_null_category(
+    payload: DealCreate | DealStageChangeRequest, stage: DealStage
+) -> None:
+    """Omitting forecast_category takes the default; an explicit null is never accepted,
+    the same as PATCH."""
+    if "forecast_category" in payload.model_fields_set and payload.forecast_category is None:
+        raise UnprocessableError(
+            CLOSED_CATEGORY_DETAIL if stage in CLOSED_DEAL_STAGES else CATEGORY_REQUIRED_DETAIL
+        )
+
+
+def _category_or_none(value: str | None) -> ForecastCategory | None:
+    return ForecastCategory(value) if value is not None else None
 
 
 def _require_manager(role: str, detail: str) -> None:

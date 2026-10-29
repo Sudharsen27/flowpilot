@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { DealHistoryList } from "@/components/deals/deal-history";
 import { DealProbability, DealStageBadge } from "@/components/deals/deal-stage-badge";
+import { ForecastCategoryBadge } from "@/components/deals/forecast-category-badge";
 import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -73,6 +74,10 @@ export function DealDrawer({
             <SheetBody className="grid content-start gap-6">
               <dl className="grid gap-4 sm:grid-cols-2">
                 <DetailRow label="Probability" value={<DealProbability deal={deal} />} />
+                <DetailRow
+                  label="Forecast category"
+                  value={<ForecastCategoryBadge stage={deal.stage} category={deal.forecast_category} />}
+                />
                 <DetailRow label="Owner" value={deal.owner_name ?? "Unassigned"} muted={!deal.owner_name} />
                 <DetailRow
                   label="Lead"

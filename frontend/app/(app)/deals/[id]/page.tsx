@@ -9,6 +9,7 @@ import { DealAmountCorrectionDialog } from "@/components/deals/deal-amount-corre
 import { DealFormDialog } from "@/components/deals/deal-form-dialog";
 import { DealHistoryList } from "@/components/deals/deal-history";
 import { DealProbability, DealStageBadge } from "@/components/deals/deal-stage-badge";
+import { ForecastCategoryBadge } from "@/components/deals/forecast-category-badge";
 import { DealStageDialog } from "@/components/deals/deal-stage-dialog";
 import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
@@ -240,6 +241,10 @@ export default function DealDetailPage() {
             <DetailRow label="Currency" value={deal.currency} />
             <DetailRow label="Stage" value={<DealStageBadge stage={deal.stage} />} />
             <DetailRow label="Probability" value={<DealProbability deal={deal} />} />
+            <DetailRow
+              label="Forecast category"
+              value={<ForecastCategoryBadge stage={deal.stage} category={deal.forecast_category} />}
+            />
             <DetailRow label="Expected close" value={formatDateOnly(deal.expected_close_date)} />
             <DetailRow
               label="Closed"
@@ -298,7 +303,7 @@ export default function DealDetailPage() {
               History
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Stage, amount, close-date and probability changes, oldest first.
+              Stage, amount, close-date, probability and forecast category changes, oldest first.
             </p>
           </div>
           {historyFailed ? (

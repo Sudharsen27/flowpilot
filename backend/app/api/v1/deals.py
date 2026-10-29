@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_membership, get_current_organization
 from app.db.session import get_db
-from app.models.deal import DealStage
+from app.models.deal import DealStage, ForecastCategory
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.deals import (
@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/v1/deals", tags=["deals"])
 @router.get("", response_model=DealListResponse)
 def list_deals(
     stage: DealStage | None = None,
+    forecast_category: ForecastCategory | None = None,
     owner_user_id: str | None = Query(default=None, max_length=36),
     close_date_from: date | None = None,
     close_date_to: date | None = None,
@@ -38,6 +39,7 @@ def list_deals(
     return DealService(db).list(
         organization.id,
         stage=stage,
+        forecast_category=forecast_category,
         owner_user_id=owner_user_id,
         close_date_from=close_date_from,
         close_date_to=close_date_to,

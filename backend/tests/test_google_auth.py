@@ -211,4 +211,4 @@ def test_alembic_head_includes_google_oauth() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "035_deal_history_probability"
+    assert script.get_current_head() == "036_deal_forecast_category"

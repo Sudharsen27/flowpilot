@@ -1,7 +1,7 @@
 import { DealStageBadge } from "@/components/deals/deal-stage-badge";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { DEAL_STAGE_LABELS } from "@/lib/deals";
+import { DEAL_STAGE_LABELS, FORECAST_CATEGORY_LABELS, forecastCategoryLabel } from "@/lib/deals";
 import { formatDateOnly, formatMoney } from "@/lib/money";
 import type { DealHistoryEvent } from "@/types/api";
 
@@ -12,9 +12,14 @@ function probabilityLabel(value: number | null | undefined): string {
 
 function describe(event: DealHistoryEvent, currency: string): string[] {
   if (event.changes.includes("CREATED")) {
-    return [
+    const created = [
       `Created in ${DEAL_STAGE_LABELS[event.new_stage]} at ${formatMoney(event.new_amount, currency)}, closing ${formatDateOnly(event.new_expected_close_date)}.`,
     ];
+    // Deals created before forecast categories existed have none recorded.
+    if (event.new_forecast_category) {
+      created.push(`Forecast category: ${FORECAST_CATEGORY_LABELS[event.new_forecast_category]}.`);
+    }
+    return created;
   }
   const lines: string[] = [];
   if (event.changes.includes("STAGE") && event.previous_stage) {
@@ -36,6 +41,15 @@ function describe(event: DealHistoryEvent, currency: string): string[] {
   if (event.changes.includes("PROBABILITY")) {
     lines.push(
       `Probability changed from ${probabilityLabel(event.previous_probability)} to ${probabilityLabel(event.new_probability)}.`,
+    );
+  }
+  // Each side is read with its own stage: a closed deal is "Closed" or "Not forecast".
+  if (event.changes.includes("FORECAST_CATEGORY")) {
+    const from = event.previous_stage
+      ? forecastCategoryLabel(event.previous_stage, event.previous_forecast_category)
+      : "—";
+    lines.push(
+      `Forecast category changed from ${from} to ${forecastCategoryLabel(event.new_stage, event.new_forecast_category)}.`,
     );
   }
   // Never render an empty entry, e.g. for a change type this screen does not know yet.

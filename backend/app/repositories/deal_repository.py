@@ -1,9 +1,11 @@
 from datetime import date
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.deal import Deal, DealStageEvent
+from app.models.deal import CLOSED_DEAL_STAGES, DEFAULT_FORECAST_CATEGORY, Deal, DealStageEvent
+
+_CLOSED_STAGE_VALUES = tuple(stage.value for stage in CLOSED_DEAL_STAGES)
 
 
 class DealRepository:
@@ -32,6 +34,7 @@ class DealRepository:
         organization_id: str,
         *,
         stage: str | None,
+        forecast_category: str | None,
         owner_user_id: str | None,
         close_date_from: date | None,
         close_date_to: date | None,
@@ -42,6 +45,14 @@ class DealRepository:
         conditions = [Deal.organization_id == organization_id]
         if stage is not None:
             conditions.append(Deal.stage == stage)
+        if forecast_category is not None:
+            # Open deals only. Until the open-only CHECK lands, a closed deal may keep a
+            # stale value and an open deal written before migration 036 may have none
+            # (which reads as PIPELINE); match what effective_forecast_category() shows.
+            matches = Deal.forecast_category == forecast_category
+            if forecast_category == DEFAULT_FORECAST_CATEGORY:
+                matches = or_(matches, Deal.forecast_category.is_(None))
+            conditions.append(and_(Deal.stage.notin_(_CLOSED_STAGE_VALUES), matches))
         if owner_user_id is not None:
             conditions.append(Deal.owner_user_id == owner_user_id)
         if close_date_from is not None:

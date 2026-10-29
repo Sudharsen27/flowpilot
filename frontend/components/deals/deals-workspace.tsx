@@ -106,6 +106,7 @@ export function DealsWorkspace() {
     void listDeals({
       q: urlState.q || undefined,
       stage: urlState.stage ?? undefined,
+      forecastCategory: urlState.forecastCategory ?? undefined,
       ownerUserId: urlState.ownerUserId ?? undefined,
       closeDateFrom: urlState.closeDateFrom ?? undefined,
       closeDateTo: urlState.closeDateTo ?? undefined,
@@ -126,6 +127,7 @@ export function DealsWorkspace() {
     rangeInvalid,
     urlState.closeDateFrom,
     urlState.closeDateTo,
+    urlState.forecastCategory,
     urlState.offset,
     urlState.ownerUserId,
     urlState.q,
@@ -215,12 +217,14 @@ export function DealsWorkspace() {
         <DealsToolbar
           query={queryInput}
           stage={urlState.stage}
+          forecastCategory={urlState.forecastCategory}
           ownerUserId={urlState.ownerUserId}
           closeDateFrom={urlState.closeDateFrom}
           closeDateTo={urlState.closeDateTo}
           members={members}
           onQueryChange={setQueryInput}
           onStageChange={(stage) => patchFilters({ stage })}
+          onForecastCategoryChange={(forecastCategory) => patchFilters({ forecastCategory })}
           onOwnerChange={(ownerUserId) => patchFilters({ ownerUserId })}
           onCloseDateFromChange={(closeDateFrom) => patchFilters({ closeDateFrom })}
           onCloseDateToChange={(closeDateTo) => patchFilters({ closeDateTo })}
@@ -229,6 +233,7 @@ export function DealsWorkspace() {
             patchFilters({
               q: "",
               stage: null,
+              forecastCategory: null,
               ownerUserId: null,
               closeDateFrom: null,
               closeDateTo: null,
@@ -254,7 +259,7 @@ export function DealsWorkspace() {
             className="max-w-none"
             headingLevel={3}
             title="No deals match these filters"
-            description="Try a different search, stage, owner or close date range."
+            description="Try a different search, stage, forecast category, owner or close date range."
             action={
               <Button
                 type="button"
@@ -264,6 +269,7 @@ export function DealsWorkspace() {
                   patchFilters({
                     q: "",
                     stage: null,
+                    forecastCategory: null,
                     ownerUserId: null,
                     closeDateFrom: null,
                     closeDateTo: null,

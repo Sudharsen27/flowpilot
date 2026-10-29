@@ -8,10 +8,12 @@ import type {
   DealStage,
   DealStageChangeRequest,
   DealUpdateRequest,
+  ForecastCategory,
 } from "@/types/api";
 
 export type DealListParams = {
   stage?: DealStage;
+  forecastCategory?: ForecastCategory;
   ownerUserId?: string;
   closeDateFrom?: string;
   closeDateTo?: string;
@@ -34,6 +36,7 @@ function clampedPage(params: { limit?: number; offset?: number }, query: URLSear
 export function listDeals(params: DealListParams = {}) {
   const query = new URLSearchParams();
   if (params.stage) query.set("stage", params.stage);
+  if (params.forecastCategory) query.set("forecast_category", params.forecastCategory);
   if (params.ownerUserId) query.set("owner_user_id", params.ownerUserId);
   if (params.closeDateFrom) query.set("close_date_from", params.closeDateFrom);
   if (params.closeDateTo) query.set("close_date_to", params.closeDateTo);

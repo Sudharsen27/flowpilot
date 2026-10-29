@@ -1511,6 +1511,9 @@ export type DealStage =
 
 export type DealProbabilitySource = "STAGE_DEFAULT" | "OVERRIDE";
 
+/** Seller confidence for an open deal. "Closed" is derived from the stage, never stored. */
+export type ForecastCategory = "PIPELINE" | "BEST_CASE" | "COMMIT";
+
 export type Deal = {
   id: string;
   name: string;
@@ -1522,6 +1525,8 @@ export type Deal = {
   probability: number | null;
   effective_probability: number;
   probability_source: DealProbabilitySource;
+  /** Set on every open deal; null on closed deals. */
+  forecast_category: ForecastCategory | null;
   expected_close_date: string;
   closed_at: string | null;
   owner_user_id: string | null;
@@ -1549,6 +1554,8 @@ export type DealCreateRequest = {
   currency?: string;
   stage?: DealStage;
   probability?: number | null;
+  /** Open deals only; omit for the PIPELINE default. */
+  forecast_category?: ForecastCategory;
   expected_close_date: string;
   /** Omit to own the deal yourself; null leaves it unassigned. */
   owner_user_id?: string | null;
@@ -1563,6 +1570,8 @@ export type DealUpdateRequest = {
   amount?: MoneyString;
   expected_close_date?: string;
   probability?: number | null;
+  /** Open deals only; it cannot be cleared. */
+  forecast_category?: ForecastCategory;
   owner_user_id?: string | null;
   lost_reason?: string | null;
   change_reason?: string | null;
@@ -1572,6 +1581,8 @@ export type DealStageChangeRequest = {
   stage: DealStage;
   expected_revision: number;
   probability?: number | null;
+  /** Only when moving to an open stage; a reopened deal defaults to PIPELINE. */
+  forecast_category?: ForecastCategory;
   lost_reason?: string | null;
   change_reason?: string | null;
 };
@@ -1581,7 +1592,8 @@ export type DealHistoryChange =
   | "STAGE"
   | "AMOUNT"
   | "EXPECTED_CLOSE_DATE"
-  | "PROBABILITY";
+  | "PROBABILITY"
+  | "FORECAST_CATEGORY";
 
 export type DealHistoryEvent = {
   id: string;
@@ -1599,6 +1611,12 @@ export type DealHistoryEvent = {
    */
   previous_probability?: number | null;
   new_probability?: number | null;
+  /**
+   * Forecast category before/after the event; null on closed deals. Rows recorded before
+   * categories existed have null (or omit) both.
+   */
+  previous_forecast_category?: ForecastCategory | null;
+  new_forecast_category?: ForecastCategory | null;
   /** A manager's audited amount correction on a won deal. */
   is_correction?: boolean;
   changed_by_user_id: string | null;

@@ -136,4 +136,70 @@ describe("DealHistoryList", () => {
     render(<DealHistoryList currency="INR" events={[unknown]} />);
     expect(entries()[0]).toHaveTextContent("Deal details were updated.");
   });
+
+  it("describes forecast category changes, reading closed deals from their stage", () => {
+    render(
+      <DealHistoryList
+        currency="INR"
+        events={[
+          event({
+            id: "c0",
+            changes: ["CREATED"],
+            previous_stage: null,
+            new_stage: "DISCOVERY",
+            previous_amount: null,
+            previous_expected_close_date: null,
+            new_forecast_category: "PIPELINE",
+          }),
+          event({
+            id: "c1",
+            changes: ["FORECAST_CATEGORY"],
+            previous_stage: "DISCOVERY",
+            new_stage: "DISCOVERY",
+            previous_forecast_category: "PIPELINE",
+            new_forecast_category: "COMMIT",
+          }),
+          event({
+            id: "c2",
+            changes: ["STAGE", "FORECAST_CATEGORY"],
+            previous_stage: "DISCOVERY",
+            new_stage: "CLOSED_WON",
+            previous_forecast_category: "COMMIT",
+            new_forecast_category: null,
+          }),
+          event({
+            id: "c3",
+            changes: ["STAGE", "FORECAST_CATEGORY"],
+            previous_stage: "CLOSED_WON",
+            new_stage: "PROPOSAL",
+            previous_forecast_category: null,
+            new_forecast_category: "PIPELINE",
+          }),
+        ]}
+      />,
+    );
+    const [created, changed, closed, reopened] = entries();
+    expect(created).toHaveTextContent("Forecast category: Pipeline.");
+    expect(changed).toHaveTextContent("Forecast category changed from Pipeline to Commit.");
+    expect(closed).toHaveTextContent("Forecast category changed from Commit to Closed.");
+    expect(reopened).toHaveTextContent("Forecast category changed from Closed to Pipeline.");
+  });
+
+  it("does not invent a category for rows recorded before categories existed", () => {
+    render(
+      <DealHistoryList
+        currency="INR"
+        events={[
+          event({
+            id: "old",
+            changes: ["CREATED"],
+            previous_stage: null,
+            previous_amount: null,
+            previous_expected_close_date: null,
+          }),
+        ]}
+      />,
+    );
+    expect(entries()[0]).not.toHaveTextContent("Forecast category");
+  });
 });

@@ -6,6 +6,7 @@ import { type DragEvent, useCallback, useEffect, useState } from "react";
 
 import { DealDrawer } from "@/components/deals/deal-drawer";
 import { DealProbability } from "@/components/deals/deal-stage-badge";
+import { ForecastCategoryBadge } from "@/components/deals/forecast-category-badge";
 import { DealStageDialog } from "@/components/deals/deal-stage-dialog";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
   WON_STAGE_LOCKED_MESSAGE,
   canChangeStage,
   canManageDeals,
+  forecastCategoryAfterMove,
   isClosedStage,
 } from "@/lib/deals";
 import { DEALS_PATH } from "@/lib/deals-url";
@@ -152,9 +154,14 @@ function DealCard({
           </DropdownMenu>
         )}
       </div>
-      <p className="text-base font-semibold tracking-tight tabular-nums">
-        {formatMoney(deal.amount, deal.currency)}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-base font-semibold tracking-tight tabular-nums">
+          {formatMoney(deal.amount, deal.currency)}
+        </p>
+        {isClosedStage(deal.stage) ? null : (
+          <ForecastCategoryBadge stage={deal.stage} category={deal.forecast_category} />
+        )}
+      </div>
       <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span>{deal.owner_name ?? "Unassigned"}</span>
         <span aria-hidden="true">·</span>
@@ -260,7 +267,11 @@ export function PipelineBoard() {
     setMoving(deal.id);
     setBoard({
       status: "ready",
-      columns: placeDeal(before, { ...deal, stage }, deal.stage),
+      columns: placeDeal(
+        before,
+        { ...deal, stage, forecast_category: forecastCategoryAfterMove(deal, stage) },
+        deal.stage,
+      ),
     });
     try {
       const saved = await changeDealStage(deal.id, {

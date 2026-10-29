@@ -83,6 +83,7 @@ function deal(overrides: Partial<Deal> = {}): Deal {
     probability: null,
     effective_probability: 50,
     probability_source: "STAGE_DEFAULT",
+    forecast_category: "PIPELINE",
     expected_close_date: "2026-12-15",
     closed_at: null,
     owner_user_id: "user-owner",
@@ -193,6 +194,45 @@ describe("Deals page", () => {
     );
   });
 
+  it("filters by forecast category and shows each deal's category", async () => {
+    const user = userEvent.setup();
+    listMock.mockResolvedValue(
+      pageOf([
+        deal(),
+        deal({ id: "deal-won", name: "Won deal", stage: "CLOSED_WON", forecast_category: null }),
+      ]),
+    );
+    renderPage();
+    const table = (await screen.findAllByRole("table"))[0]!;
+    expect(within(table).getByRole("columnheader", { name: "Forecast" })).toBeInTheDocument();
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Pipeline");
+    expect(rows[1]).toHaveTextContent("Closed");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Forecast category" }), "COMMIT");
+    expect(mockReplace).toHaveBeenLastCalledWith("/deals?category=COMMIT", { scroll: false });
+    await waitFor(() =>
+      expect(lastListParams()).toMatchObject({ forecastCategory: "COMMIT", offset: 0 }),
+    );
+    expect(
+      within(screen.getByRole("combobox", { name: "Forecast category" })).getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["All categories", "Pipeline", "Best case", "Commit"]);
+  });
+
+  it("clears the category with the other filters", async () => {
+    const user = userEvent.setup();
+    currentSearch = "category=COMMIT&stage=PROPOSAL";
+    listMock.mockResolvedValue(pageOf([]));
+    renderPage();
+    await screen.findByText("No deals match these filters");
+    expect(lastListParams()).toMatchObject({ forecastCategory: "COMMIT", stage: "PROPOSAL" });
+    await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
+    expect(mockReplace).toHaveBeenLastCalledWith("/deals", { scroll: false });
+    await waitFor(() => expect(lastListParams()?.forecastCategory).toBeUndefined());
+    expect(screen.getByRole("combobox", { name: "Forecast category" })).toHaveValue("");
+  });
+
   it("validates the close-date range without calling the API", async () => {
     currentSearch = "from=2026-12-31&to=2026-01-01";
     renderPage();
@@ -287,6 +327,7 @@ describe("Deals page", () => {
         amount: "125000.5",
         stage: "QUALIFICATION",
         probability: 35,
+        forecast_category: "PIPELINE",
         expected_close_date: "2027-01-31",
         lead_id: null,
       });
@@ -295,6 +336,41 @@ describe("Deals page", () => {
       expect(await screen.findByText("Deal created")).toBeInTheDocument();
       await waitFor(() => expect(listMock.mock.calls.length).toBeGreaterThan(calls));
       expect(mockReplace).toHaveBeenLastCalledWith("/deals", { scroll: false });
+    });
+
+    it("creates an open deal in the chosen forecast category", async () => {
+      const user = userEvent.setup();
+      createMock.mockResolvedValue(deal({ id: "deal-new", forecast_category: "COMMIT" }));
+      const dialog = await openForm(user);
+      const category = within(dialog).getByLabelText("Forecast category");
+      expect(category).toHaveValue("PIPELINE");
+      await user.type(within(dialog).getByLabelText(/Deal name/), "Committed");
+      await user.type(within(dialog).getByLabelText(/Amount/), "500");
+      await user.type(within(dialog).getByLabelText(/Expected close date/), "2027-01-31");
+      await user.selectOptions(category, "COMMIT");
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "QUALIFICATION", forecast_category: "COMMIT" }),
+      );
+    });
+
+    it("does not send a category for a deal created as closed", async () => {
+      const user = userEvent.setup();
+      createMock.mockResolvedValue(deal({ id: "deal-won", stage: "CLOSED_WON", forecast_category: null }));
+      const dialog = await openForm(user);
+      await user.selectOptions(within(dialog).getByLabelText("Stage"), "CLOSED_WON");
+      const category = within(dialog).getByLabelText("Forecast category");
+      expect(category).toBeDisabled();
+      expect(category).toHaveDisplayValue("Closed");
+      expect(
+        within(dialog).getByText("Closed deals take their category from the stage."),
+      ).toBeInTheDocument();
+      await user.type(within(dialog).getByLabelText(/Deal name/), "Signed");
+      await user.type(within(dialog).getByLabelText(/Amount/), "500");
+      await user.type(within(dialog).getByLabelText(/Expected close date/), "2027-01-31");
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      expect(createMock).toHaveBeenCalledTimes(1);
+      expect(createMock.mock.calls[0]![0]).not.toHaveProperty("forecast_category");
     });
 
     it("maps server validation and permission errors onto fields", async () => {
@@ -311,6 +387,18 @@ describe("Deals page", () => {
       await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
       expect(await within(dialog).findByText("Input should be a valid date")).toBeInTheDocument();
       expect(within(dialog).getByLabelText(/Expected close date/)).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+
+      createMock.mockRejectedValueOnce(
+        new ApiError("Request failed: 422", 422, {
+          detail: [{ loc: ["body", "forecast_category"], msg: "Input should be 'PIPELINE'" }],
+        }),
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Create deal" }));
+      expect(await within(dialog).findByText("Input should be 'PIPELINE'")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Forecast category")).toHaveAttribute(
         "aria-invalid",
         "true",
       );

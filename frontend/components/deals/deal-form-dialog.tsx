@@ -29,8 +29,12 @@ import { getLeads } from "@/lib/api/leads";
 import {
   DEAL_STAGES,
   DEAL_STAGE_LABELS,
+  DEFAULT_FORECAST_CATEGORY,
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_LABELS,
   canManageDeals,
   creatableStages,
+  forecastCategoryLabel,
   isClosedStage,
 } from "@/lib/deals";
 import { decimalEquals, parseAmountInput } from "@/lib/money";
@@ -39,6 +43,7 @@ import type {
   DealCreateRequest,
   DealStage,
   DealUpdateRequest,
+  ForecastCategory,
   Lead,
   MemberPublic,
 } from "@/types/api";
@@ -70,6 +75,7 @@ type FormState = {
   amount: string;
   stage: DealStage;
   probability: string;
+  forecastCategory: ForecastCategory;
   expectedCloseDate: string;
   owner: string;
   lostReason: string;
@@ -87,6 +93,7 @@ function formFromDeal(deal: Deal | null | undefined, initialLead?: LeadOption | 
       amount: "",
       stage: "QUALIFICATION",
       probability: "",
+      forecastCategory: DEFAULT_FORECAST_CATEGORY,
       expectedCloseDate: "",
       owner: OWNER_SELF,
       lostReason: "",
@@ -100,6 +107,7 @@ function formFromDeal(deal: Deal | null | undefined, initialLead?: LeadOption | 
     amount: deal.amount,
     stage: deal.stage,
     probability: deal.probability === null ? "" : String(deal.probability),
+    forecastCategory: deal.forecast_category ?? DEFAULT_FORECAST_CATEGORY,
     expectedCloseDate: deal.expected_close_date,
     owner: deal.owner_user_id ?? OWNER_NONE,
     lostReason: deal.lost_reason ?? "",
@@ -140,6 +148,7 @@ const SERVER_FIELD: Record<string, keyof FormState | "form"> = {
   amount: "amount",
   stage: "stage",
   probability: "probability",
+  forecast_category: "forecastCategory",
   expected_close_date: "expectedCloseDate",
   owner_user_id: "owner",
   lost_reason: "lostReason",
@@ -359,6 +368,8 @@ export function DealFormDialog({
     if (!isClosedStage(state.stage) && state.probability.trim()) {
       payload.probability = Number(state.probability);
     }
+    // Closed deals have no category; the API rejects one.
+    if (!isClosedStage(state.stage)) payload.forecast_category = state.forecastCategory;
     if (state.stage === "CLOSED_LOST") payload.lost_reason = state.lostReason.trim();
     if (state.owner === OWNER_NONE) payload.owner_user_id = null;
     else if (state.owner !== OWNER_SELF) payload.owner_user_id = state.owner;
@@ -380,6 +391,9 @@ export function DealFormDialog({
     if (!isClosedStage(current.stage)) {
       const probability = state.probability.trim() ? Number(state.probability) : null;
       if (probability !== current.probability) payload.probability = probability;
+      if (state.forecastCategory !== current.forecast_category) {
+        payload.forecast_category = state.forecastCategory;
+      }
     }
     const owner = state.owner === OWNER_NONE ? null : state.owner;
     if (canAssign && owner !== current.owner_user_id) payload.owner_user_id = owner;
@@ -554,6 +568,38 @@ export function DealFormDialog({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField
+              label="Forecast category"
+              htmlFor="deal-forecastCategory"
+              error={errors.forecastCategory}
+              description={
+                closed
+                  ? "Closed deals take their category from the stage."
+                  : "How confident you are that this deal closes as expected. Separate from the stage."
+              }
+            >
+              {closed ? (
+                <Select {...fieldProps("forecastCategory", true)} value="" disabled>
+                  <option value="">{forecastCategoryLabel(form.stage, null)}</option>
+                </Select>
+              ) : (
+                <Select
+                  {...fieldProps("forecastCategory", true)}
+                  value={form.forecastCategory}
+                  onChange={(event) =>
+                    update("forecastCategory", event.target.value as ForecastCategory)
+                  }
+                >
+                  {FORECAST_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {FORECAST_CATEGORY_LABELS[category]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
               label="Expected close date"
               htmlFor="deal-expectedCloseDate"
               required
@@ -638,7 +684,7 @@ export function DealFormDialog({
             <FormField
               label="Reason for change"
               htmlFor="deal-changeReason"
-              description="Saved in the deal history when the amount or close date changes."
+              description="Saved in the deal history when the amount, close date, probability or forecast category changes."
               error={errors.changeReason}
             >
               <Input

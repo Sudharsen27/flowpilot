@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DealProbability, DealStageBadge } from "@/components/deals/deal-stage-badge";
+import { ForecastCategoryBadge } from "@/components/deals/forecast-category-badge";
 import { DataTable, type DataTableColumn } from "@/components/data-display/data-table";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { buildDealHref } from "@/lib/deals-url";
@@ -53,6 +54,12 @@ const columns: DataTableColumn<Deal>[] = [
     className: "text-right whitespace-nowrap",
   },
   { key: "stage", header: "Stage", cell: (deal) => <DealStageBadge stage={deal.stage} /> },
+  {
+    key: "category",
+    header: "Forecast",
+    mobileLabel: "Forecast category",
+    cell: (deal) => <ForecastCategoryBadge stage={deal.stage} category={deal.forecast_category} />,
+  },
   {
     key: "probability",
     header: "Probability",
