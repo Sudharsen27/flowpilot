@@ -9,6 +9,7 @@ from app.models.deal import DealStage
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.deals import (
+    DealAmountCorrectionRequest,
     DealCreate,
     DealHistoryResponse,
     DealListResponse,
@@ -95,7 +96,29 @@ def change_deal_stage(
     db: Session = Depends(get_db),
 ) -> DealPublic:
     deal = DealService(db).change_stage(
-        organization.id, deal_id, user_id=membership.user_id, payload=payload
+        organization.id,
+        deal_id,
+        role=membership.role,
+        user_id=membership.user_id,
+        payload=payload,
+    )
+    return to_deal_public(deal)
+
+
+@router.post("/{deal_id}/amount-correction", response_model=DealPublic)
+def correct_won_deal_amount(
+    deal_id: str,
+    payload: DealAmountCorrectionRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> DealPublic:
+    deal = DealService(db).correct_won_amount(
+        organization.id,
+        deal_id,
+        role=membership.role,
+        user_id=membership.user_id,
+        payload=payload,
     )
     return to_deal_public(deal)
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -110,6 +112,7 @@ class Deal(Base):
         ),
         Index("ix_deals_organization_owner", "organization_id", "owner_user_id"),
         Index("ix_deals_organization_lead", "organization_id", "lead_id"),
+        Index("ix_deals_organization_closed_at", "organization_id", "closed_at"),
         Index("ix_deals_organization_created_at_id", "organization_id", "created_at", "id"),
     )
 
@@ -162,7 +165,8 @@ class Deal(Base):
 
 class DealStageEvent(Base):
     """Append-only deal history. Unchanged dimensions repeat their value (previous == new);
-    the creation event has no previous values."""
+    the creation event has no previous values. Probabilities are the override (NULL = stage
+    default); rows written before migration 035 have NULL for both."""
 
     __tablename__ = "deal_stage_events"
     __table_args__ = (
@@ -185,6 +189,22 @@ class DealStageEvent(Base):
         CheckConstraint(
             "new_amount >= 0 AND (previous_amount IS NULL OR previous_amount >= 0)",
             name="ck_deal_stage_events_amount_non_negative",
+        ),
+        CheckConstraint(
+            "(previous_probability IS NULL OR previous_probability BETWEEN 0 AND 100) "
+            "AND (new_probability IS NULL OR new_probability BETWEEN 0 AND 100)",
+            name="ck_deal_stage_events_probability_range",
+        ),
+        CheckConstraint(
+            "(new_probability IS NULL OR new_stage NOT IN ('CLOSED_WON', 'CLOSED_LOST')) "
+            "AND (previous_probability IS NULL OR previous_stage NOT IN "
+            "('CLOSED_WON', 'CLOSED_LOST'))",
+            name="ck_deal_stage_events_probability_open_only",
+        ),
+        CheckConstraint(
+            "NOT is_correction OR (previous_stage = 'CLOSED_WON' "
+            "AND new_stage = 'CLOSED_WON' AND change_reason IS NOT NULL)",
+            name="ck_deal_stage_events_correction_won_only",
         ),
         Index(
             "ix_deal_stage_events_organization_deal_created_at",
@@ -217,6 +237,12 @@ class DealStageEvent(Base):
     )
     previous_expected_close_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     new_expected_close_date: Mapped[date] = mapped_column(Date, nullable=False)
+    previous_probability: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_probability: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A manager's amount correction on a won deal (the only way a won amount changes).
+    is_correction: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     changed_by_user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="SET NULL"),

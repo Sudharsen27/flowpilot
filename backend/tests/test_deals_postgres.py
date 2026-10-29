@@ -22,19 +22,26 @@ from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, ForbiddenError
 from app.core.rate_limit import website_capture_limiter
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.deal import Deal, DealStageEvent
+from app.models.deal import Deal, DealStage, DealStageEvent
 from app.models.lead import Lead
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.sales_target import SalesTarget
 from app.models.user import User
-from app.schemas.deals import DealCreate, DealStageChangeRequest, DealUpdate
+from app.schemas.deals import (
+    DealAmountCorrectionRequest,
+    DealCreate,
+    DealStageChangeRequest,
+    DealUpdate,
+)
+from app.schemas.pipeline import ForecastGranularity
 from app.services.deal_service import DealService
+from app.services.pipeline_service import PipelineService
 from tests.test_inbound_qualification_claim_postgres import _postgres_reachable
 
 pytestmark = pytest.mark.skipif(
@@ -142,7 +149,7 @@ def test_migration_034_upgrades_preserves_data_and_downgrades(schema: str) -> No
                 )
             )
 
-        _alembic(schema, "upgrade", "head")
+        _alembic(schema, "upgrade", "034_deal_foundation")
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
         assert {"deals", "deal_stage_events", "sales_targets"} <= tables
@@ -496,8 +503,11 @@ def test_deal_api_round_trip_on_postgres(pg_client: TestClient, pg_engine: Any) 
     assert [event["changes"] for event in history["items"]] == [
         ["CREATED"],
         ["AMOUNT"],
-        ["STAGE"],
+        # Winning clears the 30% override, and that reset is recorded.
+        ["STAGE", "PROBABILITY"],
     ]
+    won_event = history["items"][2]
+    assert (won_event["previous_probability"], won_event["new_probability"]) == (30, None)
     assert history["items"][1]["previous_amount"] == "0.10"
     assert history["items"][1]["new_amount"] == "999999999999.99"
 
@@ -562,6 +572,7 @@ def test_concurrent_stage_changes_with_the_same_revision_conflict(pg_engine: Any
             DealService(session).change_stage(
                 organization.id,
                 deal.id,
+                role=MembershipRole.OWNER,
                 user_id=owner.id,
                 payload=DealStageChangeRequest(stage=stage, expected_revision=1),
             )
@@ -587,3 +598,264 @@ def test_concurrent_stage_changes_with_the_same_revision_conflict(pg_engine: Any
         assert events == 2  # creation + exactly one stage change
     finally:
         check.close()
+
+
+def test_migration_035_adds_probability_history_without_rewriting_rows(schema: str) -> None:
+    _alembic(schema, "upgrade", "034_deal_foundation")
+    engine = create_engine(
+        settings.database_url, connect_args={"options": f"-csearch_path={schema}"}
+    )
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, website_capture_enabled, "
+                    "sales_agent_auto_start_enabled) VALUES ('org-1', 'Existing', 'existing', "
+                    "false, false)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO deals (id, organization_id, name, amount, currency, stage, "
+                    "probability, expected_close_date, revision, stage_entered_at) VALUES "
+                    "('deal-1', 'org-1', 'Old', 10.00, 'INR', 'DISCOVERY', 40, '2026-12-01', 1, "
+                    "now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO deal_stage_events (id, organization_id, deal_id, new_stage, "
+                    "new_amount, new_expected_close_date) VALUES ('event-1', 'org-1', 'deal-1', "
+                    "'DISCOVERY', 10.00, '2026-12-01')"
+                )
+            )
+
+        _alembic(schema, "upgrade", "035_deal_history_probability")
+        inspector = inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("deal_stage_events")}
+        assert {"previous_probability", "new_probability", "is_correction"} <= columns
+        checks = {check["name"] for check in inspector.get_check_constraints("deal_stage_events")}
+        assert {
+            "ck_deal_stage_events_probability_range",
+            "ck_deal_stage_events_probability_open_only",
+            "ck_deal_stage_events_correction_won_only",
+        } <= checks
+        assert "ix_deals_organization_closed_at" in {
+            index["name"] for index in inspector.get_indexes("deals")
+        }
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT previous_probability, new_probability, is_correction "
+                    "FROM deal_stage_events WHERE id = 'event-1'"
+                )
+            ).one()
+            # The historical override is unknown, so nothing is backfilled.
+            assert tuple(row) == (None, None, False)
+            assert (
+                connection.execute(
+                    text("SELECT probability FROM deals WHERE id = 'deal-1'")
+                ).scalar()
+                == 40
+            )
+        with engine.begin() as connection, pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    "INSERT INTO deal_stage_events (id, organization_id, deal_id, "
+                    "previous_stage, new_stage, new_amount, new_expected_close_date, "
+                    "is_correction, change_reason) VALUES ('event-2', 'org-1', 'deal-1', "
+                    "'DISCOVERY', 'DISCOVERY', 10.00, '2026-12-01', true, 'Not won')"
+                )
+            )
+
+        _alembic(schema, "downgrade", "034_deal_foundation")
+        inspector = inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("deal_stage_events")}
+        assert not {"previous_probability", "new_probability", "is_correction"} & columns
+        assert "ix_deals_organization_closed_at" not in {
+            index["name"] for index in inspector.get_indexes("deals")
+        }
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM deal_stage_events")).scalar() == 1
+        _alembic(schema, "upgrade", "head")
+    finally:
+        engine.dispose()
+
+
+def test_forecast_buckets_in_utc_regardless_of_session_timezone(pg_session: Session) -> None:
+    organization, _ = _org_with_owner(pg_session)
+    pg_session.execute(text("SET TIME ZONE 'Asia/Kolkata'"))
+    now = datetime(2026, 3, 15, 12, tzinfo=UTC)
+
+    def won(amount: str, closed_at: datetime) -> Deal:
+        return _deal_row(
+            organization.id,
+            amount=Decimal(amount),
+            stage="CLOSED_WON",
+            closed_at=closed_at,
+            stage_entered_at=closed_at,
+        )
+
+    pg_session.add_all(
+        [
+            _deal_row(
+                organization.id, amount=Decimal("1.00"), expected_close_date=date(2026, 3, 14)
+            ),
+            _deal_row(
+                organization.id, amount=Decimal("2.00"), expected_close_date=date(2026, 3, 31)
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("999999999999.99"),
+                stage="NEGOTIATION",
+                expected_close_date=date(2026, 4, 1),
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("333.33"),
+                probability=33,
+                expected_close_date=date(2026, 6, 30),
+            ),
+            _deal_row(
+                organization.id, amount=Decimal("8.00"), expected_close_date=date(2026, 7, 1)
+            ),
+            # 05:00 IST on 1 March is still February in UTC.
+            won("100.00", datetime(2026, 2, 28, 23, 30, tzinfo=UTC)),
+            won("200.00", datetime(2026, 3, 1, tzinfo=UTC)),
+            won("400.00", datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),
+            _deal_row(organization.id, amount=Decimal("9.00"), currency="USD"),
+        ]
+    )
+    pg_session.commit()
+
+    service = PipelineService(pg_session)
+    months = service.forecast(
+        organization.id, granularity=ForecastGranularity.MONTH, periods=4, now=now
+    )
+    assert [(p.label, p.open.total_amount, p.won.total_amount) for p in months.periods] == [
+        ("2026-03", Decimal("2.00"), Decimal("200.00")),
+        ("2026-04", Decimal("999999999999.99"), Decimal("0.00")),
+        ("2026-05", Decimal("0.00"), Decimal("0.00")),
+        ("2026-06", Decimal("333.33"), Decimal("400.00")),
+    ]
+    assert months.periods[1].open.weighted_amount == Decimal("749999999999.99")
+    assert months.periods[3].open.weighted_amount == Decimal("110.00")
+    assert months.past_due.total_amount == Decimal("1.00")
+    assert months.past_due.oldest_expected_close_date == date(2026, 3, 14)
+    assert months.beyond_horizon.total_amount == Decimal("8.00")
+    # 0.10 + 0.20 + 749999999999.99 + 110.00 + 0.80 (past due and beyond included).
+    assert months.open_pipeline.weighted_amount == Decimal("750000000111.09")
+    assert months.excluded_other_currency_count == 1
+
+    quarters = service.forecast(
+        organization.id, granularity=ForecastGranularity.QUARTER, periods=2, now=now
+    )
+    assert [(p.label, p.won.total_amount) for p in quarters.periods] == [
+        ("2026-Q1", Decimal("300.00")),  # January-March includes the 28 February win
+        ("2026-Q2", Decimal("400.00")),
+    ]
+    # Won 700.00 + weighted in Q1-Q2 (0.20 + 749999999999.99 + 110.00); past due excluded.
+    assert quarters.projected_in_horizon_amount == Decimal("750000000810.19")
+
+    summary = service.summary(organization.id, months=2, now=now)
+    assert [(m.month, m.total_amount) for m in summary.won_by_month] == [
+        (date(2026, 2, 1), Decimal("100.00")),
+        (date(2026, 3, 1), Decimal("200.00")),
+    ]
+    assert summary.open.weighted_amount == months.open_pipeline.weighted_amount
+
+
+def test_won_amount_correction_and_probability_history_on_postgres(pg_engine: Any) -> None:
+    session = sessionmaker(bind=pg_engine, expire_on_commit=False)()
+    try:
+        organization, owner = _org_with_owner(session)
+        service = DealService(session)
+        deal = service.create(
+            organization,
+            role=MembershipRole.OWNER,
+            user_id=owner.id,
+            payload=DealCreate(
+                name="Audited",
+                amount=Decimal("100.00"),
+                probability=20,
+                expected_close_date=date(2026, 12, 1),
+            ),
+        )
+        deal = service.update(
+            organization.id,
+            deal.id,
+            role=MembershipRole.OWNER,
+            user_id=owner.id,
+            payload=DealUpdate(expected_revision=1, probability=30),
+        )
+        deal = service.change_stage(
+            organization.id,
+            deal.id,
+            role=MembershipRole.OWNER,
+            user_id=owner.id,
+            payload=DealStageChangeRequest(stage=DealStage.CLOSED_WON, expected_revision=2),
+        )
+        deal = service.correct_won_amount(
+            organization.id,
+            deal.id,
+            role=MembershipRole.OWNER,
+            user_id=owner.id,
+            payload=DealAmountCorrectionRequest(
+                expected_revision=3, amount=Decimal("95.50"), reason="Discount applied"
+            ),
+        )
+        assert deal.amount == Decimal("95.50")
+        history = service.history(organization.id, deal.id, limit=10, offset=0).items
+        assert [
+            (e.changes, e.previous_probability, e.new_probability, e.is_correction) for e in history
+        ] == [
+            (["CREATED"], None, 20, False),
+            (["PROBABILITY"], 20, 30, False),
+            (["STAGE", "PROBABILITY"], 30, None, False),
+            (["AMOUNT"], None, None, True),
+        ]
+        assert history[-1].change_reason == "Discount applied"
+    finally:
+        session.close()
+
+
+def test_only_managers_move_won_deals_on_postgres(pg_engine: Any) -> None:
+    session = sessionmaker(bind=pg_engine, expire_on_commit=False)()
+    try:
+        organization, owner = _org_with_owner(session)
+        service = DealService(session)
+        deal = service.create(
+            organization,
+            role=MembershipRole.OWNER,
+            user_id=owner.id,
+            payload=DealCreate(
+                name="Won",
+                amount=Decimal("10.00"),
+                stage=DealStage.CLOSED_WON,
+                expected_close_date=date(2026, 12, 1),
+            ),
+        )
+        reopen = DealStageChangeRequest(stage=DealStage.PROPOSAL, expected_revision=1)
+        with pytest.raises(ForbiddenError):
+            service.change_stage(
+                organization.id,
+                deal.id,
+                role=MembershipRole.MEMBER,
+                user_id=owner.id,
+                payload=reopen,
+            )
+        session.expire_all()
+        stored = session.get(Deal, deal.id)
+        assert stored is not None
+        assert (stored.stage, stored.revision) == ("CLOSED_WON", 1)
+        reopened = service.change_stage(
+            organization.id, deal.id, role=MembershipRole.ADMIN, user_id=owner.id, payload=reopen
+        )
+        assert (reopened.stage, reopened.closed_at) == ("PROPOSAL", None)
+        history = service.history(organization.id, deal.id, limit=10, offset=0).items
+        assert [(e.previous_stage, e.new_stage) for e in history] == [
+            (None, DealStage.CLOSED_WON),
+            (DealStage.CLOSED_WON, DealStage.PROPOSAL),
+        ]
+    finally:
+        session.close()

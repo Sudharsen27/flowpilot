@@ -73,7 +73,8 @@ def test_totals_and_weighted_pipeline_are_exact(client: TestClient) -> None:
     summary = _summary(client, token)
     # 1000.00 + 333.33 + 0.10 + 999999999999.99
     assert summary["open"]["total_amount"] == "1000000001333.42"
-    # 100.00 + 109.9989 + 0.05 + 749999999999.9925 = 750000000210.0414 (a float sum drifts here)
+    # Each deal rounds once, half-up to the cent: 100.00 + 110.00 (109.9989) + 0.05
+    # + 749999999999.99 (749999999999.9925). A float sum drifts at this magnitude.
     assert summary["open"]["weighted_amount"] == "750000000210.04"
     assert summary["open"]["count"] == 4
     stages = _by_stage(summary)

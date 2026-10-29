@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.deal import DealStage
 from app.schemas.money import CurrencyCode, Money, MoneyOut
 
-DealHistoryChange = Literal["CREATED", "STAGE", "AMOUNT", "EXPECTED_CLOSE_DATE"]
+DealHistoryChange = Literal["CREATED", "STAGE", "AMOUNT", "EXPECTED_CLOSE_DATE", "PROBABILITY"]
 ProbabilitySource = Literal["STAGE_DEFAULT", "OVERRIDE"]
 
 
@@ -82,6 +82,24 @@ class DealStageChangeRequest(BaseModel):
     _change_reason = field_validator("change_reason")(_strip_optional)
 
 
+class DealAmountCorrectionRequest(BaseModel):
+    """Manager-only correction of a won deal's amount; the reason is kept in history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
+    amount: Money
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("A correction reason is required")
+        return value
+
+
 class DealPublic(BaseModel):
     id: str
     name: str
@@ -122,6 +140,10 @@ class DealHistoryEvent(BaseModel):
     new_amount: MoneyOut
     previous_expected_close_date: date | None
     new_expected_close_date: date
+    # Probability override before/after (null = stage default; null for pre-035 rows).
+    previous_probability: int | None
+    new_probability: int | None
+    is_correction: bool
     changed_by_user_id: str | None
     changed_by_name: str | None
     change_reason: str | None

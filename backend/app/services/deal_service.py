@@ -19,6 +19,7 @@ from app.repositories.deal_repository import DealRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.membership_repository import MembershipRepository
 from app.schemas.deals import (
+    DealAmountCorrectionRequest,
     DealCreate,
     DealHistoryChange,
     DealHistoryEvent,
@@ -32,6 +33,12 @@ from app.services.activity_service import ActivityService
 
 MANAGER_ROLES = frozenset({MembershipRole.OWNER, MembershipRole.ADMIN})
 STALE_DEAL_DETAIL = "This deal changed. Refresh and review the latest version."
+WON_CREATE_FORBIDDEN_DETAIL = "Only owners and admins can create a deal that is already won"
+LOST_CREATE_FORBIDDEN_DETAIL = "Only owners and admins can create a deal that is already lost"
+WON_REOPEN_FORBIDDEN_DETAIL = "Only owners and admins can move a won deal to another stage"
+WON_AMOUNT_LOCKED_DETAIL = (
+    "The amount of a won deal is locked. An owner or admin can record a correction with a reason."
+)
 
 
 class DealService:
@@ -49,6 +56,11 @@ class DealService:
     ) -> Deal:
         currency = _organization_currency(organization, payload.currency)
         stage = DealStage(payload.stage)
+        # Members create open deals; closed outcomes come from a stage change, or a manager.
+        if stage == DealStage.CLOSED_WON:
+            _require_manager(role, WON_CREATE_FORBIDDEN_DETAIL)
+        elif stage == DealStage.CLOSED_LOST:
+            _require_manager(role, LOST_CREATE_FORBIDDEN_DETAIL)
         _validate_stage_fields(stage, payload.probability, payload.lost_reason)
         owner_user_id = (
             payload.owner_user_id if "owner_user_id" in payload.model_fields_set else user_id
@@ -87,6 +99,7 @@ class DealService:
                 previous_stage=None,
                 previous_amount=None,
                 previous_expected_close_date=None,
+                previous_probability=None,
                 changed_by_user_id=user_id,
                 change_reason=None,
                 created_at=now,
@@ -151,6 +164,7 @@ class DealService:
             stage = DealStage(deal.stage)
             previous_amount = deal.amount
             previous_close_date = deal.expected_close_date
+            previous_probability = deal.probability
             changed = False
 
             for field in ("name", "amount", "expected_close_date"):
@@ -163,6 +177,8 @@ class DealService:
                 deal.description = payload.description
                 changed = True
             if payload.amount is not None and payload.amount != deal.amount:
+                if stage == DealStage.CLOSED_WON:
+                    raise UnprocessableError(WON_AMOUNT_LOCKED_DETAIL)
                 deal.amount = payload.amount
                 changed = True
             if (
@@ -196,12 +212,17 @@ class DealService:
             now = datetime.now(UTC)
             deal.revision += 1
             deal.updated_at = now
-            if deal.amount != previous_amount or deal.expected_close_date != previous_close_date:
+            if (
+                deal.amount != previous_amount
+                or deal.expected_close_date != previous_close_date
+                or deal.probability != previous_probability
+            ):
                 self._record_event(
                     deal,
                     previous_stage=stage,
                     previous_amount=previous_amount,
                     previous_expected_close_date=previous_close_date,
+                    previous_probability=previous_probability,
                     changed_by_user_id=user_id,
                     change_reason=payload.change_reason,
                     created_at=now,
@@ -217,6 +238,7 @@ class DealService:
         organization_id: str,
         deal_id: str,
         *,
+        role: str,
         user_id: str,
         payload: DealStageChangeRequest,
     ) -> Deal:
@@ -231,9 +253,14 @@ class DealService:
                     )
                 self.session.rollback()
                 return self.get(organization_id, deal_id)
+            if previous_stage == DealStage.CLOSED_WON:
+                # Leaving CLOSED_WON (reopen or won -> lost) would let anyone edit the locked
+                # amount and win the deal again, so it is a manager action.
+                _require_manager(role, WON_REOPEN_FORBIDDEN_DETAIL)
             _validate_stage_fields(new_stage, payload.probability, payload.lost_reason)
 
             now = datetime.now(UTC)
+            previous_probability = deal.probability
             deal.stage = new_stage
             deal.stage_entered_at = now
             deal.closed_at = now if new_stage in CLOSED_DEAL_STAGES else None
@@ -247,9 +274,49 @@ class DealService:
                 previous_stage=previous_stage,
                 previous_amount=deal.amount,
                 previous_expected_close_date=deal.expected_close_date,
+                previous_probability=previous_probability,
                 changed_by_user_id=user_id,
                 change_reason=payload.change_reason,
                 created_at=now,
+            )
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return self.get(organization_id, deal_id)
+
+    def correct_won_amount(
+        self,
+        organization_id: str,
+        deal_id: str,
+        *,
+        role: str,
+        user_id: str,
+        payload: DealAmountCorrectionRequest,
+    ) -> Deal:
+        """The only way a won amount changes: manager-only, reason required, audited."""
+        _require_manager(role, "Only owners and admins can correct a won deal amount")
+        try:
+            deal = self._lock(organization_id, deal_id, payload.expected_revision)
+            if deal.stage != DealStage.CLOSED_WON:
+                raise UnprocessableError("Only won deals use amount corrections; use PATCH")
+            if payload.amount == deal.amount:
+                raise UnprocessableError("The corrected amount equals the current amount")
+            now = datetime.now(UTC)
+            previous_amount = deal.amount
+            deal.amount = payload.amount
+            deal.revision += 1
+            deal.updated_at = now
+            self._record_event(
+                deal,
+                previous_stage=DealStage.CLOSED_WON,
+                previous_amount=previous_amount,
+                previous_expected_close_date=deal.expected_close_date,
+                previous_probability=deal.probability,
+                changed_by_user_id=user_id,
+                change_reason=payload.reason,
+                created_at=now,
+                is_correction=True,
             )
             self.session.commit()
         except Exception:
@@ -319,9 +386,11 @@ class DealService:
         previous_stage: DealStage | None,
         previous_amount: object,
         previous_expected_close_date: date | None,
+        previous_probability: int | None,
         changed_by_user_id: str | None,
         change_reason: str | None,
         created_at: datetime,
+        is_correction: bool = False,
     ) -> None:
         self.deals.add_event(
             DealStageEvent(
@@ -333,9 +402,12 @@ class DealService:
                 new_amount=deal.amount,
                 previous_expected_close_date=previous_expected_close_date,
                 new_expected_close_date=deal.expected_close_date,
+                previous_probability=previous_probability,
+                new_probability=deal.probability,
                 changed_by_user_id=changed_by_user_id,
                 change_reason=change_reason,
                 created_at=created_at,
+                is_correction=is_correction,
             )
         )
 
@@ -383,6 +455,8 @@ def to_history_event(row: DealStageEvent) -> DealHistoryEvent:
             changes.append("AMOUNT")
         if row.previous_expected_close_date != row.new_expected_close_date:
             changes.append("EXPECTED_CLOSE_DATE")
+        if row.previous_probability != row.new_probability:
+            changes.append("PROBABILITY")
     return DealHistoryEvent(
         id=row.id,
         deal_id=row.deal_id,
@@ -393,6 +467,9 @@ def to_history_event(row: DealStageEvent) -> DealHistoryEvent:
         new_amount=row.new_amount,
         previous_expected_close_date=row.previous_expected_close_date,
         new_expected_close_date=row.new_expected_close_date,
+        previous_probability=row.previous_probability,
+        new_probability=row.new_probability,
+        is_correction=row.is_correction,
         changed_by_user_id=row.changed_by_user_id,
         changed_by_name=row.changed_by.name if row.changed_by else None,
         change_reason=row.change_reason,
