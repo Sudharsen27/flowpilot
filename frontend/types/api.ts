@@ -1117,7 +1117,8 @@ export type ActivityEntityType =
   | "LEAD_QUALIFICATION"
   | "KNOWLEDGE_ENTRY"
   | "WORKFLOW_RULE"
-  | "WEBHOOK_ENDPOINT";
+  | "WEBHOOK_ENDPOINT"
+  | "COMPANY_PROSPECT";
 
 export type WebhookEventType =
   | "lead.created"
@@ -1264,6 +1265,8 @@ export type ActivityEvent = {
   occurred_at: string;
   actor_type: ActivityActorType;
   actor_user_id: string | null;
+  /** Display name of the acting user; null for agent, system and public actors. */
+  actor_name?: string | null;
   agent_id: string | null;
   entity_type: ActivityEntityType;
   entity_id: string;
@@ -1275,6 +1278,11 @@ export type ActivityEvent = {
   follow_up_id: string | null;
   follow_up_execution_id: string | null;
   draft_id: string | null;
+  /**
+   * Approval queue that lists the draft now; null when the draft is missing,
+   * failed or outside the organization. Absent from older API responses.
+   */
+  draft_approval_status?: ApprovalQueueStatus | null;
   qualification_id: string | null;
 };
 

@@ -6,6 +6,8 @@ export type AgentExecutionsUrlState = {
   leadId: string | null;
   limit: number;
   offset: number;
+  /** Execution whose detail panel is open; needs `agentId` to load. */
+  executionId: string | null;
 };
 
 export const AGENT_EXECUTIONS_PATH = "/agents/executions";
@@ -57,6 +59,7 @@ export function parseAgentExecutionsSearchParams(
         ? Math.min(limitRaw, AGENT_EXECUTIONS_MAX_LIMIT)
         : AGENT_EXECUTIONS_PAGE_SIZE,
     offset: offsetRaw ?? 0,
+    executionId: parseId(searchParams.get("execution")),
   };
 }
 
@@ -73,6 +76,8 @@ export function serializeAgentExecutionsSearchParams(
     query.set("limit", String(state.limit));
   }
   if (state.offset > 0) query.set("offset", String(state.offset));
+  const executionId = parseId(state.executionId);
+  if (executionId) query.set("execution", executionId);
   return query.toString();
 }
 
@@ -85,16 +90,21 @@ export function agentExecutionsUrlEquals(
     a.agentId === b.agentId &&
     a.leadId === b.leadId &&
     a.limit === b.limit &&
-    a.offset === b.offset
+    a.offset === b.offset &&
+    a.executionId === b.executionId
   );
 }
 
-/** Build an organization execution history href, e.g. from agent or lead pages. */
+/**
+ * Build an organization execution history href, e.g. from agent or lead pages.
+ * `executionId` opens that run's detail panel and needs `agentId` to load it.
+ */
 export function buildAgentExecutionsHref(
   options: {
     status?: AgentExecutionStatus | null;
     agentId?: string | null;
     leadId?: string | null;
+    executionId?: string | null;
   } = {},
 ): string {
   const query = serializeAgentExecutionsSearchParams({
@@ -103,6 +113,7 @@ export function buildAgentExecutionsHref(
     leadId: options.leadId ?? null,
     limit: AGENT_EXECUTIONS_PAGE_SIZE,
     offset: 0,
+    executionId: options.agentId ? (options.executionId ?? null) : null,
   });
   return query ? `${AGENT_EXECUTIONS_PATH}?${query}` : AGENT_EXECUTIONS_PATH;
 }

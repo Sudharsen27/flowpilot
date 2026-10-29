@@ -28,8 +28,14 @@ import type {
   SalesRun,
 } from "@/types/api";
 
+const mockReplace = vi.fn();
+let currentSearch = "";
+
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "lead-1" }),
+  usePathname: () => "/leads/lead-1",
+  useRouter: () => ({ replace: mockReplace, push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(currentSearch),
 }));
 
 vi.mock("@/lib/api/agents", () => ({
@@ -186,6 +192,8 @@ function run(overrides: Partial<SalesRun> = {}): SalesRun {
 
 describe("Lead workspace", () => {
   beforeEach(() => {
+    currentSearch = "";
+    mockReplace.mockReset();
     getLeadMock.mockReset();
     resolveHumanAttentionMock.mockReset();
     getAgentsMock.mockReset();
@@ -903,5 +911,34 @@ describe("Lead workspace", () => {
     expect(
       screen.getByRole("textbox", { name: /^Customer enquiry/ }),
     ).toHaveValue("We need a demo next week.");
+  });
+
+  it("opens a deep-linked Sales Run in Sales Agent history and clears the link on close", async () => {
+    const user = userEvent.setup();
+    currentSearch = "sales_run=run-1&agent=agent-1";
+    getSalesRunMock.mockResolvedValue(
+      run({ qualification_id: null, response_draft_id: null, follow_up_id: null }),
+    );
+    render(<LeadWorkspacePage />);
+    const dialog = await screen.findByRole("dialog", { name: "Sales Agent history" });
+    expect(within(dialog).getByRole("button", { name: "All runs" })).toBeVisible();
+    await waitFor(() =>
+      expect(getSalesRunMock).toHaveBeenCalledWith("agent-1", "run-1"),
+    );
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(mockReplace).toHaveBeenCalledWith("/leads/lead-1", { scroll: false });
+  });
+
+  it("ignores an incomplete Sales Run link", async () => {
+    currentSearch = "sales_run=run-1";
+    render(<LeadWorkspacePage />);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Ada Prospect" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("dialog", { name: "Sales Agent history" }),
+    ).not.toBeInTheDocument();
   });
 });

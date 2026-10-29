@@ -15,6 +15,8 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { activityDestination } from "@/lib/activity-navigation";
+import { buildLeadHref } from "@/lib/lead-url";
 import { cn } from "@/lib/utils";
 import { statusPresentation } from "@/lib/status";
 import type { ActivityEvent } from "@/types/api";
@@ -54,6 +56,8 @@ export function ActivityDetail({
   const status = event?.status
     ? statusPresentation(event.status, humanizeActivityStatus(event.status))
     : null;
+  const destination = event ? activityDestination(event) : null;
+  const leadHref = event?.lead_id ? buildLeadHref(event.lead_id) : null;
 
   return (
     <Card
@@ -172,9 +176,17 @@ export function ActivityDetail({
             </div>
           </dl>
           <div className="flex flex-wrap gap-2">
-            {event.lead_id ? (
+            {destination ? (
               <Link
-                href={`/leads/${event.lead_id}`}
+                href={destination.href}
+                className={cn(buttonVariants({ variant: "default", size: "sm" }))}
+              >
+                {destination.label}
+              </Link>
+            ) : null}
+            {leadHref && leadHref !== destination?.href ? (
+              <Link
+                href={leadHref}
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
               >
                 Open lead

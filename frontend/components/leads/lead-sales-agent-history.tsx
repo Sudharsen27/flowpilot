@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatTimestamp } from "@/components/agents/execution-status";
 import { SalesRunStatusBadge } from "@/components/agents/sales-run-status-badge";
@@ -27,6 +27,7 @@ import {
   getLeadResponseDraft,
 } from "@/lib/api/leads";
 import { getSalesRun, listLeadSalesRuns } from "@/lib/api/sales-runs";
+import type { LeadSalesRunSelection } from "@/lib/lead-url";
 import type {
   Lead,
   LeadFollowUp,
@@ -50,7 +51,11 @@ type LeadSalesAgentHistoryProps = {
   open: boolean;
   lead: Lead | null;
   onOpenChange: (open: boolean) => void;
+  /** Sales Run to open on mount, e.g. from an activity deep link. */
+  initialSalesRun?: LeadSalesRunSelection | null;
 };
+
+type SalesRunRef = Pick<SalesRun, "id" | "agent_id">;
 
 function listError(cause: unknown) {
   if (cause instanceof ApiError && cause.status === 401) {
@@ -73,6 +78,7 @@ export function LeadSalesAgentHistory({
   open,
   lead,
   onOpenChange,
+  initialSalesRun = null,
 }: LeadSalesAgentHistoryProps) {
   const [items, setItems] = useState<SalesRun[]>([]);
   const [total, setTotal] = useState(0);
@@ -80,14 +86,19 @@ export function LeadSalesAgentHistory({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<SalesRunRef | null>(
+    initialSalesRun
+      ? { id: initialSalesRun.salesRunId, agent_id: initialSalesRun.agentId }
+      : null,
+  );
+  const selectedId = selected?.id ?? null;
   const [detail, setDetail] = useState<SalesRun | null>(null);
   const [qualification, setQualification] = useState<LeadQualificationResult | null>(
     null,
   );
   const [draft, setDraft] = useState<LeadResponseDraftResult | null>(null);
   const [followUp, setFollowUp] = useState<LeadFollowUp | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(Boolean(initialSalesRun));
   const [detailErrorMessage, setDetailErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,17 +125,26 @@ export function LeadSalesAgentHistory({
     };
   }, [lead, offset, open, refreshKey]);
 
-  async function loadDetail(run: SalesRun) {
+  async function loadDetail(run: SalesRunRef) {
     if (!lead) return;
-    setSelectedId(run.id);
+    setSelected({ id: run.id, agent_id: run.agent_id });
     setDetailLoading(true);
     setDetailErrorMessage(null);
     setDetail(null);
     setQualification(null);
     setDraft(null);
     setFollowUp(null);
+    await fetchDetail(run);
+  }
+
+  async function fetchDetail(run: SalesRunRef) {
+    if (!lead) return;
     try {
       const detailed = await getSalesRun(run.agent_id, run.id);
+      if (detailed.lead_id !== lead.id) {
+        // A deep link can name a run that belongs to another lead.
+        throw new ApiError("Request failed: 404", 404);
+      }
       const [nextQualification, nextDraft, nextFollowUp] = await Promise.all([
         detailed.qualification_id
           ? getLeadQualification(lead.id, detailed.qualification_id)
@@ -146,6 +166,17 @@ export function LeadSalesAgentHistory({
       setDetailLoading(false);
     }
   }
+
+  // Load a deep-linked Sales Run once; state already starts in its loading view.
+  const initialRunRequested = useRef(false);
+  useEffect(() => {
+    if (!open || !lead || !initialSalesRun || initialRunRequested.current) return;
+    initialRunRequested.current = true;
+    void fetchDetail({
+      id: initialSalesRun.salesRunId,
+      agent_id: initialSalesRun.agentId,
+    });
+  });
 
   const start = total === 0 ? 0 : offset + 1;
   const end = Math.min(offset + PAGE_SIZE, total);
@@ -236,7 +267,7 @@ export function LeadSalesAgentHistory({
               size="sm"
               className="justify-self-start"
               onClick={() => {
-                setSelectedId(null);
+                setSelected(null);
                 setDetail(null);
                 setQualification(null);
                 setDraft(null);
@@ -262,8 +293,7 @@ export function LeadSalesAgentHistory({
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      const row = items.find((item) => item.id === selectedId);
-                      if (row) void loadDetail(row);
+                      if (selected) void loadDetail(selected);
                     }}
                   >
                     Retry

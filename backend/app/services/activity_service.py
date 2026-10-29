@@ -15,7 +15,10 @@ from app.repositories.activity_event_repository import (
     ACTIVITY_LIST_MAX_LIMIT,
     ActivityEventRepository,
 )
+from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
 from app.schemas.activity import ActivityEventPublic, ActivityListResponse
+from app.schemas.approvals import ApprovalQueueStatus
+from app.services.approval_service import approval_queue_for_draft
 
 
 def _sanitize_search(value: str | None) -> str | None:
@@ -83,7 +86,29 @@ class ActivityService:
         return row
 
     def get_public(self, organization_id: str, activity_id: str) -> ActivityEventPublic:
-        return to_activity_public(self.get(organization_id, activity_id), include_summary=True)
+        row = self.get(organization_id, activity_id)
+        queues = self._draft_queues(organization_id, [row])
+        return to_activity_public(
+            row, include_summary=True, draft_approval_status=queues.get(row.entity_id)
+        )
+
+    def _draft_queues(
+        self, organization_id: str, rows: list[ActivityEvent]
+    ) -> dict[str, ApprovalQueueStatus | None]:
+        """Current approval queue per draft event, from one organization-scoped query."""
+        draft_ids = sorted(
+            {
+                row.entity_id
+                for row in rows
+                if row.entity_type == ActivityEntityType.LEAD_RESPONSE_DRAFT
+            }
+        )
+        drafts = LeadResponseDraftRepository(self.session).get_by_ids(
+            organization_id, draft_ids
+        )
+        return {
+            draft_id: approval_queue_for_draft(drafts.get(draft_id)) for draft_id in draft_ids
+        }
 
     def list(
         self,
@@ -118,8 +143,16 @@ class ActivityService:
             lead_id=lead_id,
             search=search,
         )
+        queues = self._draft_queues(organization_id, items)
         return ActivityListResponse(
-            items=[to_activity_public(item, include_summary=False) for item in items],
+            items=[
+                to_activity_public(
+                    item,
+                    include_summary=False,
+                    draft_approval_status=queues.get(item.entity_id),
+                )
+                for item in items
+            ],
             limit=capped,
             offset=safe_offset,
             total=total,
@@ -129,7 +162,12 @@ class ActivityService:
         )
 
 
-def to_activity_public(row: ActivityEvent, *, include_summary: bool) -> ActivityEventPublic:
+def to_activity_public(
+    row: ActivityEvent,
+    *,
+    include_summary: bool,
+    draft_approval_status: ApprovalQueueStatus | None = None,
+) -> ActivityEventPublic:
     entity_type = ActivityEntityType(row.entity_type)
     actor_name = row.actor_user.name if row.actor_user else None
     return ActivityEventPublic(
@@ -154,6 +192,11 @@ def to_activity_public(row: ActivityEvent, *, include_summary: bool) -> Activity
             entity_type, ActivityEntityType.LEAD_FOLLOW_UP_EXECUTION, row.entity_id
         ),
         draft_id=_id_if(entity_type, ActivityEntityType.LEAD_RESPONSE_DRAFT, row.entity_id),
+        draft_approval_status=(
+            draft_approval_status
+            if entity_type == ActivityEntityType.LEAD_RESPONSE_DRAFT
+            else None
+        ),
         qualification_id=_id_if(
             entity_type, ActivityEntityType.LEAD_QUALIFICATION, row.entity_id
         ),

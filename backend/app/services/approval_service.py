@@ -98,6 +98,20 @@ class ApprovalService:
         )
 
 
+def approval_queue_for_draft(draft: LeadResponseDraft | None) -> ApprovalQueueStatus | None:
+    """Approval Center queue that currently lists this draft, or None when none does.
+
+    Mirrors list_for_approval_queue: only completed drafts appear, filed by review status.
+    """
+    if draft is None or draft.status != LeadResponseDraftStatus.COMPLETED:
+        return None
+    review = _review_value(draft.review_status)
+    for queue in ApprovalQueueStatus:
+        if review in _review_statuses_for_queue(queue):
+            return queue
+    return None
+
+
 def _review_statuses_for_queue(status: ApprovalQueueStatus) -> tuple[str, ...]:
     if status == ApprovalQueueStatus.pending:
         return (

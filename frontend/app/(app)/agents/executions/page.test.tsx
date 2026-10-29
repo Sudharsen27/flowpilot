@@ -483,6 +483,105 @@ describe("Agent runs page", () => {
     await waitFor(() => expect(lastListParams()?.status).toBe("COMPLETED"));
   });
 
+  describe("execution deep links", () => {
+    const detail: AgentExecutionDetail = {
+      id: "exec-9",
+      agent_id: "agent-2",
+      status: "FAILED",
+      input: "Qualify Beta",
+      output: null,
+      provider: "groq",
+      model: "openai/gpt-oss-20b",
+      usage: null,
+      error: "Provider timed out",
+      started_at: "2026-10-28T10:00:00Z",
+      completed_at: "2026-10-28T10:00:05Z",
+      created_at: "2026-10-28T10:00:00Z",
+      initiated_by_user_id: null,
+      duration_ms: 5000,
+      failure_category: "PROVIDER_ERROR",
+    };
+
+    beforeEach(() => {
+      getAgentExecutionMock.mockResolvedValue(detail);
+      listToolInvocationsMock.mockResolvedValue({ items: [], limit: 50, offset: 0, total: 0 });
+    });
+
+    it("opens the linked execution with the agent from the URL", async () => {
+      currentSearch = "agent_id=agent-2&execution=exec-9";
+      render(<AgentExecutionsPage />);
+      expect(
+        await screen.findByRole("heading", { name: "Execution detail" }),
+      ).toBeInTheDocument();
+      expect(getAgentExecutionMock).toHaveBeenCalledWith("agent-2", "exec-9");
+      expect(listMock).toHaveBeenCalledTimes(1);
+      expect(lastListParams()).toMatchObject({ agentId: "agent-2", offset: 0 });
+      expect(lastListParams()).not.toHaveProperty("execution");
+    });
+
+    it("keeps the list request unchanged when a panel opens or closes", async () => {
+      const user = userEvent.setup();
+      getAgentExecutionMock.mockResolvedValue({ ...detail, id: "exec-1", agent_id: "agent-1" });
+      render(<AgentExecutionsPage />);
+      const viewButtons = await screen.findAllByRole("button", {
+        name: "View execution exec-1",
+      });
+      await user.click(viewButtons[0]!);
+      expect(mockReplace).toHaveBeenLastCalledWith("/agents/executions?execution=exec-1", {
+        scroll: false,
+      });
+      expect(
+        await screen.findByRole("heading", { name: "Execution detail" }),
+      ).toBeInTheDocument();
+      expect(getAgentExecutionMock).toHaveBeenCalledWith("agent-1", "exec-1");
+
+      await user.click(screen.getByRole("button", { name: "Back to history" }));
+      expect(mockReplace).toHaveBeenLastCalledWith("/agents/executions", { scroll: false });
+      expect(listMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops the open execution when filters change", async () => {
+      const user = userEvent.setup();
+      currentSearch = "agent_id=agent-2&execution=exec-9";
+      render(<AgentExecutionsPage />);
+      await screen.findByRole("heading", { name: "Execution detail" });
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Execution status" }),
+        "FAILED",
+      );
+      expect(mockReplace).toHaveBeenLastCalledWith(
+        "/agents/executions?status=FAILED&agent_id=agent-2",
+        { scroll: false },
+      );
+      expect(screen.queryByRole("heading", { name: "Execution detail" })).not.toBeInTheDocument();
+    });
+
+    it("shows the existing not-found state for a missing or inaccessible execution", async () => {
+      getAgentExecutionMock.mockRejectedValue(new ApiError("Request failed: 404", 404));
+      currentSearch = "agent_id=agent-2&execution=exec-missing";
+      render(<AgentExecutionsPage />);
+      expect(
+        await screen.findByText("This execution could not be found."),
+      ).toBeInTheDocument();
+      expect(screen.getAllByRole("link", { name: "Sales Agent" }).length).toBeGreaterThan(0);
+    });
+
+    it("explains when a linked execution has no agent to load it with", async () => {
+      const user = userEvent.setup();
+      currentSearch = "execution=exec-unknown";
+      render(<AgentExecutionsPage />);
+      expect(
+        await screen.findByRole("heading", {
+          level: 3,
+          name: "This execution could not be opened",
+        }),
+      ).toBeInTheDocument();
+      expect(getAgentExecutionMock).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      expect(mockReplace).toHaveBeenLastCalledWith("/agents/executions", { scroll: false });
+    });
+  });
+
   it.each(["OWNER", "ADMIN", "MEMBER"] as const)(
     "gives %s the same read-only view",
     async (role) => {

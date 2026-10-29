@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
 import { EmptyState } from "@/components/empty-state";
@@ -28,6 +33,7 @@ import { getLead, getLeadQualification, qualifyLead } from "@/lib/api/leads";
 import { getSalesRun } from "@/lib/api/sales-runs";
 import { inboxSourceLabels } from "@/lib/inbox-labels";
 import { hasReviewableDraft } from "@/lib/lead-next-step";
+import { parseLeadSalesRunSearchParams } from "@/lib/lead-url";
 import type {
   Agent,
   InboxConversationResponse,
@@ -92,6 +98,27 @@ export default function LeadWorkspacePage() {
   const [editKey, setEditKey] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const linkedSalesRun = useMemo(
+    () => parseLeadSalesRunSearchParams(searchParams),
+    [searchParams],
+  );
+  const linkedSalesRunKey = linkedSalesRun
+    ? `${linkedSalesRun.agentId}:${linkedSalesRun.salesRunId}`
+    : null;
+  const [trackedSalesRunKey, setTrackedSalesRunKey] = useState<string | null>(
+    null,
+  );
+  // A ?sales_run=&agent= link (e.g. from activity) opens that run in history.
+  if (linkedSalesRunKey !== trackedSalesRunKey) {
+    setTrackedSalesRunKey(linkedSalesRunKey);
+    if (linkedSalesRunKey) {
+      setHistoryKey((value) => value + 1);
+      setHistoryOpen(true);
+    }
+  }
   const [followUpsOpen, setFollowUpsOpen] = useState(false);
   const [followUpsKey, setFollowUpsKey] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -503,7 +530,14 @@ export default function LeadWorkspacePage() {
         key={`lead-history-${historyKey}`}
         open={historyOpen}
         lead={lead}
-        onOpenChange={setHistoryOpen}
+        initialSalesRun={linkedSalesRun}
+        onOpenChange={(open) => {
+          setHistoryOpen(open);
+          if (!open && linkedSalesRun) {
+            // Drop the link so reopening history starts from the run list.
+            router.replace(pathname, { scroll: false });
+          }
+        }}
       />
       <LeadFollowUpsDialog
         key={`lead-follow-ups-${followUpsKey}`}

@@ -29,6 +29,7 @@ export const entityLabels: Record<ActivityEvent["entity_type"], string> = {
   KNOWLEDGE_ENTRY: "Knowledge",
   WORKFLOW_RULE: "Workflow",
   WEBHOOK_ENDPOINT: "Webhook",
+  COMPANY_PROSPECT: "Company prospect",
 };
 
 type ActivityTimelineProps = {

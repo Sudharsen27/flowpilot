@@ -191,21 +191,19 @@ export function OrganizationExecutionsWorkspace() {
     [searchParams],
   );
   const [retryKey, setRetryKey] = useState(0);
-  const urlKey = serializeAgentExecutionsSearchParams(urlState);
-  const requestKey = `${urlKey}#${retryKey}`;
+  // The open execution lives in the URL but never changes the list request.
+  const listKey = serializeAgentExecutionsSearchParams({
+    ...urlState,
+    executionId: null,
+  });
+  const requestKey = `${listKey}#${retryKey}`;
 
   const [result, setResult] = useState<LoadResult | null>(null);
   const [counts, setCounts] = useState<ExecutionStatusCounts | null>(null);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentsFailed, setAgentsFailed] = useState(false);
-  const [selected, setSelected] = useState<SelectedExecution | null>(null);
-  const [trackedUrlKey, setTrackedUrlKey] = useState(urlKey);
-
-  // Any URL change (filters, paging, back/forward) closes the detail panel.
-  if (urlKey !== trackedUrlKey) {
-    setTrackedUrlKey(urlKey);
-    setSelected(null);
-  }
+  // Agent of the row the user opened, for runs outside an agent filter.
+  const [agentHint, setAgentHint] = useState<SelectedExecution | null>(null);
 
   const isLoading = result?.key !== requestKey;
   const page = !isLoading && result ? result.page : null;
@@ -274,8 +272,9 @@ export function OrganizationExecutionsWorkspace() {
     [pathname, router, searchParams],
   );
 
+  /** Any URL change that does not set `executionId` closes the detail panel. */
   function patchUrl(patch: Partial<AgentExecutionsUrlState>) {
-    const next = { ...urlState, ...patch };
+    const next = { ...urlState, executionId: null, ...patch };
     if (agentExecutionsUrlEquals(next, urlState)) return;
     replaceUrl(next);
   }
@@ -292,8 +291,19 @@ export function OrganizationExecutionsWorkspace() {
   }
 
   function refresh() {
-    setSelected(null);
+    patchUrl({});
     setRetryKey((key) => key + 1);
+  }
+
+  function openExecution(row: OrganizationExecutionListItem) {
+    setAgentHint({ executionId: row.id, agentId: row.agent_id });
+    patchUrl({ executionId: row.id });
+  }
+
+  function closeExecution() {
+    const closedId = urlState.executionId;
+    patchUrl({ executionId: null });
+    if (closedId) queueMicrotask(() => focusExecutionTrigger(closedId));
   }
 
   const items = page?.items ?? [];
@@ -307,6 +317,17 @@ export function OrganizationExecutionsWorkspace() {
   const canPrevious = offset > 0;
   const canNext = offset + pageLimit < total;
   const staleOnPage = items.filter((item) => item.is_stale).length;
+
+  const openExecutionId = urlState.executionId;
+  const openAgentId = openExecutionId
+    ? (items.find((item) => item.id === openExecutionId)?.agent_id ??
+      (agentHint?.executionId === openExecutionId ? agentHint.agentId : null) ??
+      urlState.agentId)
+    : null;
+  const selected: SelectedExecution | null =
+    openExecutionId && openAgentId
+      ? { executionId: openExecutionId, agentId: openAgentId }
+      : null;
 
   const agentNameFromRows =
     items.find((item) => item.agent_id === urlState.agentId)?.agent_name ?? null;
@@ -504,9 +525,7 @@ export function OrganizationExecutionsWorkspace() {
                   data-execution-trigger={row.id}
                   aria-pressed={selected?.executionId === row.id}
                   aria-label={`View execution ${row.id}`}
-                  onClick={() =>
-                    setSelected({ executionId: row.id, agentId: row.agent_id })
-                  }
+                  onClick={() => openExecution(row)}
                 >
                   View
                 </Button>
@@ -547,14 +566,22 @@ export function OrganizationExecutionsWorkspace() {
 
         {selected ? (
           <AgentExecutionDetailPanel
-            key={selected.executionId}
+            key={`${selected.agentId}:${selected.executionId}`}
             agentId={selected.agentId}
             executionId={selected.executionId}
-            onClose={() => {
-              const closedId = selected.executionId;
-              setSelected(null);
-              queueMicrotask(() => focusExecutionTrigger(closedId));
-            }}
+            onClose={closeExecution}
+          />
+        ) : openExecutionId && !isLoading ? (
+          <StatePanel
+            className="max-w-none"
+            headingLevel={3}
+            title="This execution could not be opened"
+            description="The link does not say which agent ran it. Filter by agent or open it from the list."
+            action={
+              <Button type="button" variant="outline" onClick={closeExecution}>
+                Close
+              </Button>
+            }
           />
         ) : null}
       </section>

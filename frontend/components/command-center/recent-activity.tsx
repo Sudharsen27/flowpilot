@@ -9,6 +9,7 @@ import { StatePanel } from "@/components/data-display/state-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { activityDestination } from "@/lib/activity-navigation";
 import { cn } from "@/lib/utils";
 import { listActivity } from "@/lib/api/activity";
 import type { ActivityEvent } from "@/types/api";
@@ -94,27 +95,45 @@ export function RecentActivity() {
         <Card>
           <CardContent className="p-0">
             <ul aria-label="Recent activity" className="divide-border divide-y">
-              {items.map((event) => (
-                <li key={event.id} className="flex items-start gap-3 px-4 py-4 sm:px-5">
-                  <ActivityTypeBadge type={event.type} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                      <p className="text-sm font-medium">{event.title}</p>
-                      <time
-                        dateTime={event.occurred_at}
-                        className="text-muted-foreground shrink-0 text-xs"
-                      >
-                        {formatTimestamp(event.occurred_at) ?? "—"}
-                      </time>
+              {items.map((event) => {
+                const destination = activityDestination(event);
+                return (
+                  <li
+                    key={event.id}
+                    className="flex items-start gap-3 px-4 py-4 sm:px-5"
+                  >
+                    <ActivityTypeBadge type={event.type} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                        {destination ? (
+                          <Link
+                            href={destination.href}
+                            className="text-sm font-medium underline-offset-4 hover:underline focus-visible:underline"
+                          >
+                            {`${event.title} `}
+                            <span className="sr-only">
+                              {`— ${destination.label}`}
+                            </span>
+                          </Link>
+                        ) : (
+                          <p className="text-sm font-medium">{event.title}</p>
+                        )}
+                        <time
+                          dateTime={event.occurred_at}
+                          className="text-muted-foreground shrink-0 text-xs"
+                        >
+                          {formatTimestamp(event.occurred_at) ?? "—"}
+                        </time>
+                      </div>
+                      {event.summary ? (
+                        <p className="text-muted-foreground mt-1 text-sm leading-5">
+                          {event.summary}
+                        </p>
+                      ) : null}
                     </div>
-                    {event.summary ? (
-                      <p className="text-muted-foreground mt-1 text-sm leading-5">
-                        {event.summary}
-                      </p>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>

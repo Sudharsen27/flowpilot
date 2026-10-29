@@ -401,9 +401,115 @@ describe("Command Center", () => {
     render(<CommandCenterPage />);
     expect(await screen.findByText("Lead qualified")).toBeVisible();
     expect(
+      screen.getByRole("link", { name: "Lead qualified — Open lead" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
+    expect(
       screen.queryByRole("heading", { name: "No activity yet" }),
     ).not.toBeInTheDocument();
     expect(listActivityMock).toHaveBeenCalledWith({ limit: 8, offset: 0 });
+  });
+
+  it("links recent activity to existing destinations and leaves unresolvable events plain", async () => {
+    const base = {
+      summary: null,
+      occurred_at: "2026-09-17T10:00:00Z",
+      actor_type: "AGENT" as const,
+      actor_user_id: null,
+      agent_id: null,
+      lead_id: null,
+      status: null,
+      sales_run_id: null,
+      execution_id: null,
+      email_send_id: null,
+      follow_up_id: null,
+      follow_up_execution_id: null,
+      draft_id: null,
+      qualification_id: null,
+    };
+    listActivityMock.mockResolvedValue({
+      items: [
+        {
+          ...base,
+          id: "event-execution",
+          type: "AI_ACTION",
+          title: "Agent execution completed",
+          entity_type: "AGENT_EXECUTION",
+          entity_id: "exec-1",
+          execution_id: "exec-1",
+          agent_id: "agent-1",
+          lead_id: "lead-1",
+        },
+        {
+          ...base,
+          id: "event-draft",
+          type: "APPROVAL",
+          title: "Response draft approved",
+          entity_type: "LEAD_RESPONSE_DRAFT",
+          entity_id: "draft-1",
+          draft_id: "draft-1",
+          lead_id: "lead-1",
+          status: "APPROVED",
+        },
+        {
+          ...base,
+          id: "event-draft-generated",
+          type: "AI_ACTION",
+          title: "Response draft generated",
+          entity_type: "LEAD_RESPONSE_DRAFT",
+          entity_id: "draft-2",
+          draft_id: "draft-2",
+          lead_id: "lead-1",
+          status: "GENERATED",
+          draft_approval_status: "rejected",
+        },
+        {
+          ...base,
+          id: "event-run",
+          type: "AI_ACTION",
+          title: "Sales Run waiting for approval",
+          entity_type: "SALES_RUN",
+          entity_id: "run-1",
+          sales_run_id: "run-1",
+          agent_id: "agent-1",
+          lead_id: "lead-1",
+        },
+        {
+          ...base,
+          id: "event-knowledge",
+          type: "HUMAN_ACTION",
+          title: "Knowledge entry updated",
+          entity_type: "KNOWLEDGE_ENTRY",
+          entity_id: "kb-1",
+        },
+      ],
+      limit: 8,
+      offset: 0,
+      total: 5,
+      type_counts: { AI_ACTION: 3, APPROVAL: 1, HUMAN_ACTION: 1, SYSTEM_EVENT: 0 },
+    });
+    render(<CommandCenterPage />);
+
+    expect(
+      await screen.findByRole("link", {
+        name: "Agent execution completed — Open execution",
+      }),
+    ).toHaveAttribute("href", "/agents/executions?agent_id=agent-1&execution=exec-1");
+    expect(
+      screen.getByRole("link", { name: "Response draft approved — Open approval" }),
+    ).toHaveAttribute("href", "/approvals?status=approved&approval=draft-1");
+    // A "generated" event follows the draft to the queue it is in now.
+    expect(
+      screen.getByRole("link", { name: "Response draft generated — Open approval" }),
+    ).toHaveAttribute("href", "/approvals?status=rejected&approval=draft-2");
+    expect(
+      screen.getByRole("link", { name: "Sales Run waiting for approval — Open sales run" }),
+    ).toHaveAttribute("href", "/leads/lead-1?sales_run=run-1&agent=agent-1");
+    expect(screen.getByText("Knowledge entry updated")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: /Knowledge entry updated/ }),
+    ).not.toBeInTheDocument();
+    // Navigation is read-only: approval metrics keep their existing request.
+    expect(getApprovalsMock).toHaveBeenCalledWith({ status: "pending", limit: 1 });
   });
 
   it("runs an instruction on a ready agent and keeps approval in the result", async () => {

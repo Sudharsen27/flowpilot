@@ -7,8 +7,15 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_ai_provider, get_email_provider
 from app.core.config import settings
 from app.main import app
-from app.models.activity_event import ActivityEvent
+from app.models.activity_event import (
+    ActivityActorType,
+    ActivityEntityType,
+    ActivityEvent,
+    ActivityEventType,
+)
 from app.models.lead_follow_up_execution import LeadFollowUpExecutionStatus
+from app.models.lead_response_draft import LeadResponseDraft, LeadResponseDraftStatus
+from app.services.activity_service import ActivityService
 from app.services.lead_follow_up_execution_service import LeadFollowUpExecutionService
 from tests.test_agent_runtime import FakeAIProvider, _create_agent, _headers
 from tests.test_lead_email_send import FakeEmailProvider, _approve, _email_settings, _override_email
@@ -424,4 +431,130 @@ def test_agent_execution_emits_activity(client: TestClient, db: Session) -> None
     assert "Agent execution completed" in titles
     blob = str(_activity(client, token).json())
     assert "Hello from the agent" not in blob
+    app.dependency_overrides.pop(get_ai_provider, None)
+
+
+def _draft_queues(client: TestClient, token: str, draft_id: str) -> list[str | None]:
+    items = _activity(client, token, entity_type="LEAD_RESPONSE_DRAFT", limit=50).json()["items"]
+    return [item["draft_approval_status"] for item in items if item["draft_id"] == draft_id]
+
+
+def _record_draft_event(db: Session, organization_id: str, draft_id: str, key: str) -> str:
+    event = ActivityService(db).record(
+        organization_id=organization_id,
+        event_type=ActivityEventType.AI_ACTION,
+        actor_type=ActivityActorType.SYSTEM,
+        title="Response draft generated",
+        summary="Draft event for navigation tests.",
+        entity_type=ActivityEntityType.LEAD_RESPONSE_DRAFT,
+        entity_id=draft_id,
+        dedupe_key=key,
+        status="GENERATED",
+    )
+    db.commit()
+    return event.id
+
+
+def test_draft_events_report_the_drafts_current_approval_queue(client: TestClient) -> None:
+    token = _auth(client)["access_token"]
+    lead = _create(client, token, email="ada@example.com").json()
+    draft_id = str(_generate(client, token, lead["id"])["id"])
+    assert _draft_queues(client, token, draft_id) == ["pending"]
+
+    approved = client.post(
+        f"/api/v1/leads/{lead['id']}/response-drafts/{draft_id}/approve",
+        json={"expected_revision": 1},
+        headers=_headers(token),
+    )
+    assert approved.status_code == 200
+    # The earlier "generated" event now points at the approved queue too.
+    assert _draft_queues(client, token, draft_id) == ["approved", "approved"]
+
+    rejected = client.post(
+        f"/api/v1/leads/{lead['id']}/response-drafts/{draft_id}/reject",
+        json={"expected_revision": 2, "reason": "changed our mind"},
+        headers=_headers(token),
+    )
+    assert rejected.status_code == 200
+    assert _draft_queues(client, token, draft_id) == ["rejected"] * 3
+
+    generated_event = next(
+        item
+        for item in _activity(client, token, limit=50).json()["items"]
+        if item["title"] == "Response draft generated"
+    )
+    detail = client.get(f"/api/v1/activity/{generated_event['id']}", headers=_headers(token))
+    assert detail.status_code == 200
+    assert detail.json()["draft_approval_status"] == "rejected"
+    lead_event = next(
+        item
+        for item in _activity(client, token, limit=50).json()["items"]
+        if item["entity_type"] == "LEAD"
+    )
+    assert lead_event["draft_approval_status"] is None
+    app.dependency_overrides.pop(get_ai_provider, None)
+
+
+def test_failed_and_missing_drafts_have_no_approval_queue(
+    client: TestClient, db: Session
+) -> None:
+    auth = _auth(client)
+    token = auth["access_token"]
+    lead = _create(client, token, email="ada@example.com").json()
+    draft_id = str(_generate(client, token, lead["id"])["id"])
+    draft = db.get(LeadResponseDraft, draft_id)
+    assert draft is not None
+    draft.status = LeadResponseDraftStatus.FAILED
+    db.commit()
+    assert _draft_queues(client, token, draft_id) == [None]
+
+    missing_id = "00000000-0000-0000-0000-000000000000"
+    event_id = _record_draft_event(db, auth["organization"]["id"], missing_id, "missing-draft")
+    assert _draft_queues(client, token, missing_id) == [None]
+    detail = client.get(f"/api/v1/activity/{event_id}", headers=_headers(token))
+    assert detail.json()["draft_approval_status"] is None
+    app.dependency_overrides.pop(get_ai_provider, None)
+
+
+def test_draft_approval_queue_never_reads_another_organizations_draft(
+    client: TestClient, db: Session
+) -> None:
+    org_a = _auth(client, email="a@example.com", organization_name="Org A")
+    org_b = _auth(client, email="b@example.com", organization_name="Org B")
+    lead_b = _create(client, org_b["access_token"], email="b-lead@example.com").json()
+    draft_b = str(_generate(client, org_b["access_token"], lead_b["id"])["id"])
+    assert _draft_queues(client, org_b["access_token"], draft_b) == ["pending"]
+
+    # An event in Org A that names Org B's draft must not reveal its queue.
+    event_id = _record_draft_event(db, org_a["organization"]["id"], draft_b, "cross-org-draft")
+    assert _draft_queues(client, org_a["access_token"], draft_b) == [None]
+    detail = client.get(f"/api/v1/activity/{event_id}", headers=_headers(org_a["access_token"]))
+    assert detail.json()["draft_approval_status"] is None
+    app.dependency_overrides.pop(get_ai_provider, None)
+
+
+def test_draft_approval_queue_uses_one_batched_draft_query(
+    client: TestClient, db: Session
+) -> None:
+    from sqlalchemy import event as sa_event
+
+    token = _auth(client)["access_token"]
+    for index in range(3):
+        lead = _create(client, token, email=f"lead{index}@example.com").json()
+        _generate(client, token, lead["id"])
+    statements: list[str] = []
+
+    def capture(_conn, _cursor, statement, *_args) -> None:  # type: ignore[no-untyped-def]
+        if "FROM lead_response_drafts" in statement:
+            statements.append(statement)
+
+    engine = db.get_bind()
+    sa_event.listen(engine, "before_cursor_execute", capture)
+    try:
+        listed = _activity(client, token, entity_type="LEAD_RESPONSE_DRAFT", limit=50).json()
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", capture)
+    assert {item["draft_approval_status"] for item in listed["items"]} == {"pending"}
+    assert len(listed["items"]) == 3
+    assert len(statements) == 1
     app.dependency_overrides.pop(get_ai_provider, None)

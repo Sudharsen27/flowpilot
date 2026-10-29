@@ -213,4 +213,58 @@ describe("Activity page", () => {
     await user.click(screen.getByRole("button", { name: "Back to activity timeline" }));
     expect(timelineButton).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("opens the event's destination from the detail panel and keeps lead and agent links", async () => {
+    const execution: ActivityEvent = {
+      ...event,
+      id: "event-exec",
+      title: "Agent execution completed",
+      entity_type: "AGENT_EXECUTION",
+      entity_id: "exec-1",
+      execution_id: "exec-1",
+      qualification_id: null,
+    };
+    listActivityMock.mockResolvedValue(pageOf([execution]));
+    getActivityMock.mockResolvedValue(execution);
+    render(<ActivityPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Agent execution completed/ }),
+    );
+    const detail = await screen.findByRole("region", { name: "Event detail" });
+    expect(
+      await within(detail).findByRole("link", { name: "Open execution" }),
+    ).toHaveAttribute("href", "/agents/executions?agent_id=agent-1&execution=exec-1");
+    expect(within(detail).getByRole("link", { name: "Open lead" })).toHaveAttribute(
+      "href",
+      "/leads/lead-1",
+    );
+    expect(within(detail).getByRole("link", { name: "Open agent" })).toHaveAttribute(
+      "href",
+      "/agents/agent-1",
+    );
+  });
+
+  it("shows no destination link for events without one and labels company prospects", async () => {
+    const prospect: ActivityEvent = {
+      ...event,
+      id: "event-prospect",
+      type: "HUMAN_ACTION",
+      title: "Company prospect created",
+      actor_type: "USER",
+      agent_id: null,
+      entity_type: "COMPANY_PROSPECT",
+      entity_id: "prospect-1",
+      lead_id: null,
+      qualification_id: null,
+    };
+    listActivityMock.mockResolvedValue(pageOf([prospect]));
+    getActivityMock.mockResolvedValue(prospect);
+    render(<ActivityPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Company prospect created/ }),
+    );
+    const detail = await screen.findByRole("region", { name: "Event detail" });
+    expect(await within(detail).findByText("Company prospect")).toBeVisible();
+    expect(within(detail).queryByRole("link")).not.toBeInTheDocument();
+  });
 });

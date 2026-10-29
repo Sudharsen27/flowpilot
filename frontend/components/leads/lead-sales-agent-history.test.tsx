@@ -322,4 +322,79 @@ describe("LeadSalesAgentHistory", () => {
     expect(await screen.findByText("Need a demo")).toBeVisible();
     expect(getSalesRunMock).toHaveBeenCalledTimes(2);
   });
+
+  describe("deep-linked Sales Run", () => {
+    const initialSalesRun = { salesRunId: "run-9", agentId: "agent-2" };
+
+    it("opens the linked run even when it is not on the first page", async () => {
+      const linked = run({
+        id: "run-9",
+        agent_id: "agent-2",
+        qualification_id: null,
+        response_draft_id: null,
+        follow_up_id: null,
+      });
+      listLeadSalesRunsMock.mockResolvedValue(page([run()]));
+      getSalesRunMock.mockResolvedValue({ ...linked, enquiry: "Linked enquiry" });
+      render(
+        <LeadSalesAgentHistory
+          open
+          lead={lead}
+          initialSalesRun={initialSalesRun}
+          onOpenChange={() => undefined}
+        />,
+      );
+      expect(await screen.findByText("Linked enquiry")).toBeVisible();
+      expect(getSalesRunMock).toHaveBeenCalledTimes(1);
+      expect(getSalesRunMock).toHaveBeenCalledWith("agent-2", "run-9");
+      expect(screen.getByRole("button", { name: "All runs" })).toBeVisible();
+    });
+
+    it("shows the existing not-found state and retries a missing linked run", async () => {
+      const user = userEvent.setup();
+      listLeadSalesRunsMock.mockResolvedValue(page([run()]));
+      getSalesRunMock
+        .mockRejectedValueOnce(new ApiError("missing", 404))
+        .mockResolvedValue({
+          ...run({ id: "run-9", agent_id: "agent-2", qualification_id: null, response_draft_id: null }),
+          enquiry: "Recovered enquiry",
+        });
+      render(
+        <LeadSalesAgentHistory
+          open
+          lead={lead}
+          initialSalesRun={initialSalesRun}
+          onOpenChange={() => undefined}
+        />,
+      );
+      expect(
+        await screen.findByText("This sales run could not be found."),
+      ).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Retry" }));
+      expect(await screen.findByText("Recovered enquiry")).toBeVisible();
+      expect(getSalesRunMock).toHaveBeenLastCalledWith("agent-2", "run-9");
+    });
+
+    it("refuses a linked run that belongs to another lead", async () => {
+      listLeadSalesRunsMock.mockResolvedValue(page([]));
+      getSalesRunMock.mockResolvedValue({
+        ...run({ id: "run-9", agent_id: "agent-2", lead_id: "lead-other" }),
+        enquiry: "OTHER LEAD ENQUIRY",
+      });
+      render(
+        <LeadSalesAgentHistory
+          open
+          lead={lead}
+          initialSalesRun={initialSalesRun}
+          onOpenChange={() => undefined}
+        />,
+      );
+      expect(
+        await screen.findByText("This sales run could not be found."),
+      ).toBeVisible();
+      expect(screen.queryByText("OTHER LEAD ENQUIRY")).not.toBeInTheDocument();
+      expect(getLeadQualificationMock).not.toHaveBeenCalled();
+      expect(getLeadResponseDraftMock).not.toHaveBeenCalled();
+    });
+  });
 });

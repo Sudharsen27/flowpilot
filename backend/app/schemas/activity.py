@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
+from app.schemas.approvals import ApprovalQueueStatus
 
 
 class ActivityEventPublic(BaseModel):
@@ -27,6 +28,9 @@ class ActivityEventPublic(BaseModel):
     follow_up_id: str | None = None
     follow_up_execution_id: str | None = None
     draft_id: str | None = None
+    # Approval queue that lists the draft now (not when the event happened); None when
+    # the draft is missing, failed, or outside the organization.
+    draft_approval_status: ApprovalQueueStatus | None = None
     qualification_id: str | None = None
 
 

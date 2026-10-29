@@ -15,6 +15,7 @@ const defaults: AgentExecutionsUrlState = {
   leadId: null,
   limit: AGENT_EXECUTIONS_PAGE_SIZE,
   offset: 0,
+  executionId: null,
 };
 
 function parse(query: string) {
@@ -35,6 +36,7 @@ describe("agent executions URL state", () => {
       leadId: "lead-1",
       limit: 50,
       offset: 40,
+      executionId: null,
     });
   });
 
@@ -71,6 +73,7 @@ describe("agent executions URL state", () => {
         leadId: "lead-1",
         limit: 50,
         offset: 20,
+        executionId: null,
       }),
     ).toBe("status=RUNNING&agent_id=agent%2F1&lead_id=lead-1&limit=50&offset=20");
   });
@@ -82,6 +85,7 @@ describe("agent executions URL state", () => {
       leadId: null,
       limit: AGENT_EXECUTIONS_PAGE_SIZE,
       offset: 40,
+      executionId: "exec-1",
     };
     expect(parse(serializeAgentExecutionsSearchParams(state))).toEqual(state);
   });
@@ -108,6 +112,24 @@ describe("agent executions URL state", () => {
       "/agents/executions?status=FAILED",
     );
     expect(buildAgentExecutionsHref({ agentId: "x".repeat(40) })).toBe(
+      "/agents/executions",
+    );
+  });
+
+  it("parses and validates the open execution", () => {
+    expect(parse("agent_id=agent-1&execution=exec-1").executionId).toBe("exec-1");
+    expect(parse(`execution=${"e".repeat(37)}`).executionId).toBeNull();
+    expect(parse("execution=%20").executionId).toBeNull();
+    expect(
+      agentExecutionsUrlEquals(defaults, { ...defaults, executionId: "exec-1" }),
+    ).toBe(false);
+  });
+
+  it("deep-links an execution only together with its agent", () => {
+    expect(
+      buildAgentExecutionsHref({ agentId: "agent-1", executionId: "exec/1" }),
+    ).toBe("/agents/executions?agent_id=agent-1&execution=exec%2F1");
+    expect(buildAgentExecutionsHref({ executionId: "exec-1" })).toBe(
       "/agents/executions",
     );
   });
