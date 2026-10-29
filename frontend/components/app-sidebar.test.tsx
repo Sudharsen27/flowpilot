@@ -106,6 +106,19 @@ describe("application sidebar navigation", () => {
     expect(getNavigationGroupLabel("/settings")).toBe("Administration");
   });
 
+  it("lists Forecast under Insights for every role", () => {
+    pathname = "/forecast";
+    render(<AppSidebar />);
+    expect(screen.getByRole("link", { name: "Forecast" })).toHaveAttribute("href", "/forecast");
+    expect(screen.getByRole("link", { name: "Forecast" })).toHaveAttribute("aria-current", "page");
+    expect(getNavigationGroupLabel("/forecast")).toBe("Insights");
+    expect(getNavigationItemLabel("/forecast")).toBe("Forecast");
+    for (const role of ["OWNER", "ADMIN", "MEMBER"] as const) {
+      const insights = visibleNavigationGroups(role).find((group) => group.label === "Insights");
+      expect(insights?.items.map((item) => item.href)).toContain("/forecast");
+    }
+  });
+
   it("only links to routes that exist (no Contacts or notifications)", () => {
     const hrefs = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
     expect(hrefs).not.toContain("/contacts");

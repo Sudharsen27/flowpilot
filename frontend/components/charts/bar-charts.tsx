@@ -68,7 +68,7 @@ function Tooltip({ item }: { item: BarDatum }) {
       className="bg-popover text-popover-foreground shadow-overlay border-border pointer-events-none absolute z-10 min-w-36 rounded-md border px-2.5 py-1.5 text-xs"
     >
       <p className="font-semibold tabular-nums">{item.value}</p>
-      <p className="text-muted-foreground">{item.label}</p>
+      {item.label ? <p className="text-muted-foreground">{item.label}</p> : null}
       {item.details?.map((line) => (
         <p key={line} className="text-muted-foreground tabular-nums">
           {line}
@@ -187,6 +187,115 @@ export function ColumnChart({ data, valueLabel, categoryLabel, emptyMessage }: C
         categoryLabel={categoryLabel}
         caption={`${valueLabel} by ${categoryLabel.toLowerCase()}`}
       />
+    </div>
+  );
+}
+
+export type ColumnSeries = {
+  key: string;
+  label: string;
+  /** Mark styling, e.g. "bg-chart-1". Pair hue with a second cue (fill vs outline). */
+  markClassName: string;
+};
+
+export type GroupedColumnDatum = {
+  key: string;
+  /** Axis label, e.g. "Q4 2026". */
+  label: string;
+  /** Full name for tooltips and screen readers, e.g. "Q4 2026 (Oct 1 – Dec 31)". */
+  fullLabel: string;
+  /** One entry per series, in series order. */
+  values: { value: string; magnitude: number }[];
+};
+
+type GroupedColumnChartProps = {
+  series: ColumnSeries[];
+  data: GroupedColumnDatum[];
+  /** Accessible name of the plot, e.g. "Won revenue and weighted forecast by quarter". */
+  label: string;
+  emptyMessage?: string;
+};
+
+/**
+ * Side-by-side columns per category, one hue per series with a shared scale. Each
+ * group is one keyboard stop whose accessible name lists every series value.
+ */
+export function GroupedColumnChart({ series, data, label, emptyMessage }: GroupedColumnChartProps) {
+  const [active, setActive] = useState<string | null>(null);
+  const max = Math.max(0, ...data.flatMap((item) => item.values.map((entry) => entry.magnitude)));
+  const hasData = data.length > 0 && max > 0;
+  const columns = { gridTemplateColumns: `repeat(${Math.max(data.length, 1)}, minmax(0, 1fr))` };
+  return (
+    <div>
+      <ul className="text-muted-foreground mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Legend">
+        {series.map((entry) => (
+          <li key={entry.key} className="flex items-center gap-1.5">
+            <span className={cn("block size-2.5 rounded-[2px]", entry.markClassName)} aria-hidden="true" />
+            {entry.label}
+          </li>
+        ))}
+      </ul>
+      <div className="grid h-44 items-end gap-1" style={columns} role="group" aria-label={label}>
+        {data.map((item) => (
+          <div key={item.key} className="relative flex h-full flex-col items-center justify-end">
+            <button
+              type="button"
+              aria-label={`${item.fullLabel}: ${series
+                .map((entry, index) => `${entry.label} ${item.values[index]?.value ?? "—"}`)
+                .join(", ")}`}
+              onPointerEnter={() => setActive(item.key)}
+              onPointerLeave={() => setActive(null)}
+              onFocus={() => setActive(item.key)}
+              onBlur={() => setActive(null)}
+              className={cn(
+                "focus-visible:ring-ring flex h-full w-full items-end justify-center gap-0.5 rounded-sm outline-none focus-visible:ring-2",
+                active && active !== item.key ? "opacity-60" : undefined,
+              )}
+            >
+              {series.map((entry, index) => {
+                const share = hasData ? ratio(item.values[index]?.magnitude ?? 0, max) : 0;
+                return (
+                  <span
+                    key={entry.key}
+                    // A zero value draws nothing, not even an outlined sliver.
+                    className={cn("block w-full max-w-6 rounded-t-[4px]", entry.markClassName, share === 0 && "invisible")}
+                    style={{ height: `${share * 100}%` }}
+                  />
+                );
+              })}
+            </button>
+            {active === item.key ? (
+              <div className="absolute bottom-full mb-1">
+                <Tooltip
+                  item={{
+                    key: item.key,
+                    label: "",
+                    value: item.fullLabel,
+                    magnitude: 0,
+                    details: series.map(
+                      (entry, index) => `${entry.label}: ${item.values[index]?.value ?? "—"}`,
+                    ),
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div
+        className="border-border text-muted-foreground mt-1 grid gap-1 border-t pt-1.5 text-center text-[0.6875rem]"
+        style={columns}
+        aria-hidden="true"
+      >
+        {data.map((item) => (
+          <span key={item.key} className="truncate">
+            {item.label}
+          </span>
+        ))}
+      </div>
+      {!hasData ? (
+        <p className="text-muted-foreground mt-2 text-center text-xs">{emptyMessage ?? "No data yet."}</p>
+      ) : null}
     </div>
   );
 }

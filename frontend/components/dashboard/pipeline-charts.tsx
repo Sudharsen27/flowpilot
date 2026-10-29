@@ -96,6 +96,11 @@ export function WonRevenueChart({ summary, onRetry }: ChartsProps) {
           </p>
         ) : null
       }
+      action={
+        <Link href="/forecast" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          View forecast
+        </Link>
+      }
     >
       {summary === undefined ? (
         <Skeleton className="h-44" />

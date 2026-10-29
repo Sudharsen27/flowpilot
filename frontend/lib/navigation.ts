@@ -14,6 +14,7 @@ import {
   Plug,
   Search,
   Settings,
+  TrendingUp,
   Users,
   UsersRound,
   Workflow,
@@ -64,6 +65,7 @@ export const NAV_GROUPS: readonly NavigationGroup[] = [
     label: "Insights",
     items: [
       { href: "/analytics", label: "Analytics", icon: BarChart3 },
+      { href: "/forecast", label: "Forecast", icon: TrendingUp },
       { href: "/agents/executions", label: "Agent runs", icon: ListChecks },
     ],
   },

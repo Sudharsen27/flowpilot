@@ -15,7 +15,7 @@ type DashboardKpisProps = {
   executionCounts: Partial<Record<AgentExecutionStatus, number>> | null | undefined;
 };
 
-function MoneyValue({ amount, currency }: { amount: string; currency: string }) {
+export function MoneyValue({ amount, currency }: { amount: string; currency: string }) {
   // Compact on the tile; the exact amount is the accessible name and tooltip.
   const exact = formatMoney(amount, currency);
   return (

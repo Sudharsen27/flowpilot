@@ -751,5 +751,12 @@ describe("Command Center", () => {
       expect(screen.getByRole("link", { name: "New deal" })).toHaveAttribute("href", "/deals?create=1");
       expect(screen.getByRole("link", { name: "Open pipeline" })).toHaveAttribute("href", "/deals/pipeline");
     });
+
+    it("links from won revenue to the forecast", async () => {
+      vi.mocked(getPipelineSummary).mockResolvedValue(summary);
+      render(<CommandCenterPage />);
+      const card = await screen.findByRole("region", { name: "Won revenue" });
+      expect(within(card).getByRole("link", { name: "View forecast" })).toHaveAttribute("href", "/forecast");
+    });
   });
 });

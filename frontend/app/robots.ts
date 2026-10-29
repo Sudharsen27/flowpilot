@@ -13,6 +13,7 @@ const DISALLOW = [
   "/approvals",
   "/activity",
   "/analytics",
+  "/forecast",
   "/integrations",
   "/knowledge",
   "/workflows",

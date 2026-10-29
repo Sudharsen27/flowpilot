@@ -1671,3 +1671,60 @@ export type PipelineSummary = {
   won_by_month: (PipelineTotals & { month: string })[];
   excluded_other_currency_count: number;
 };
+
+export type ForecastGranularity = "month" | "quarter";
+
+export type ForecastAssumptionCode =
+  | "STAGE_PROBABILITY_WEIGHTING"
+  | "PROBABILITY_OVERRIDES"
+  | "NO_HISTORICAL_WIN_RATES"
+  | "EXPECTED_CLOSE_DATE_PERIODS"
+  | "PAST_DUE_SEPARATED"
+  | "UTC_PERIODS"
+  | "SINGLE_CURRENCY"
+  | "OTHER_CURRENCY_EXCLUDED"
+  | "WON_AMOUNT_CURRENT_VALUE";
+
+/** Open deals in a bucket; override_count use a manual probability override. */
+export type ForecastOpenTotals = PipelineTotals & {
+  weighted_amount: MoneyString;
+  override_count: number;
+};
+
+export type ForecastPeriod = {
+  /** "2026-Q4" or "2026-11". */
+  label: string;
+  period_start: string;
+  /** Inclusive. */
+  period_end: string;
+  /** Actual revenue: deals won inside the period. */
+  won: PipelineTotals;
+  /** Open deals expected to close in the period. */
+  open: ForecastOpenTotals;
+  /** won + weighted open, computed by the API. An estimate, not committed revenue. */
+  projected_amount: MoneyString;
+};
+
+/** Stage-probability-weighted forecast computed by the API from stored deals. */
+export type PipelineForecast = {
+  currency: string;
+  as_of: string;
+  granularity: ForecastGranularity;
+  method: "STAGE_PROBABILITY_WEIGHTED";
+  rounding: "PER_DEAL_HALF_UP_CENTS";
+  horizon_start: string;
+  /** Inclusive. */
+  horizon_end: string;
+  periods: ForecastPeriod[];
+  /** Open deals whose expected close date has passed; not forecast into any period. */
+  past_due: ForecastOpenTotals & { oldest_expected_close_date: string | null };
+  /** Open deals expected to close after horizon_end. */
+  beyond_horizon: ForecastOpenTotals;
+  /** All open deals: past due + every period + beyond horizon. */
+  open_pipeline: ForecastOpenTotals;
+  won_in_horizon: PipelineTotals;
+  projected_in_horizon_amount: MoneyString;
+  stage_probabilities: { stage: DealStage; default_probability: number }[];
+  assumptions: { code: ForecastAssumptionCode; detail: string }[];
+  excluded_other_currency_count: number;
+};

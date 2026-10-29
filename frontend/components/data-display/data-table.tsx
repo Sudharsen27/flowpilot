@@ -22,6 +22,8 @@ type DataTableProps<T> = {
   emptyDescription?: string;
   headingLevel?: 2 | 3 | 4;
   className?: string;
+  /** Overrides the desktop table's default minimum width, e.g. for narrow numeric tables. */
+  tableClassName?: string;
 };
 
 export function DataTable<T>({
@@ -34,6 +36,7 @@ export function DataTable<T>({
   emptyDescription = "Data will appear here when it becomes available.",
   headingLevel = 2,
   className,
+  tableClassName,
 }: DataTableProps<T>) {
   if (!loading && rows.length === 0) {
     return (
@@ -61,7 +64,12 @@ export function DataTable<T>({
         </span>
       ) : null}
       <div className="overflow-x-auto">
-        <table className="hidden w-full min-w-[56rem] border-collapse text-left text-sm md:table">
+        <table
+          className={cn(
+            "hidden w-full min-w-[56rem] border-collapse text-left text-sm md:table",
+            tableClassName,
+          )}
+        >
           <thead className="bg-surface-subtle text-muted-foreground">
             <tr>
               {columns.map((column) => (

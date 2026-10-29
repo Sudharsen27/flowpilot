@@ -33,6 +33,8 @@ type RequestOptions = {
   contentType?: string;
   headers?: Record<string, string>;
   token?: string | null;
+  /** Aborts the fetch, e.g. when a query is cancelled. */
+  signal?: AbortSignal;
 };
 
 async function request<T>(
@@ -68,6 +70,7 @@ async function request<T>(
     method: options.method ?? "GET",
     headers,
     body,
+    signal: options.signal,
   });
 
   if (response.status === 401) {
@@ -94,7 +97,10 @@ async function request<T>(
   return JSON.parse(text) as T;
 }
 
-export function apiGet<T>(path: string, options: { token?: string | null } = {}): Promise<T> {
+export function apiGet<T>(
+  path: string,
+  options: { token?: string | null; signal?: AbortSignal } = {},
+): Promise<T> {
   return request<T>(path, options);
 }
 
