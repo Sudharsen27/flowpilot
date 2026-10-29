@@ -80,6 +80,9 @@ function DropdownMenuCheckboxItem({
   );
 }
 
+/** Groups related items; required around a `DropdownMenuLabel`. */
+const DropdownMenuGroup = MenuPrimitive.Group;
+
 function DropdownMenuLabel({
   className,
   ...props
@@ -110,6 +113,7 @@ function DropdownMenuSeparator({
 }
 
 export {
+  DropdownMenuGroup,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,

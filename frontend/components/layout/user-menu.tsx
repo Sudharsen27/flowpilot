@@ -18,6 +18,10 @@ type UserMenuProps = {
   organizationName: string;
   role: MembershipRole;
   onSignOut: () => void;
+  /** "sidebar": full-width account row for the bottom of the sidebar. */
+  variant?: "compact" | "sidebar";
+  /** Sidebar only: show just the avatar. */
+  collapsed?: boolean;
 };
 
 const roleLabels: Record<MembershipRole, string> = {
@@ -43,8 +47,16 @@ export function UserMenu({
   organizationName,
   role,
   onSignOut,
+  variant = "compact",
+  collapsed = false,
 }: UserMenuProps) {
   const router = useRouter();
+  const sidebar = variant === "sidebar";
+  const avatar = (
+    <span className="bg-brand-subtle text-brand-text ring-brand-border flex size-7 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold ring-1">
+      {getInitials(user.name)}
+    </span>
+  );
 
   return (
     <DropdownMenu>
@@ -53,20 +65,45 @@ export function UserMenu({
           <Button
             variant="ghost"
             aria-label={`Open user menu for ${user.name}`}
-            className="h-9 gap-2 px-1.5 sm:px-2"
+            className={
+              sidebar
+                ? collapsed
+                  ? "size-9 p-0"
+                  : "h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left"
+                : "h-9 gap-2 px-1.5 sm:px-2"
+            }
           />
         }
       >
-        <span className="bg-accent text-accent-foreground ring-border flex size-7 ring-1 items-center justify-center rounded-full text-[0.6875rem] font-semibold">
-          {getInitials(user.name)}
-        </span>
-        <span className="hidden max-w-32 truncate text-sm font-medium md:block">
-          {user.name}
-        </span>
-        <ChevronDown
-          className="text-muted-foreground hidden size-3.5 sm:block"
-          aria-hidden="true"
-        />
+        {avatar}
+        {sidebar ? (
+          collapsed ? null : (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[0.8125rem] leading-4 font-medium">
+                  {user.name}
+                </span>
+                <span className="text-muted-foreground block text-[0.6875rem] leading-4">
+                  {roleLabels[role]}
+                </span>
+              </span>
+              <ChevronDown
+                className="text-muted-foreground size-3.5"
+                aria-hidden="true"
+              />
+            </>
+          )
+        ) : (
+          <>
+            <span className="hidden max-w-32 truncate text-sm font-medium md:block">
+              {user.name}
+            </span>
+            <ChevronDown
+              className="text-muted-foreground hidden size-3.5 sm:block"
+              aria-hidden="true"
+            />
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64">
         <div className="px-2 py-2">

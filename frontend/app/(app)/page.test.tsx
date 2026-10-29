@@ -12,13 +12,20 @@ import { getApprovals } from "@/lib/api/approvals";
 import { getInbox } from "@/lib/api/inbox";
 import { listActivity } from "@/lib/api/activity";
 import { getFollowUpOperations, getLeads } from "@/lib/api/leads";
+import { listDeals } from "@/lib/api/deals";
+import { getPipelineSummary } from "@/lib/api/pipeline";
 import { listOrganizationSalesRuns } from "@/lib/api/sales-runs";
 import type {
+  Deal,
+  PipelineSummary,
   Agent,
   ApprovalListResponse,
   FollowUpOperationsResponse,
   LeadListResponse,
 } from "@/types/api";
+
+vi.mock("@/lib/api/pipeline", () => ({ getPipelineSummary: vi.fn() }));
+vi.mock("@/lib/api/deals", () => ({ listDeals: vi.fn() }));
 
 vi.mock("@/lib/api/activity", () => ({
   listActivity: vi.fn(),
@@ -116,8 +123,37 @@ function followUps(overdue: number): FollowUpOperationsResponse {
   };
 }
 
+function pipelineSummary(overrides: Partial<PipelineSummary> = {}): PipelineSummary {
+  const stages = ["QUALIFICATION", "DISCOVERY", "PROPOSAL", "NEGOTIATION", "CLOSED_WON", "CLOSED_LOST"] as const;
+  const defaults = [10, 25, 50, 75, 100, 0];
+  return {
+    currency: "INR",
+    generated_at: "2026-10-29T10:00:00Z",
+    open: { count: 0, total_amount: "0.00", weighted_amount: "0.00" },
+    won: { count: 0, total_amount: "0.00" },
+    lost: { count: 0, total_amount: "0.00" },
+    overdue_open: { count: 0, total_amount: "0.00" },
+    by_stage: stages.map((stage, index) => ({
+      stage,
+      count: 0,
+      total_amount: "0.00",
+      weighted_amount: "0.00",
+      default_probability: defaults[index]!,
+    })),
+    won_by_month: ["2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01", "2026-09-01", "2026-10-01"].map(
+      (month) => ({ month, count: 0, total_amount: "0.00" }),
+    ),
+    excluded_other_currency_count: 0,
+    ...overrides,
+  };
+}
+
 describe("Command Center", () => {
   beforeEach(() => {
+    vi.mocked(getPipelineSummary).mockReset();
+    vi.mocked(listDeals).mockReset();
+    vi.mocked(getPipelineSummary).mockResolvedValue(pipelineSummary());
+    vi.mocked(listDeals).mockResolvedValue({ items: [], limit: 5, offset: 0, total: 0 });
     getAgentsMock.mockReset();
     getApprovalsMock.mockReset();
     orchestrateAgentMock.mockReset();
@@ -183,7 +219,7 @@ describe("Command Center", () => {
   it("renders the sales workspace and its major sections", async () => {
     render(<CommandCenterPage />);
     expect(
-      screen.getByRole("heading", { level: 1, name: "Command Center" }),
+      screen.getByRole("heading", { level: 1, name: "Dashboard" }),
     ).toBeVisible();
     for (const heading of [
       "Ask FlowPilot",
@@ -604,7 +640,7 @@ describe("Command Center", () => {
       await screen.findByText("Agent run counts are unavailable right now."),
     ).toBeVisible();
     expect(
-      screen.queryByText("Command Center metrics could not be loaded."),
+      screen.queryByText("Dashboard metrics could not be loaded."),
     ).not.toBeInTheDocument();
     expect(
       await screen.findByText("There are 2 leads with New status."),
@@ -612,5 +648,108 @@ describe("Command Center", () => {
     expect(
       screen.getByRole("link", { name: "View all agent runs" }),
     ).toHaveAttribute("href", "/agents/executions");
+  });
+
+  describe("pipeline dashboard", () => {
+    const summary = pipelineSummary({
+      open: { count: 3, total_amount: "1250000.50", weighted_amount: "512500.25" },
+      won: { count: 2, total_amount: "999999999999.99" },
+      overdue_open: { count: 1, total_amount: "250000.00" },
+      by_stage: pipelineSummary().by_stage.map((row) =>
+        row.stage === "PROPOSAL"
+          ? { ...row, count: 2, total_amount: "1000000.50", weighted_amount: "500000.25" }
+          : row.stage === "QUALIFICATION"
+            ? { ...row, count: 1, total_amount: "250000.00", weighted_amount: "25000.00" }
+            : row,
+      ),
+      won_by_month: pipelineSummary().won_by_month.map((row) =>
+        row.month === "2026-10-01" ? { ...row, count: 2, total_amount: "999999999999.99" } : row,
+      ),
+    });
+
+    function overdueDeal(overrides: Partial<Deal> = {}): Deal {
+      return {
+        id: "deal-late",
+        name: "Late renewal",
+        description: null,
+        amount: "250000.00",
+        currency: "INR",
+        stage: "PROPOSAL",
+        probability: null,
+        effective_probability: 50,
+        probability_source: "STAGE_DEFAULT",
+        expected_close_date: "2026-09-30",
+        closed_at: null,
+        owner_user_id: null,
+        owner_name: "Olivia Owner",
+        lead_id: null,
+        lead_name: null,
+        lost_reason: null,
+        revision: 1,
+        stage_entered_at: "2026-09-01T00:00:00Z",
+        created_at: "2026-09-01T00:00:00Z",
+        updated_at: "2026-09-02T00:00:00Z",
+        ...overrides,
+      };
+    }
+
+    it("shows exact pipeline KPIs and charts from the summary API", async () => {
+      vi.mocked(getPipelineSummary).mockResolvedValue(summary);
+      render(<CommandCenterPage />);
+      expect(await screen.findByLabelText("₹12,50,000.50")).toBeInTheDocument();
+      expect(screen.getByText("Weighted ₹5,12,500.25")).toBeInTheDocument();
+      expect(screen.getByText("₹9,99,99,99,99,999.99 won to date")).toBeInTheDocument();
+      expect(screen.getByText("1 past expected close")).toBeInTheDocument();
+      expect(getPipelineSummary).toHaveBeenCalledWith(6);
+
+      const stageTable = screen.getByRole("table", { name: "Open value by stage" });
+      expect(within(stageTable).getByRole("rowheader", { name: "Proposal" })).toBeInTheDocument();
+      expect(within(stageTable).getByText(/₹10,00,000.50; 2 deals; Weighted ₹5,00,000.25/)).toBeInTheDocument();
+      expect(within(stageTable).queryByRole("rowheader", { name: "Closed won" })).not.toBeInTheDocument();
+      const months = screen.getByRole("group", { name: "Won revenue by month" });
+      expect(
+        within(months).getByRole("button", { name: /October 2026, ₹9,99,99,99,99,999.99, 2 deals won/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("lists open deals past their expected close and links to them", async () => {
+      vi.mocked(getPipelineSummary).mockResolvedValue(summary);
+      vi.mocked(listDeals).mockImplementation(async (params) =>
+        params?.closeDateTo
+          ? {
+              items: [overdueDeal(), overdueDeal({ id: "deal-won", name: "Closed one", stage: "CLOSED_WON" })],
+              limit: 50,
+              offset: 0,
+              total: 2,
+            }
+          : { items: [], limit: 5, offset: 0, total: 0 },
+      );
+      render(<CommandCenterPage />);
+      const section = await screen.findByRole("region", { name: "Deals needing attention" });
+      expect(await within(section).findByRole("link", { name: "Late renewal" })).toHaveAttribute(
+        "href",
+        "/deals/deal-late",
+      );
+      expect(within(section).queryByText("Closed one")).not.toBeInTheDocument();
+      expect(
+        within(section).getByText("1 open deal is past expected close · ₹2,50,000.00"),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the rest of the dashboard when the pipeline summary fails", async () => {
+      vi.mocked(getPipelineSummary).mockRejectedValue(new Error("network"));
+      getLeadsMock.mockResolvedValue(leads(5, 2));
+      render(<CommandCenterPage />);
+      expect((await screen.findAllByText("Pipeline figures could not be loaded")).length).toBe(2);
+      expect(screen.getAllByText("Deal figures are unavailable.").length).toBeGreaterThan(0);
+      expect(await screen.findByText("2 with CRM status New.")).toBeInTheDocument();
+      expect(screen.queryByText("Dashboard metrics could not be loaded.")).not.toBeInTheDocument();
+    });
+
+    it("offers new-deal and pipeline actions", () => {
+      render(<CommandCenterPage />);
+      expect(screen.getByRole("link", { name: "New deal" })).toHaveAttribute("href", "/deals?create=1");
+      expect(screen.getByRole("link", { name: "Open pipeline" })).toHaveAttribute("href", "/deals/pipeline");
+    });
   });
 });

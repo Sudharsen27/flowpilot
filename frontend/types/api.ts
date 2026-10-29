@@ -1630,3 +1630,24 @@ export type SalesTargetUpsertRequest = {
   amount: MoneyString;
   currency?: string;
 };
+
+export type PipelineTotals = {
+  count: number;
+  total_amount: MoneyString;
+};
+
+export type PipelineSummary = {
+  currency: string;
+  generated_at: string;
+  open: PipelineTotals & { weighted_amount: MoneyString };
+  won: PipelineTotals;
+  lost: PipelineTotals;
+  overdue_open: PipelineTotals;
+  by_stage: (PipelineTotals & {
+    stage: DealStage;
+    weighted_amount: MoneyString;
+    default_probability: number;
+  })[];
+  won_by_month: (PipelineTotals & { month: string })[];
+  excluded_other_currency_count: number;
+};

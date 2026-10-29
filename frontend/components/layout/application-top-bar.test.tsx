@@ -53,7 +53,9 @@ describe("authenticated application top bar", () => {
     expect(
       screen.getByRole("button", { name: "Open command menu" }),
     ).toBeVisible();
-    expect(screen.getByText("Leads")).toBeVisible();
+    // Mobile shows the page name; desktop shows "CRM / Leads".
+    expect(screen.getAllByText("Leads")).toHaveLength(2);
+    expect(screen.getByText("CRM")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Open user menu for Alex Morgan" }),
     ).toBeVisible();

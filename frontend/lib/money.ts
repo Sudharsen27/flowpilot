@@ -83,6 +83,29 @@ export function formatMoney(amount: string | null | undefined, currency: string)
   }
 }
 
+/**
+ * Short display such as "₹12.5L" or "$1.2M" for dense KPI tiles. Uses only the
+ * whole-currency part (as BigInt), so it is a label, never input to arithmetic.
+ * Always pair it with the exact value (e.g. in a title or description).
+ */
+export function formatMoneyCompact(amount: string | null | undefined, currency: string): string {
+  if (amount === null || amount === undefined) return "—";
+  const match = DECIMAL_PATTERN.exec(amount.trim());
+  if (!match) return formatMoney(amount, currency);
+  const [, sign, whole] = match;
+  try {
+    const value = BigInt(`${sign}${whole}`);
+    return new Intl.NumberFormat(localeFor(currency), {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
+  } catch {
+    return formatMoney(amount, currency);
+  }
+}
+
 /** Format a date-only API value ("2026-12-15") without shifting it across time zones. */
 export function formatDateOnly(value: string | null | undefined): string {
   if (!value) return "—";

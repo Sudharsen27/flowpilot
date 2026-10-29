@@ -6,23 +6,79 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { ApplicationTopBar } from "@/components/layout/application-top-bar";
 import { PageContainer } from "@/components/layout/page-container";
+import { UserMenu } from "@/components/layout/user-menu";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
 
 type AppShellProps = {
   children: ReactNode;
 };
 
+const SIDEBAR_COLLAPSED_KEY = "flowpilot.sidebar.collapsed";
+const SIDEBAR_EVENT = "flowpilot:sidebar-collapsed";
+
+// A per-browser convenience in localStorage; every read and write tolerates blocked storage.
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? "1" : "0");
+  } catch {
+    // Storage unavailable (e.g. private mode): the preference is not remembered.
+  }
+  window.dispatchEvent(new Event(SIDEBAR_EVENT));
+}
+
+function subscribeCollapsed(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(SIDEBAR_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(SIDEBAR_EVENT, onChange);
+  };
+}
+
 export function AppShell({ children }: AppShellProps) {
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   const organizationName = session?.organization.name;
+  const role = session?.membership.role;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const collapsed = useSyncExternalStore(
+    subscribeCollapsed,
+    readCollapsed,
+    () => false,
+  );
+  const toggleCollapsed = useCallback(
+    () => writeCollapsed(!readCollapsed()),
+    [],
+  );
+
+  function account(collapsedMenu: boolean) {
+    return session ? (
+      <UserMenu
+        user={session.user}
+        organizationName={session.organization.name}
+        role={session.membership.role}
+        onSignOut={signOut}
+        variant="sidebar"
+        collapsed={collapsedMenu}
+      />
+    ) : null;
+  }
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const mobileNavRef = useRef<HTMLElement>(null);
@@ -87,8 +143,19 @@ export function AppShell({ children }: AppShellProps) {
         >
           Skip to content
         </a>
-        <aside className="border-sidebar-border bg-sidebar sticky top-0 hidden h-screen w-56 shrink-0 border-r lg:block">
-          <AppSidebar organizationName={organizationName} />
+        <aside
+          className={cn(
+            "border-sidebar-border bg-sidebar sticky top-0 hidden h-screen shrink-0 border-r motion-safe:transition-[width] motion-safe:duration-200 lg:block",
+            collapsed ? "w-16" : "w-60",
+          )}
+        >
+          <AppSidebar
+            organizationName={organizationName}
+            role={role}
+            collapsed={collapsed}
+            onToggleCollapsed={toggleCollapsed}
+            account={account(collapsed)}
+          />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -140,7 +207,12 @@ export function AppShell({ children }: AppShellProps) {
                 <X />
               </Button>
             </div>
-            <AppSidebar organizationName={organizationName} onNavigate={closeMobileNav} />
+            <AppSidebar
+              organizationName={organizationName}
+              role={role}
+              onNavigate={closeMobileNav}
+              account={account(false)}
+            />
           </aside>
         </div>
       ) : null}

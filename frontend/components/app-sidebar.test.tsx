@@ -2,6 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import {
+  activeNavigationHref,
+  getNavigationGroupLabel,
+  getNavigationItemLabel,
+  NAV_GROUPS,
+  visibleNavigationGroups,
+} from "@/lib/navigation";
 
 let pathname = "/";
 
@@ -23,7 +30,7 @@ describe("application sidebar navigation", () => {
       "page",
     );
     expect(
-      screen.getByRole("link", { name: "Command Center" }),
+      screen.getByRole("link", { name: "Dashboard" }),
     ).not.toHaveAttribute("aria-current");
   });
 
@@ -31,7 +38,7 @@ describe("application sidebar navigation", () => {
     render(<AppSidebar />);
 
     for (const label of [
-      "Command Center",
+      "Dashboard",
       "Activity",
       "Analytics",
       "Leads",
@@ -83,5 +90,47 @@ describe("application sidebar navigation", () => {
       .getAllByRole("link")
       .filter((link) => link.getAttribute("aria-current") === "page");
     expect(currentLinks).toHaveLength(1);
+  });
+
+  it("marks only the most specific item, so Pipeline wins over Deals", () => {
+    pathname = "/deals/pipeline";
+    render(<AppSidebar />);
+    expect(screen.getByRole("link", { name: "Pipeline" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Deals" })).not.toHaveAttribute("aria-current");
+    expect(activeNavigationHref("/deals/deal-1")).toBe("/deals");
+    expect(activeNavigationHref("/agents/executions")).toBe("/agents/executions");
+    expect(activeNavigationHref("/settings")).toBe("/settings");
+    expect(activeNavigationHref("/settings/ai")).toBe("/settings/ai");
+    expect(getNavigationItemLabel("/deals/targets")).toBe("Deals");
+    expect(getNavigationGroupLabel("/deals/pipeline")).toBe("CRM");
+    expect(getNavigationGroupLabel("/settings")).toBe("Administration");
+  });
+
+  it("only links to routes that exist (no Contacts or notifications)", () => {
+    const hrefs = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
+    expect(hrefs).not.toContain("/contacts");
+    expect(hrefs).not.toContain("/notifications");
+    expect(hrefs).toEqual(expect.arrayContaining(["/dashboard", "/deals", "/deals/pipeline"]));
+  });
+
+  it("keeps accessible names in the collapsed icon rail and toggles", async () => {
+    const onToggle = vi.fn();
+    render(<AppSidebar collapsed onToggleCollapsed={onToggle} />);
+    expect(screen.getByRole("link", { name: "Deals" })).toHaveAttribute("title", "Deals");
+    expect(screen.queryByText("CRM")).toHaveClass("sr-only");
+    screen.getByRole("button", { name: "Expand sidebar" }).click();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters items by role when an item declares roles", () => {
+    const groups = visibleNavigationGroups("MEMBER");
+    expect(groups.flatMap((group) => group.items).length).toBe(
+      NAV_GROUPS.flatMap((group) => group.items).filter((item) => !item.roles?.length || item.roles.includes("MEMBER")).length,
+    );
+  });
+
+  it("renders account controls at the bottom", () => {
+    render(<AppSidebar account={<button type="button">Account</button>} />);
+    expect(screen.getByRole("button", { name: "Account" })).toBeInTheDocument();
   });
 });

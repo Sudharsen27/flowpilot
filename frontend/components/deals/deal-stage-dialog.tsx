@@ -27,6 +27,8 @@ type DealStageDialogProps = {
   onSaved: (deal: Deal) => void;
   /** Fetch the latest deal after a 409 conflict. */
   onReload: () => Promise<Deal | null>;
+  /** Preselect the target stage, e.g. after dropping a card on a closed column. */
+  initialStage?: DealStage;
 };
 
 type Errors = Partial<Record<"stage" | "probability" | "lostReason" | "form", string>>;
@@ -37,9 +39,12 @@ export function DealStageDialog({
   deal,
   onSaved,
   onReload,
+  initialStage,
 }: DealStageDialogProps) {
   const [current, setCurrent] = useState(deal);
-  const [stage, setStage] = useState<DealStage | "">("");
+  const [stage, setStage] = useState<DealStage | "">(
+    initialStage && initialStage !== deal.stage ? initialStage : "",
+  );
   const [probability, setProbability] = useState("");
   const [lostReason, setLostReason] = useState("");
   const [changeReason, setChangeReason] = useState("");

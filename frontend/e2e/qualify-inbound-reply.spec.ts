@@ -75,7 +75,7 @@ test("qualifies a matched inbound reply from Inbox", async ({
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL("**/dashboard");
   await expect(
-    page.getByRole("heading", { name: "Command Center" }),
+    page.getByRole("heading", { name: "Dashboard" }),
   ).toBeVisible();
 
   const inboxResponsePromise = page.waitForResponse(

@@ -193,7 +193,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="grid gap-5" aria-label="Team settings">
+          <section id="team" className="grid scroll-mt-20 gap-5" aria-label="Team settings">
             <SectionHeader title="Team" description="People who currently belong to this organization." />
             {membersError ? (
               <StatePanel

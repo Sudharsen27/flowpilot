@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Target } from "lucide-react";
+import { Columns3, Plus, Target } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -192,10 +192,16 @@ export function DealsWorkspace() {
             : "Revenue opportunities across your organization."
         }
         secondaryActions={
-          <Link href="/deals/targets" className={buttonVariants({ variant: "outline" })}>
-            <Target aria-hidden="true" />
-            Sales targets
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/deals/pipeline" className={buttonVariants({ variant: "outline" })}>
+              <Columns3 aria-hidden="true" />
+              Board view
+            </Link>
+            <Link href="/deals/targets" className={buttonVariants({ variant: "outline" })}>
+              <Target aria-hidden="true" />
+              Sales targets
+            </Link>
+          </div>
         }
         primaryAction={
           <Button type="button" onClick={openCreate}>

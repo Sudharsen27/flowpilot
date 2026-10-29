@@ -1,16 +1,18 @@
 "use client";
 
-import { Bot, CheckCheck, Users } from "lucide-react";
+import { Bot, CheckCheck, Columns3, Plus, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import type { ExecutionStatusCounts } from "@/components/agents/organization-execution-summary";
 import { AiWorkforceStatus } from "@/components/command-center/ai-workforce-status";
-import { BusinessOverview } from "@/components/command-center/business-overview";
 import { NeedsAttention } from "@/components/command-center/needs-attention";
 import { QuickActions } from "@/components/command-center/quick-actions";
 import { RecentActivity } from "@/components/command-center/recent-activity";
 import { WorkspaceCommand } from "@/components/command-center/workspace-command";
+import { DashboardKpis } from "@/components/dashboard/dashboard-kpis";
+import { DealsNeedingAttention, RecentDeals } from "@/components/dashboard/deal-lists";
+import { PipelineByStageChart, WonRevenueChart } from "@/components/dashboard/pipeline-charts";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -18,7 +20,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgents, listOrganizationExecutions } from "@/lib/api/agents";
 import { getApprovals } from "@/lib/api/approvals";
 import { getLeads } from "@/lib/api/leads";
-import type { Agent } from "@/types/api";
+import { getPipelineSummary } from "@/lib/api/pipeline";
+import type { Agent, PipelineSummary } from "@/types/api";
 
 type DashboardData = {
   agents: Agent[];
@@ -173,6 +176,24 @@ export function CommandCenterPage() {
   const [executionCounts, setExecutionCounts] = useState<
     ExecutionStatusCounts | null | undefined
   >(undefined);
+  // undefined while loading, null when unavailable; independent of other metrics.
+  const [summary, setSummary] = useState<PipelineSummary | null | undefined>(undefined);
+  const [summaryKey, setSummaryKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => getPipelineSummary(6))
+      .then((data) => {
+        if (!cancelled) setSummary(data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [metricsKey, summaryKey]);
 
   // Separate from the metrics Promise.all so a failure here never hides them.
   useEffect(() => {
@@ -208,7 +229,7 @@ export function CommandCenterPage() {
         setError(null);
       })
       .catch(() => {
-        if (!cancelled) setError("Command Center metrics could not be loaded.");
+        if (!cancelled) setError("Dashboard metrics could not be loaded.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -218,33 +239,45 @@ export function CommandCenterPage() {
     };
   }, [metricsKey]);
 
+  function retrySummary() {
+    setSummary(undefined);
+    setSummaryKey((key) => key + 1);
+  }
+
   return (
     <div className="gap-section flex flex-col">
       <PageHeader
-        title="Command Center"
-        description="Run the sales workspace from one instruction, then review what still needs a person."
+        title="Dashboard"
+        description="Your pipeline, the work waiting on people, and what your AI team is doing."
+        secondaryActions={
+          <Link href="/deals/pipeline" className={buttonVariants({ variant: "outline" })}>
+            <Columns3 aria-hidden="true" />
+            Open pipeline
+          </Link>
+        }
+        primaryAction={
+          <Link href="/deals?create=1" className={buttonVariants({ variant: "default" })}>
+            <Plus aria-hidden="true" />
+            New deal
+          </Link>
+        }
       />
-
-      <WorkspaceCommand loading={loading} agents={data?.agents ?? []} />
 
       {!loading && data ? <CommandCenterNextStep data={data} /> : null}
 
-      <section
-        className="grid gap-5"
-        aria-labelledby="pipeline-at-a-glance-heading"
-      >
+      <section className="grid gap-4" aria-labelledby="pipeline-at-a-glance-heading">
         <SectionHeader
           id="pipeline-at-a-glance-heading"
           title="Pipeline at a glance"
-          description="What is happening across your AI-assisted sales process."
+          description="Live figures from your leads, deals, approvals and AI team."
         />
-        <BusinessOverview
+        <DashboardKpis
           loading={loading}
-          leadTotal={data ? data.leadTotal : loading ? undefined : 0}
+          leadTotal={data ? data.leadTotal : loading ? undefined : null}
           newLeads={data?.newLeads ?? null}
-          waitingApproval={
-            data ? data.waitingApproval : loading ? undefined : 0
-          }
+          waitingApproval={data ? data.waitingApproval : loading ? undefined : null}
+          summary={summary}
+          executionCounts={executionCounts}
         />
         {error ? (
           <p className="text-danger-text text-sm" role="alert">
@@ -253,11 +286,17 @@ export function CommandCenterPage() {
         ) : null}
       </section>
 
-      <AiWorkforceStatus
-        loading={loading}
-        agents={data?.agents ?? []}
-        executionCounts={executionCounts}
-      />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <PipelineByStageChart summary={summary} onRetry={retrySummary} />
+        <WonRevenueChart summary={summary} onRetry={retrySummary} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <RecentDeals refreshKey={metricsKey} />
+        <DealsNeedingAttention refreshKey={metricsKey} summary={summary} />
+      </div>
+
+      <WorkspaceCommand loading={loading} agents={data?.agents ?? []} />
 
       <NeedsAttention
         onChanged={() => {
@@ -266,7 +305,14 @@ export function CommandCenterPage() {
         }}
       />
 
-      <RecentActivity />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <AiWorkforceStatus
+          loading={loading}
+          agents={data?.agents ?? []}
+          executionCounts={executionCounts}
+        />
+        <RecentActivity />
+      </div>
 
       <section className="grid gap-5" aria-labelledby="quick-actions-heading">
         <SectionHeader
