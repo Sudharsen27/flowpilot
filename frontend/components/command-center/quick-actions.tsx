@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bot, CheckCheck, Inbox, Users } from "lucide-react";
+import { ArrowUpRight, Bot, CheckCheck, Handshake, Inbox, Users } from "lucide-react";
 import Link from "next/link";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +17,12 @@ const quickActions = [
     icon: Users,
   },
   {
+    href: "/deals",
+    label: "Deals",
+    description: "Track revenue opportunities through your pipeline.",
+    icon: Handshake,
+  },
+  {
     href: "/inbox",
     label: "Inbox",
     description: "See the conversations your team is handling.",
@@ -32,7 +38,7 @@ const quickActions = [
 
 export function QuickActions() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {quickActions.map((action) => {
         const Icon = action.icon;
         return (

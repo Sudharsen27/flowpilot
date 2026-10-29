@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { buildAgentExecutionsHref } from "@/lib/agent-executions-url";
+import { buildCreateDealHref } from "@/lib/deals-url";
 import { leadNextStep } from "@/lib/lead-next-step";
 import type { Lead } from "@/types/api";
 
@@ -75,6 +76,12 @@ export function LeadActionBar({
           className={buttonVariants({ variant: "outline" })}
         >
           Agent runs for this lead
+        </Link>
+        <Link
+          href={buildCreateDealHref(lead.id)}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          Create deal
         </Link>
       </div>
       <ul className="text-muted-foreground grid gap-1 text-xs leading-5">

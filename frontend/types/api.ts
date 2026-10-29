@@ -9,6 +9,8 @@ export type OrganizationPublic = {
   name: string;
   slug: string;
   website_capture_enabled?: boolean;
+  /** ISO 4217 code for every deal and target. Absent in sessions saved before deals existed. */
+  default_currency?: string;
 };
 
 export type MembershipRole = "OWNER" | "ADMIN" | "MEMBER";
@@ -1494,4 +1496,137 @@ export type ApprovalListParams = {
   status?: ApprovalQueueStatus;
   limit?: number;
   offset?: number;
+};
+
+/** Decimal amount as sent by the API, e.g. "125000.50". Never converted to a float. */
+export type MoneyString = string;
+
+export type DealStage =
+  | "QUALIFICATION"
+  | "DISCOVERY"
+  | "PROPOSAL"
+  | "NEGOTIATION"
+  | "CLOSED_WON"
+  | "CLOSED_LOST";
+
+export type DealProbabilitySource = "STAGE_DEFAULT" | "OVERRIDE";
+
+export type Deal = {
+  id: string;
+  name: string;
+  description: string | null;
+  amount: MoneyString;
+  currency: string;
+  stage: DealStage;
+  /** Override for open stages; null means the stage default applies. */
+  probability: number | null;
+  effective_probability: number;
+  probability_source: DealProbabilitySource;
+  expected_close_date: string;
+  closed_at: string | null;
+  owner_user_id: string | null;
+  owner_name: string | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  lost_reason: string | null;
+  revision: number;
+  stage_entered_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DealListResponse = {
+  items: Deal[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type DealCreateRequest = {
+  name: string;
+  description?: string | null;
+  amount: MoneyString;
+  currency?: string;
+  stage?: DealStage;
+  probability?: number | null;
+  expected_close_date: string;
+  /** Omit to own the deal yourself; null leaves it unassigned. */
+  owner_user_id?: string | null;
+  lead_id?: string | null;
+  lost_reason?: string | null;
+};
+
+export type DealUpdateRequest = {
+  expected_revision: number;
+  name?: string;
+  description?: string | null;
+  amount?: MoneyString;
+  expected_close_date?: string;
+  probability?: number | null;
+  owner_user_id?: string | null;
+  lost_reason?: string | null;
+  change_reason?: string | null;
+};
+
+export type DealStageChangeRequest = {
+  stage: DealStage;
+  expected_revision: number;
+  probability?: number | null;
+  lost_reason?: string | null;
+  change_reason?: string | null;
+};
+
+export type DealHistoryChange = "CREATED" | "STAGE" | "AMOUNT" | "EXPECTED_CLOSE_DATE";
+
+export type DealHistoryEvent = {
+  id: string;
+  deal_id: string;
+  changes: DealHistoryChange[];
+  previous_stage: DealStage | null;
+  new_stage: DealStage;
+  previous_amount: MoneyString | null;
+  new_amount: MoneyString;
+  previous_expected_close_date: string | null;
+  new_expected_close_date: string;
+  changed_by_user_id: string | null;
+  changed_by_name: string | null;
+  change_reason: string | null;
+  created_at: string;
+};
+
+export type DealHistoryResponse = {
+  items: DealHistoryEvent[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type SalesTarget = {
+  id: string;
+  owner_user_id: string | null;
+  owner_name: string | null;
+  period_start: string;
+  period_end: string;
+  amount: MoneyString;
+  currency: string;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SalesTargetListResponse = {
+  items: SalesTarget[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type SalesTargetUpsertRequest = {
+  /** First day of a calendar month (YYYY-MM-01). */
+  period_start: string;
+  /** Omit for an organization-wide target. */
+  owner_user_id?: string | null;
+  amount: MoneyString;
+  currency?: string;
 };

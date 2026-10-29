@@ -554,6 +554,7 @@ describe("Command Center", () => {
     for (const href of [
       "/agents",
       "/leads",
+      "/deals",
       "/inbox",
       "/approvals",
       "/activity",

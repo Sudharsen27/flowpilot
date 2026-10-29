@@ -35,6 +35,7 @@ describe("application sidebar navigation", () => {
       "Activity",
       "Analytics",
       "Leads",
+      "Deals",
       "AI Inbox",
       "Approvals",
       "AI Agents",

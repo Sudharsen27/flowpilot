@@ -286,6 +286,10 @@ describe("Lead workspace", () => {
     expect(
       screen.getByRole("link", { name: "Agent runs for this lead" }),
     ).toHaveAttribute("href", "/agents/executions?lead_id=lead-1");
+    expect(screen.getByRole("link", { name: "Create deal" })).toHaveAttribute(
+      "href",
+      "/deals?create=1&lead_id=lead-1",
+    );
     await waitFor(() =>
       expect(getInboxConversationMock).toHaveBeenCalledWith("lead-1"),
     );
