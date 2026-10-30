@@ -13,8 +13,8 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import URL, make_url
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -22,34 +22,19 @@ from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.lead import Lead
 from app.models.organization import Organization
+from tests.postgres_guard import postgres_test_url, requires_postgres
 
-pytestmark = pytest.mark.skipif(
-    not settings.database_url.startswith("postgresql"),
-    reason="PostgreSQL is not configured; composite ON DELETE SET NULL (lead_id) cannot be proven",
-)
-
-
-def _reachable(url: URL) -> bool:
-    try:
-        engine = create_engine(url, pool_pre_ping=True)
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        engine.dispose()
-    except SQLAlchemyError:
-        return False
-    return True
+pytestmark = requires_postgres
 
 
 def test_deleting_a_lead_clears_only_the_execution_lead_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if not _reachable(make_url(settings.database_url)):
-        pytest.skip("PostgreSQL is not reachable")
     schema = f"lead_fk_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    test_url = make_url(settings.database_url).update_query_dict(
+    test_url = make_url(postgres_test_url()).update_query_dict(
         {"options": f"-csearch_path={schema}"}
     )
     engine = create_engine(test_url)

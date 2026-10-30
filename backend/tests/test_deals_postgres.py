@@ -21,7 +21,6 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.core.exceptions import ConflictError, ForbiddenError
 from app.core.rate_limit import website_capture_limiter
 from app.db.base import Base
@@ -42,25 +41,23 @@ from app.schemas.deals import (
 from app.schemas.pipeline import ForecastGranularity
 from app.services.deal_service import DealService
 from app.services.pipeline_service import PipelineService
-from tests.test_inbound_qualification_claim_postgres import _postgres_reachable
+from tests.postgres_guard import postgres_test_url, requires_postgres
 
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable",
-)
+pytestmark = requires_postgres
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 def _schema_url(schema: str) -> str:
-    separator = "&" if "?" in settings.database_url else "?"
-    return f"{settings.database_url}{separator}options=-csearch_path%3D{schema}"
+    url = postgres_test_url()
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}options=-csearch_path%3D{schema}"
 
 
 @pytest.fixture
 def schema() -> Generator[str, None, None]:
     name = f"deals_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{name}"'))
     try:
@@ -74,7 +71,7 @@ def schema() -> Generator[str, None, None]:
 @pytest.fixture
 def pg_engine(schema: str) -> Generator[Any, None, None]:
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)
@@ -136,9 +133,7 @@ def _deal_row(organization_id: str, **overrides: Any) -> Deal:
 
 def test_migration_034_upgrades_preserves_data_and_downgrades(schema: str) -> None:
     _alembic(schema, "upgrade", "033_company_prospect_activity")
-    engine = create_engine(
-        settings.database_url, connect_args={"options": f"-csearch_path={schema}"}
-    )
+    engine = create_engine(postgres_test_url(), connect_args={"options": f"-csearch_path={schema}"})
     try:
         with engine.begin() as connection:
             connection.execute(
@@ -602,9 +597,7 @@ def test_concurrent_stage_changes_with_the_same_revision_conflict(pg_engine: Any
 
 def test_migration_035_adds_probability_history_without_rewriting_rows(schema: str) -> None:
     _alembic(schema, "upgrade", "034_deal_foundation")
-    engine = create_engine(
-        settings.database_url, connect_args={"options": f"-csearch_path={schema}"}
-    )
+    engine = create_engine(postgres_test_url(), connect_args={"options": f"-csearch_path={schema}"})
     try:
         with engine.begin() as connection:
             connection.execute(
@@ -694,9 +687,7 @@ _ALL_STAGES = (
 
 def test_migration_036_backfills_open_deals_and_keeps_history(schema: str) -> None:
     _alembic(schema, "upgrade", "035_deal_history_probability")
-    engine = create_engine(
-        settings.database_url, connect_args={"options": f"-csearch_path={schema}"}
-    )
+    engine = create_engine(postgres_test_url(), connect_args={"options": f"-csearch_path={schema}"})
     try:
         with engine.begin() as connection:
             connection.execute(

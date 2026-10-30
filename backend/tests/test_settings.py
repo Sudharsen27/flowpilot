@@ -161,3 +161,14 @@ def test_process_env_overrides_env_file(
     configured = Settings(_env_file=env_path, _env_file_encoding="utf-8")
     assert configured.ai_provider == "openai"
     assert configured.groq_model == "from-process-env"
+
+
+@pytest.mark.parametrize("scheme", ["postgres://", "postgresql://"])
+def test_hosted_postgres_url_uses_psycopg_driver(scheme: str) -> None:
+    configured = _settings(database_url=f"{scheme}u:p@db.example.com/app?sslmode=require")
+    assert configured.database_url == "postgresql+psycopg://u:p@db.example.com/app?sslmode=require"
+
+
+def test_explicit_driver_url_is_unchanged() -> None:
+    url = "postgresql+psycopg://u:p@db.example.com/app?sslmode=require&channel_binding=require"
+    assert _settings(database_url=url).database_url == url

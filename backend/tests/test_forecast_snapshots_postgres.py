@@ -16,7 +16,6 @@ from sqlalchemy import create_engine, func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.db.base import Base
 from app.models.forecast_snapshot import ForecastSnapshot, ForecastSnapshotPeriod
 from app.models.organization import Organization
@@ -25,13 +24,10 @@ from app.schemas.pipeline import ForecastGranularity
 from app.services import forecast_snapshot_service
 from app.services.forecast_snapshot_service import SNAPSHOT_PERIODS, ForecastSnapshotService
 from app.services.pipeline_service import PipelineService
+from tests.postgres_guard import postgres_test_url, requires_postgres
 from tests.test_deals_postgres import _alembic, _deal_row, _org_with_owner
-from tests.test_inbound_qualification_claim_postgres import _postgres_reachable
 
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable",
-)
+pytestmark = requires_postgres
 
 NOW = datetime(2026, 3, 15, 12, tzinfo=UTC)
 _SNAPSHOT_COLUMNS = (
@@ -49,7 +45,7 @@ _PERIOD_COLUMNS = (
 @pytest.fixture
 def schema() -> Generator[str, None, None]:
     name = f"snapshots_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{name}"'))
     try:
@@ -63,7 +59,7 @@ def schema() -> Generator[str, None, None]:
 @pytest.fixture
 def pg_engine(schema: str) -> Generator[Any, None, None]:
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)
@@ -148,9 +144,7 @@ def _insert_organization(connection: Any, org_id: str) -> None:
 
 def test_migration_038_creates_snapshot_tables_and_downgrades(schema: str) -> None:
     _alembic(schema, "upgrade", "036_deal_forecast_category")
-    engine = create_engine(
-        settings.database_url, connect_args={"options": f"-csearch_path={schema}"}
-    )
+    engine = create_engine(postgres_test_url(), connect_args={"options": f"-csearch_path={schema}"})
     try:
         with engine.begin() as connection:
             _insert_organization(connection, "org-1")

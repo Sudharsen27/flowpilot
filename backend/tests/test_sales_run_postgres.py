@@ -10,10 +10,9 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.db.base import Base
 from app.models import (  # noqa: F401
     Agent,
@@ -33,37 +32,22 @@ from app.models import (  # noqa: F401
 from app.models.agent import AgentStatus, AgentType
 from app.models.lead_follow_up import LeadFollowUpStatus, LeadFollowUpType
 from app.models.sales_run import SalesRunStage, SalesRunStatus
+from tests.postgres_guard import postgres_test_url, requires_postgres
 
 ENQUIRY = "We would like a demo next week."
 
 
-def _postgres_reachable() -> bool:
-    if not settings.database_url.startswith("postgresql"):
-        return False
-    try:
-        engine = create_engine(settings.database_url, pool_pre_ping=True)
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        engine.dispose()
-    except SQLAlchemyError:
-        return False
-    return True
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable; partial unique open SalesRun index cannot be proven",
-)
+pytestmark = requires_postgres
 
 
 @pytest.fixture
 def pg_engine() -> Engine:
     schema = f"sales_run_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)
@@ -78,9 +62,7 @@ def pg_engine() -> Engine:
 
 @pytest.fixture
 def pg_sessions(pg_engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(
-        bind=pg_engine, autoflush=False, autocommit=False, expire_on_commit=False
-    )
+    return sessionmaker(bind=pg_engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def _seed_agent_and_lead(sessions: sessionmaker[Session]) -> tuple[str, str, str]:
@@ -492,6 +474,6 @@ def test_concurrent_schedule_links_one_follow_up(
                 "AND indexname = 'uq_sales_runs_follow_up_id'"
             )
         ).scalar()
-        assert index_name == 'uq_sales_runs_follow_up_id'
+        assert index_name == "uq_sales_runs_follow_up_id"
     finally:
         verify.close()

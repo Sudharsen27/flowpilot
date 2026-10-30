@@ -16,13 +16,12 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.db.base import Base
 from app.models.activity_event import ActivityEntityType, ActivityEventType
 from app.repositories.activity_event_repository import ActivityEventRepository
+from tests.postgres_guard import postgres_test_url, requires_postgres
 from tests.test_inbound_email_qualification import (
     _assert_single_completed,
     _claim_rows,
@@ -31,41 +30,22 @@ from tests.test_inbound_email_qualification import (
     _seed_file_lead,
 )
 
-
-def _postgres_reachable() -> bool:
-    if not settings.database_url.startswith("postgresql"):
-        return False
-    try:
-        engine = create_engine(settings.database_url, pool_pre_ping=True)
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        engine.dispose()
-    except SQLAlchemyError:
-        return False
-    return True
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable; claim row locking cannot be proven",
-)
+pytestmark = requires_postgres
 
 
 @pytest.fixture
 def pg_sessions() -> Generator[sessionmaker[Session], None, None]:
     schema = f"inbound_claim_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine: Engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)
     try:
-        yield sessionmaker(
-            bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
-        )
+        yield sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     finally:
         engine.dispose()
         with admin.begin() as connection:

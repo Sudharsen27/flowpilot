@@ -15,20 +15,16 @@ import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.db.base import Base
 from app.models.forecast_snapshot import ForecastSnapshot, ForecastSnapshotPeriod
 from app.models.organization import Organization
 from app.services.forecast_snapshot_service import SNAPSHOT_PERIODS, ForecastSnapshotService
 from app.services.pipeline_service import PipelineService
 from app.worker.forecast_snapshot_worker import ForecastSnapshotWorker
+from tests.postgres_guard import postgres_test_url, requires_postgres
 from tests.test_deals_postgres import _deal_row
-from tests.test_inbound_qualification_claim_postgres import _postgres_reachable
 
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable",
-)
+pytestmark = requires_postgres
 
 NOW = datetime(2026, 3, 15, 0, 2, tzinfo=UTC)
 
@@ -36,11 +32,11 @@ NOW = datetime(2026, 3, 15, 0, 2, tzinfo=UTC)
 @pytest.fixture
 def pg_engine() -> Generator[Any, None, None]:
     name = f"snapshot_worker_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{name}"'))
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={name}"},
     )
     Base.metadata.create_all(bind=engine)

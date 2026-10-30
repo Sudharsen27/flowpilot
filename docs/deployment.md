@@ -5,7 +5,7 @@ FlowPilot runs as three processes against one PostgreSQL database:
 - Frontend on Vercel
 - API on Render
 - Worker on Render
-- PostgreSQL on Render
+- PostgreSQL on Neon
 
 The API process does not start the worker. Redis is present in local Compose and is not part of this production process model.
 
@@ -51,7 +51,7 @@ Required environment:
 
 - `ENVIRONMENT=production`
 - `SECRET_KEY` — unique, at least 32 characters, not the example value
-- `DATABASE_URL` — Render PostgreSQL URL using the `postgresql+psycopg://` driver
+- `DATABASE_URL` — Neon PostgreSQL connection string, including `sslmode=require`. A `postgresql://` or `postgres://` URL is switched to the `postgresql+psycopg://` driver automatically
 - `CORS_ORIGINS` — the Vercel origin, `https://` only, no localhost and no `*`
 - `AI_PROVIDER` — `openai` or `groq`
 - The matching provider key and model when that provider should be used

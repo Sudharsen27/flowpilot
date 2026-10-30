@@ -10,28 +10,24 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.db.base import Base
 from app.models.lead import LeadSource
 from app.models.organization import Organization
 from app.services.analytics_service import AnalyticsService
+from tests.postgres_guard import postgres_test_url, requires_postgres
 from tests.test_analytics import NOW, _lead, _qualification, _seed_activity
-from tests.test_inbound_qualification_claim_postgres import _postgres_reachable
 
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable",
-)
+pytestmark = requires_postgres
 
 
 @pytest.fixture
 def pg_session() -> Generator[Session, None, None]:
     schema = f"analytics_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)

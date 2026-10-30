@@ -20,10 +20,8 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import Engine, create_engine, select, text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
 from app.db.base import Base
 from app.models import (  # noqa: F401 — register tables on Base.metadata
     ActivityEvent,
@@ -45,37 +43,21 @@ from app.models.agent import AgentStatus, AgentType
 from app.models.lead import LeadSalesAgentAutoStartStatus, LeadSource
 from app.repositories.lead_repository import LeadRepository
 from app.worker.sales_agent_auto_start_worker import SalesAgentAutoStartWorker
+from tests.postgres_guard import postgres_test_url, requires_postgres
 from tests.test_lead_qualification import ENQUIRY
 from tests.test_sales_run import SalesPipelineProvider
 
-
-def _postgres_reachable() -> bool:
-    if not settings.database_url.startswith("postgresql"):
-        return False
-    try:
-        engine = create_engine(settings.database_url, pool_pre_ping=True)
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        engine.dispose()
-    except SQLAlchemyError:
-        return False
-    return True
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable; FOR UPDATE SKIP LOCKED cannot be proven",
-)
+pytestmark = requires_postgres
 
 
 @pytest.fixture
 def pg_engine() -> Engine:
     schema = f"auto_start_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)
@@ -90,9 +72,7 @@ def pg_engine() -> Engine:
 
 @pytest.fixture
 def pg_sessions(pg_engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(
-        bind=pg_engine, autoflush=False, autocommit=False, expire_on_commit=False
-    )
+    return sessionmaker(bind=pg_engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def _seed_pending_website_leads(
@@ -150,9 +130,7 @@ def test_skip_locked_hides_a_pending_lead_locked_by_another_transaction(
 
     after = pg_sessions()
     try:
-        rows = LeadRepository(after).list_pending_auto_start(
-            limit=10, for_update_skip_locked=True
-        )
+        rows = LeadRepository(after).list_pending_auto_start(limit=10, for_update_skip_locked=True)
         assert [row.id for row in rows] == [first_id, second_id]
     finally:
         after.rollback()

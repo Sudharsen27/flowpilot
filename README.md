@@ -60,7 +60,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Qualification detail (authenticated): `GET /api/v1/leads/{lead_id}/qualifications/{qualification_id}`
 - Organization activity (authenticated): `GET /api/v1/activity` and `GET /api/v1/activity/{activity_id}`
 
-Production uses Vercel for the frontend, a Render web service for the API, a separate Render background worker, and Render PostgreSQL. Migrations run in the API pre-deploy command, not inside the API process. See [docs/deployment.md](docs/deployment.md).
+Production uses Vercel for the frontend, a Render web service for the API, a separate Render background worker, and Neon PostgreSQL. Migrations run in the API pre-deploy command, not inside the API process. See [docs/deployment.md](docs/deployment.md).
 
 The follow-up worker is a separate process. It is disabled by default and is never started by the API:
 
@@ -90,6 +90,11 @@ Browser tokens are stored in local storage for local development. That is not a 
 # From repo root
 pytest
 cd backend && ruff check app tests && mypy app
+
+# PostgreSQL integration tests (*_postgres.py) are skipped unless
+# TEST_DATABASE_URL names a disposable database. They never use DATABASE_URL.
+# Non-loopback hosts are refused unless ALLOW_REMOTE_TEST_DATABASE=1.
+TEST_DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/app pytest
 
 # From frontend/
 npm run lint

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
@@ -37,39 +37,24 @@ from app.models.lead_follow_up_execution import LeadFollowUpExecutionStatus
 from app.repositories.lead_follow_up_repository import LeadFollowUpRepository
 from app.services.lead_follow_up_execution_service import LeadFollowUpExecutionService
 from app.worker.follow_up_worker import FollowUpWorker
+from tests.postgres_guard import postgres_test_url, requires_postgres
 from tests.test_lead_email_send import FakeEmailProvider
 
 PAST = datetime.now(UTC) - timedelta(days=2)
 
 
-def _postgres_reachable() -> bool:
-    if not settings.database_url.startswith("postgresql"):
-        return False
-    try:
-        engine = create_engine(settings.database_url, pool_pre_ping=True)
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        engine.dispose()
-    except SQLAlchemyError:
-        return False
-    return True
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(),
-    reason="PostgreSQL is not reachable; FOR UPDATE SKIP LOCKED cannot be proven",
-)
+pytestmark = requires_postgres
 
 
 @pytest.fixture
 def pg_engine() -> Engine:
     """Isolated schema on the configured PostgreSQL server."""
     schema = f"fu_worker_test_{uuid4().hex[:10]}"
-    admin = create_engine(settings.database_url)
+    admin = create_engine(postgres_test_url())
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(
-        settings.database_url,
+        postgres_test_url(),
         connect_args={"options": f"-csearch_path={schema}"},
     )
     Base.metadata.create_all(bind=engine)
@@ -84,9 +69,7 @@ def pg_engine() -> Engine:
 
 @pytest.fixture
 def pg_sessions(pg_engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(
-        bind=pg_engine, autoflush=False, autocommit=False, expire_on_commit=False
-    )
+    return sessionmaker(bind=pg_engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def _seed_due_follow_up(
@@ -172,17 +155,13 @@ def test_second_claimer_cannot_create_a_second_inflight_execution(
     try:
         claimed = LeadFollowUpExecutionService(
             first, provider=FakeEmailProvider()
-        ).claim_email_follow_up(
-            organization_id=organization_id, follow_up_id=follow_up_id
-        )
+        ).claim_email_follow_up(organization_id=organization_id, follow_up_id=follow_up_id)
         assert claimed is not None
         assert claimed.status == LeadFollowUpExecutionStatus.RUNNING
 
         again = LeadFollowUpExecutionService(
             second, provider=FakeEmailProvider()
-        ).claim_email_follow_up(
-            organization_id=organization_id, follow_up_id=follow_up_id
-        )
+        ).claim_email_follow_up(organization_id=organization_id, follow_up_id=follow_up_id)
         assert again is None
     finally:
         first.close()
@@ -222,12 +201,8 @@ def test_two_workers_send_one_email_for_the_same_follow_up(
     organization_id, follow_up_id = _seed_due_follow_up(pg_sessions)
     first_provider = FakeEmailProvider(message_id="msg_worker_a")
     second_provider = FakeEmailProvider(message_id="msg_worker_b")
-    first = FollowUpWorker(
-        session_factory=pg_sessions, provider_factory=lambda: first_provider
-    )
-    second = FollowUpWorker(
-        session_factory=pg_sessions, provider_factory=lambda: second_provider
-    )
+    first = FollowUpWorker(session_factory=pg_sessions, provider_factory=lambda: first_provider)
+    second = FollowUpWorker(session_factory=pg_sessions, provider_factory=lambda: second_provider)
 
     first_result = first.run_once()
     second_result = second.run_once()
