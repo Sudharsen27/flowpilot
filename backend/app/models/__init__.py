@@ -8,6 +8,7 @@ from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus, EvidenceQuality
 from app.models.deal import Deal, DealStage, DealStageEvent
+from app.models.forecast_snapshot import ForecastSnapshot, ForecastSnapshotPeriod
 from app.models.ideal_customer_profile import IdealCustomerProfile
 from app.models.inbound_email import InboundEmail
 from app.models.knowledge_entry import KnowledgeEntry
@@ -42,6 +43,8 @@ __all__ = [
     "DealStageEvent",
     "CompanyProspectStatus",
     "EvidenceQuality",
+    "ForecastSnapshot",
+    "ForecastSnapshotPeriod",
     "InboundEmail",
     "IdealCustomerProfile",
     "KnowledgeEntry",

@@ -558,6 +558,14 @@ Each period gains `commit_scenario_amount` and `best_case_scenario_amount` (same
 
 Owner targets are never added to or substituted for organization targets; `has_owner_targets` only tells the UI that some exist for the range. Targets in another currency are ignored, not converted. Assumptions gain `ORGANIZATION_TARGETS_ONLY` (always) and `TARGETS_INCOMPLETE` (when any horizon month lacks an organization target). Targets use the same UTC calendar months as deals; the current period's won revenue is to date.
 
+## Forecast snapshots (Phase 8, Slice 4E-1)
+
+Forecast accuracy compares what was forecast with what was later won, so forecasts are stored as they were made. `ForecastSnapshotService.capture(organization_id, now=)` calls `PipelineService.forecast()` unchanged (monthly, 24 periods: the longest horizon the forecast page offers) and stores its output in `forecast_snapshots` (one row: `as_of` as `captured_at`, its UTC date as `snapshot_date`, currency, method, rounding, horizon, stage default probabilities, past-due totals) and `forecast_snapshot_periods` (one row per period: won count and amount, open count, total and weighted amount, projected, Commit and Best case scenarios, target status and amount). Nothing is recomputed: every amount is the forecast's own figure converted exactly to whole cents (`BIGINT`; a fraction of a cent is an error), so a snapshot always equals what the forecast page showed for that `as_of`.
+
+Capture is idempotent per organization, UTC day and granularity: a unique constraint allows one snapshot, a repeat returns the stored one unchanged (even if deals changed since), and a concurrent capture that loses the insert race returns the winner's. Snapshots are append-only and never updated. Each period row repeats its snapshot's `organization_id` under a composite foreign key, so a period cannot belong to another organization's snapshot; deleting an organization deletes its snapshots. Capture only reads deals and targets.
+
+Migration `038_forecast_snapshots` adds both tables and changes nothing existing. It revises `036` directly: `037` stays reserved for the 4C contract step, which will revise `038` when it ships, keeping one Alembic head. Nothing captures snapshots yet and there is no API: the daily worker (4E-2) and the accuracy API (4E-3) follow.
+
 ## LLM providers
 
 `AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` remains planned for knowledge retrieval. OpenAI is the first `AIProvider` implementation.

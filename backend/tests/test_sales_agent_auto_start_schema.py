@@ -26,7 +26,7 @@ def test_alembic_revision_chain_is_linear() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "036_deal_forecast_category"
+    assert script.get_current_head() == "038_forecast_snapshots"
     chain = {
         "022_lead_human_attention": "021_sales_agent_auto_start",
         "023_inbound_emails": "022_lead_human_attention",
@@ -43,6 +43,8 @@ def test_alembic_revision_chain_is_linear() -> None:
         "034_deal_foundation": "033_company_prospect_activity",
         "035_deal_history_probability": "034_deal_foundation",
         "036_deal_forecast_category": "035_deal_history_probability",
+        # 037 is reserved for the 4C contract step; 038 revises 036 until it ships.
+        "038_forecast_snapshots": "036_deal_forecast_category",
     }
     for revision, down_revision in chain.items():
         row = script.get_revision(revision)
