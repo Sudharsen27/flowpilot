@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,12 +6,14 @@ import ForecastPage from "@/app/(app)/forecast/page";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { ApiError } from "@/lib/api/client";
 import { getPipelineForecast } from "@/lib/api/pipeline";
+import { notifySalesTargetsChanged } from "@/lib/deal-events";
 import { createQueryClient } from "@/lib/query-client";
 import type {
   ForecastCategory,
   ForecastCategoryTotals,
   ForecastGranularity,
   ForecastPeriod,
+  ForecastTarget,
   PipelineForecast,
 } from "@/types/api";
 
@@ -47,12 +49,14 @@ vi.mock("next/navigation", async () => {
 
 vi.mock("@/lib/api/pipeline", () => ({ getPipelineForecast: vi.fn() }));
 
+const authMock = vi.hoisted(() => ({ role: "OWNER" as string }));
+
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
     session: {
       user: { id: "user-1", name: "Olivia Owner", email: "o@example.com" },
       organization: { id: "org-1", name: "Acme", slug: "acme" },
-      membership: { role: "OWNER" },
+      membership: { role: authMock.role },
     },
     isLoading: false,
   }),
@@ -272,6 +276,7 @@ describe("Forecast page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentSearch = "";
+    authMock.role = "OWNER";
     respondByParams();
   });
 
@@ -718,6 +723,128 @@ describe("Forecast page", () => {
       renderPage();
       expect(await screen.findByText("No deals to forecast yet")).toBeInTheDocument();
       expect(screen.queryByRole("region", { name: "Forecast categories" })).not.toBeInTheDocument();
+    });
+  });
+  describe("progress to target", () => {
+    const noTarget: ForecastTarget = {
+      status: "NONE",
+      amount: null,
+      months_in_range: 3,
+      months_with_target: 0,
+      missing_months: ["2027-04-01", "2027-05-01", "2027-06-01"],
+      has_owner_targets: false,
+      comparisons: [],
+    };
+    const fullTarget: ForecastTarget = {
+      status: "FULL",
+      amount: "300000.00",
+      months_in_range: 3,
+      months_with_target: 3,
+      missing_months: [],
+      has_owner_targets: false,
+      comparisons: [
+        { basis: "WON", amount: "150000.00", attainment_percent: "50.0", remaining_amount: "150000.00", above_target_amount: "0.00" },
+        { basis: "COMMIT_SCENARIO", amount: "450000.00", attainment_percent: "150.0", remaining_amount: "0.00", above_target_amount: "150000.00" },
+        { basis: "BEST_CASE_SCENARIO", amount: "600000.00", attainment_percent: "200.0", remaining_amount: "0.00", above_target_amount: "300000.00" },
+        { basis: "PROJECTED", amount: "275000.25", attainment_percent: "91.7", remaining_amount: "24999.75", above_target_amount: "0.00" },
+      ],
+    };
+
+    /** The quarter fixture with target fields, as the Slice 4D API returns it. */
+    function withTargets(horizon: ForecastTarget): PipelineForecast {
+      return forecast({
+        periods: quarterPeriods.map((item, index) => ({
+          ...item,
+          commit_scenario_amount: index === 0 ? "450000.00" : "0.00",
+          best_case_scenario_amount: index === 0 ? "600000.00" : "0.00",
+          target: index === 0 ? fullTarget : noTarget,
+        })),
+        target_in_horizon: horizon,
+      });
+    }
+
+    function targetsRegion() {
+      return screen.findByRole("region", { name: "Progress to target" });
+    }
+
+    it("sits directly after the KPI cards, before the chart and period table", async () => {
+      forecastMock.mockResolvedValue(withTargets({ ...noTarget, months_in_range: 12, missing_months: ["2027-04-01"] }));
+      renderPage();
+      const region = await targetsRegion();
+      const summary = screen.getByRole("region", { name: "Forecast summary" });
+      const periods = screen.getByRole("region", { name: "Forecast by quarter" });
+      expect(summary.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(region.compareDocumentPosition(periods) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+      expect(headings.indexOf("Progress to target")).toBe(headings.indexOf("Forecast summary") + 1);
+    });
+
+    it("shows the API's target figures and per-period attainment", async () => {
+      forecastMock.mockResolvedValue(withTargets(fullTarget));
+      renderPage();
+      const region = await targetsRegion();
+      const card = within(region).getByRole("region", { name: "Target for this horizon" });
+      expect(card).toHaveTextContent("₹3,00,000.00");
+      expect(card).toHaveTextContent("91.7% of target");
+      expect(card).toHaveTextContent("₹24,999.75 to go");
+      expect(card).toHaveTextContent("Above target by ₹1,50,000.00");
+      const q4 = within(region).getByRole("row", { name: /^Q4 2026/ });
+      expect(q4).toHaveTextContent("50.0% of target");
+      const q2 = within(region).getByRole("row", { name: /^Q2 2027/ });
+      expect(q2).toHaveTextContent("Not set");
+      expect(q2).not.toHaveTextContent("% of target");
+      // KPI cards are unchanged by the targets section.
+      expect(screen.getByLabelText("₹3,20,000.25")).toBeInTheDocument();
+    });
+
+    it.each([
+      ["OWNER", true],
+      ["ADMIN", true],
+      ["MEMBER", false],
+    ])("offers Set targets to %s: %s", async (role, offered) => {
+      authMock.role = role;
+      forecastMock.mockResolvedValue(withTargets({ ...noTarget, months_in_range: 12, missing_months: ["2027-04-01"] }));
+      renderPage();
+      const region = await targetsRegion();
+      const link = within(region).queryByRole("link", { name: "Set targets" });
+      if (offered) {
+        expect(link).toHaveAttribute("href", "/deals/targets?year=2027");
+      } else {
+        expect(link).not.toBeInTheDocument();
+        expect(region).toHaveTextContent("Owners and admins can set organization targets.");
+      }
+    });
+
+    it("refetches the forecast after a sales target save", async () => {
+      forecastMock.mockResolvedValue(withTargets(noTarget));
+      renderPage();
+      await targetsRegion();
+      expect(forecastMock).toHaveBeenCalledTimes(1);
+      forecastMock.mockResolvedValue(withTargets(fullTarget));
+      act(() => notifySalesTargetsChanged());
+      await waitFor(() => expect(forecastMock).toHaveBeenCalledTimes(2));
+      const card = within(await targetsRegion()).getByRole("region", { name: "Target for this horizon" });
+      await waitFor(() => expect(card).toHaveTextContent("91.7% of target"));
+    });
+
+    it("explains an older API without target figures and keeps the rest of the page", async () => {
+      renderPage();
+      const region = await targetsRegion();
+      expect(within(region).getByText("Target comparison unavailable")).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "Forecast categories" })).toBeInTheDocument();
+    });
+
+    it("is not shown when there is nothing to forecast", async () => {
+      forecastMock.mockResolvedValue(
+        forecast({
+          periods: quarterPeriods.map((item) => ({ ...item, won: { count: 0, total_amount: "0.00" }, open: zeroOpen })),
+          open_pipeline: zeroOpen,
+          won_in_horizon: { count: 0, total_amount: "0.00" },
+        }),
+      );
+      renderPage();
+      expect(await screen.findByText("No deals to forecast yet")).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Progress to target" })).not.toBeInTheDocument();
     });
   });
 });

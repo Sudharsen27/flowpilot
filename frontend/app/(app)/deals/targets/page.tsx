@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { SalesTargetDialog, monthStarts } from "@/components/deals/sales-target-dialog";
 import { DataTable, type DataTableColumn } from "@/components/data-display/data-table";
@@ -10,22 +11,48 @@ import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getCurrentOrganization, listOrganizationMembers } from "@/lib/api/organizations";
 import { listSalesTargets } from "@/lib/api/sales-targets";
 import { canManageDeals } from "@/lib/deals";
 import { formatMoney, formatMonth } from "@/lib/money";
+import { parseSalesTargetsYear } from "@/lib/sales-targets";
 import type { MemberPublic, SalesTarget } from "@/types/api";
 
 type MonthRow = { periodStart: string; target: SalesTarget | null };
 type DialogState = { key: number; initial: { periodStart: string; ownerUserId: string | null } | null };
 
+function SalesTargetsFallback() {
+  return (
+    <div className="grid gap-4" role="status">
+      <Skeleton className="h-12 w-48" />
+      <Skeleton className="h-64 w-full" />
+      <span className="sr-only">Loading sales targets</span>
+    </div>
+  );
+}
+
 export default function SalesTargetsPage() {
+  return (
+    <Suspense fallback={<SalesTargetsFallback />}>
+      <SalesTargetsWorkspace />
+    </Suspense>
+  );
+}
+
+function SalesTargetsWorkspace() {
   const { session } = useAuth();
   const toast = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const canManage = canManageDeals(session?.membership.role);
-  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [currentYear] = useState(() => new Date().getFullYear());
+  // The year lives in the URL (?year=YYYY) so links, such as the forecast's "Set
+  // targets", open the right year; the current year is the canonical plain URL.
+  const year = parseSalesTargetsYear(searchParams, currentYear);
   const [targets, setTargets] = useState<SalesTarget[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [loadedYear, setLoadedYear] = useState<number | null>(null);
@@ -86,6 +113,14 @@ export default function SalesTargetsPage() {
       null,
   }));
   const ownerTargets = items.filter((item) => item.owner_user_id !== null);
+
+  function changeYear(next: number) {
+    const query = new URLSearchParams(searchParams);
+    if (next === currentYear) query.delete("year");
+    else query.set("year", String(next));
+    const serialized = query.toString();
+    router.replace(serialized ? `${pathname}?${serialized}` : pathname, { scroll: false });
+  }
 
   function openDialog(initial: DialogState["initial"]) {
     setDialog((current) => ({ key: (current?.key ?? 0) + 1, initial }));
@@ -151,7 +186,7 @@ export default function SalesTargetsPage() {
           variant="outline"
           size="icon"
           aria-label="Previous year"
-          onClick={() => setYear((value) => value - 1)}
+          onClick={() => changeYear(year - 1)}
         >
           <ChevronLeft aria-hidden="true" />
         </Button>
@@ -163,7 +198,7 @@ export default function SalesTargetsPage() {
           variant="outline"
           size="icon"
           aria-label="Next year"
-          onClick={() => setYear((value) => value + 1)}
+          onClick={() => changeYear(year + 1)}
         >
           <ChevronRight aria-hidden="true" />
         </Button>

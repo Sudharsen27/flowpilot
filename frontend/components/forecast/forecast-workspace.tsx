@@ -14,12 +14,15 @@ import { ForecastKpis } from "@/components/forecast/forecast-kpis";
 import { ForecastMethodology } from "@/components/forecast/forecast-methodology";
 import { ForecastOutsideHorizon } from "@/components/forecast/forecast-outside-horizon";
 import { ForecastChart, ForecastPeriodTable } from "@/components/forecast/forecast-periods";
+import { ForecastTargets } from "@/components/forecast/forecast-targets";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
 import { usePipelineForecast } from "@/hooks/use-pipeline-forecast";
 import { ApiError } from "@/lib/api/client";
 import { formatAbsoluteTimestamp } from "@/lib/datetime";
+import { canManageDeals } from "@/lib/deals";
 import {
   FORECAST_PERIOD_RULES,
   forecastHorizonLabel,
@@ -168,6 +171,7 @@ export function ForecastWorkspace() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { session } = useAuth();
   const urlState = useMemo(() => parseForecastSearchParams(searchParams), [searchParams]);
   const query = usePipelineForecast(urlState);
   // The drill-down belongs to the horizon it was opened from; a new horizon closes it.
@@ -263,6 +267,10 @@ export function ForecastWorkspace() {
             />
           ) : (
             <>
+              <ForecastTargets
+                forecast={forecast}
+                canManageTargets={canManageDeals(session?.membership.role)}
+              />
               <ForecastChart forecast={forecast} />
               <ForecastPeriodTable forecast={forecast} />
               <ForecastCategories

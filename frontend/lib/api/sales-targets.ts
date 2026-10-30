@@ -1,4 +1,5 @@
 import { apiGet, apiPut } from "@/lib/api/client";
+import { notifySalesTargetsChanged } from "@/lib/deal-events";
 import type {
   SalesTarget,
   SalesTargetListResponse,
@@ -30,7 +31,10 @@ export function listSalesTargets(params: SalesTargetListParams = {}) {
   return apiGet<SalesTargetListResponse>(`/api/v1/sales-targets${suffix}`);
 }
 
-/** Creates or replaces the target for one calendar month (OWNER/ADMIN only). */
+/**
+ * Creates or replaces the target for one calendar month (OWNER/ADMIN only). The cached
+ * forecast is refreshed afterwards, even after a failure that may still have saved.
+ */
 export function upsertSalesTarget(input: SalesTargetUpsertRequest) {
-  return apiPut<SalesTarget>("/api/v1/sales-targets", input);
+  return apiPut<SalesTarget>("/api/v1/sales-targets", input).finally(notifySalesTargetsChanged);
 }

@@ -10,6 +10,35 @@ import { listSalesTargets, upsertSalesTarget } from "@/lib/api/sales-targets";
 import type { MemberPublic, SalesTarget } from "@/types/api";
 
 const authMock = vi.hoisted(() => ({ role: "OWNER" as string }));
+const mockReplace = vi.fn();
+let currentSearch = "";
+const listeners = new Set<() => void>();
+
+vi.mock("next/navigation", async () => {
+  const React = await import("react");
+  return {
+    useRouter: () => ({
+      replace: (href: string, options?: { scroll?: boolean }) => {
+        mockReplace(href, options);
+        currentSearch = href.includes("?") ? (href.split("?")[1] ?? "") : "";
+        for (const listener of listeners) listener();
+      },
+      push: vi.fn(),
+    }),
+    usePathname: () => "/deals/targets",
+    useSearchParams: () => {
+      React.useSyncExternalStore(
+        (notify) => {
+          listeners.add(notify);
+          return () => listeners.delete(notify);
+        },
+        () => currentSearch,
+        () => currentSearch,
+      );
+      return new URLSearchParams(currentSearch);
+    },
+  };
+});
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
@@ -68,6 +97,7 @@ describe("Sales targets page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authMock.role = "OWNER";
+    currentSearch = "";
     listMock.mockResolvedValue({
       items: [
         target(),
@@ -197,5 +227,40 @@ describe("Sales targets page", () => {
     });
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findAllByText(`November ${YEAR + 1}`)).not.toHaveLength(0);
+  });
+
+  it("keeps the year in the URL, with the current year as the plain URL", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findAllByText(`November ${YEAR}`);
+    await user.click(screen.getByRole("button", { name: "Next year" }));
+    expect(mockReplace).toHaveBeenLastCalledWith(`/deals/targets?year=${YEAR + 1}`, { scroll: false });
+    expect(await screen.findAllByText(`November ${YEAR + 1}`)).not.toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Previous year" }));
+    expect(mockReplace).toHaveBeenLastCalledWith("/deals/targets", { scroll: false });
+    expect(await screen.findAllByText(`November ${YEAR}`)).not.toHaveLength(0);
+  });
+
+  it("opens the year given in the URL", async () => {
+    currentSearch = "year=2031";
+    renderPage();
+    expect(await screen.findAllByText("November 2031")).not.toHaveLength(0);
+    expect(listMock).toHaveBeenCalledWith({
+      periodFrom: "2031-01-01",
+      periodTo: "2031-12-01",
+      limit: 200,
+    });
+    expect(screen.getByRole("group", { name: "Target year" })).toHaveTextContent("2031");
+  });
+
+  it.each(["abc", "26", "0999", "20261", ""])("falls back to the current year for year=%s", async (value) => {
+    currentSearch = `year=${value}`;
+    renderPage();
+    await screen.findAllByText(`November ${YEAR}`);
+    expect(listMock).toHaveBeenCalledWith({
+      periodFrom: `${YEAR}-01-01`,
+      periodTo: `${YEAR}-12-01`,
+      limit: 200,
+    });
   });
 });

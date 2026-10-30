@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { QueryProvider } from "@/components/providers/query-provider";
 import { clearAccessToken } from "@/lib/auth/storage";
-import { notifyDealsChanged } from "@/lib/deal-events";
+import { notifyDealsChanged, notifySalesTargetsChanged } from "@/lib/deal-events";
 import { createQueryClient } from "@/lib/query-client";
 
 function Probe() {
@@ -54,6 +54,25 @@ describe("QueryProvider", () => {
     expect(client.getQueryState(dealsKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(otherKey)?.isInvalidated).toBe(false);
     // Invalidated, not dropped: cached figures stay on screen while they refetch.
+    expect(client.getQueryData(forecastKey)).toEqual({ cached: true });
+  });
+
+  it("invalidates only the forecast after a sales target save", () => {
+    const client = createQueryClient();
+    const forecastKey = ["pipeline-forecast", "org-1", { granularity: "month", periods: 12 }];
+    const dealsKey = ["pipeline-forecast-deals", "org-1", { category: "COMMIT", offset: 0 }];
+    const otherKey = ["leads", "org-1"];
+    for (const key of [forecastKey, dealsKey, otherKey]) client.setQueryData(key, { cached: true });
+    render(
+      <QueryProvider client={client}>
+        <Probe />
+      </QueryProvider>,
+    );
+    act(() => notifySalesTargetsChanged());
+    expect(client.getQueryState(forecastKey)?.isInvalidated).toBe(true);
+    // Drill-down deal lists do not use targets.
+    expect(client.getQueryState(dealsKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(otherKey)?.isInvalidated).toBe(false);
     expect(client.getQueryData(forecastKey)).toEqual({ cached: true });
   });
 });

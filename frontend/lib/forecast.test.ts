@@ -8,6 +8,7 @@ import {
   forecastMethodLabel,
   forecastPeriodOptions,
   forecastRoundingLabel,
+  hasForecastTargets,
   parseForecastSearchParams,
   serializeForecastSearchParams,
 } from "@/lib/forecast";
@@ -89,5 +90,57 @@ describe("forecast query key", () => {
 
   it("keeps forecast data fresh for one minute", () => {
     expect(FORECAST_STALE_TIME_MS).toBe(60_000);
+  });
+});
+
+describe("forecast target support", () => {
+  const target = {
+    status: "NONE" as const,
+    amount: null,
+    months_in_range: 1,
+    months_with_target: 0,
+    missing_months: ["2026-11-01"],
+    has_owner_targets: false,
+    comparisons: [],
+  };
+  const zeroOpen = { count: 0, total_amount: "0.00", weighted_amount: "0.00", override_count: 0 };
+  const period = {
+    label: "2026-11",
+    period_start: "2026-11-01",
+    period_end: "2026-11-30",
+    won: { count: 0, total_amount: "0.00" },
+    open: zeroOpen,
+    projected_amount: "0.00",
+    commit_scenario_amount: "0.00",
+    best_case_scenario_amount: "0.00",
+    target,
+  };
+  const forecast = {
+    currency: "INR",
+    as_of: "2026-11-02T00:00:00Z",
+    granularity: "month" as const,
+    method: "STAGE_PROBABILITY_WEIGHTED" as const,
+    rounding: "PER_DEAL_HALF_UP_CENTS" as const,
+    horizon_start: "2026-11-01",
+    horizon_end: "2026-11-30",
+    periods: [period],
+    past_due: { ...zeroOpen, oldest_expected_close_date: null },
+    beyond_horizon: zeroOpen,
+    open_pipeline: zeroOpen,
+    won_in_horizon: { count: 0, total_amount: "0.00" },
+    projected_in_horizon_amount: "0.00",
+    target_in_horizon: target,
+    stage_probabilities: [],
+    assumptions: [],
+    excluded_other_currency_count: 0,
+  };
+
+  it("is true only when the horizon and every period carry target figures", () => {
+    expect(hasForecastTargets(forecast)).toBe(true);
+    expect(hasForecastTargets({ ...forecast, target_in_horizon: undefined })).toBe(false);
+    expect(hasForecastTargets({ ...forecast, periods: [{ ...period, target: undefined }] })).toBe(false);
+    expect(
+      hasForecastTargets({ ...forecast, periods: [{ ...period, commit_scenario_amount: undefined }] }),
+    ).toBe(false);
   });
 });

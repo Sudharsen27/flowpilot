@@ -1701,7 +1701,9 @@ export type ForecastAssumptionCode =
   | "UTC_PERIODS"
   | "SINGLE_CURRENCY"
   | "OTHER_CURRENCY_EXCLUDED"
-  | "WON_AMOUNT_CURRENT_VALUE";
+  | "WON_AMOUNT_CURRENT_VALUE"
+  | "ORGANIZATION_TARGETS_ONLY"
+  | "TARGETS_INCOMPLETE";
 
 /** Open deals of one forecast category within a bucket. */
 export type ForecastCategoryTotals = PipelineTotals & {
@@ -1721,6 +1723,44 @@ export type ForecastOpenTotals = PipelineTotals & {
   category_totals?: ForecastCategoryTotals[];
 };
 
+/**
+ * FULL: every month in the range has an organization target. PARTIAL: some do.
+ * NONE: none do.
+ */
+export type ForecastTargetStatus = "FULL" | "PARTIAL" | "NONE";
+
+export type ForecastTargetBasis = "WON" | "COMMIT_SCENARIO" | "BEST_CASE_SCENARIO" | "PROJECTED";
+
+/** One forecast figure against a FULL target, computed by the API. */
+export type ForecastTargetComparison = {
+  basis: ForecastTargetBasis;
+  amount: MoneyString;
+  /** Half-up to one decimal, e.g. "84.3"; not capped at 100. null when the target is 0. */
+  attainment_percent: string | null;
+  /** max(target − amount, 0) */
+  remaining_amount: MoneyString;
+  /** max(amount − target, 0) */
+  above_target_amount: MoneyString;
+};
+
+/**
+ * Organization-wide monthly sales targets summed over a period or the horizon (Phase 8
+ * Slice 4D). Owner targets are never added in. comparisons is empty unless FULL.
+ */
+export type ForecastTarget = {
+  status: ForecastTargetStatus;
+  /** Sum of the monthly organization targets that are set; null when NONE. */
+  amount: MoneyString | null;
+  months_in_range: number;
+  months_with_target: number;
+  /** First day of each month in the range without an organization target. */
+  missing_months: string[];
+  /** Whether any owner-level target exists for a month in the range. */
+  has_owner_targets: boolean;
+  /** WON, COMMIT_SCENARIO, BEST_CASE_SCENARIO, PROJECTED; empty unless FULL. */
+  comparisons: ForecastTargetComparison[];
+};
+
 export type ForecastPeriod = {
   /** "2026-Q4" or "2026-11". */
   label: string;
@@ -1733,6 +1773,13 @@ export type ForecastPeriod = {
   open: ForecastOpenTotals;
   /** won + weighted open, computed by the API. An estimate, not committed revenue. */
   projected_amount: MoneyString;
+  /**
+   * Per-period scenarios: won + full Commit amounts, then + full Best case amounts.
+   * These and target are absent from APIs older than Slice 4D.
+   */
+  commit_scenario_amount?: MoneyString;
+  best_case_scenario_amount?: MoneyString;
+  target?: ForecastTarget;
 };
 
 /** Stage-probability-weighted forecast computed by the API from stored deals. */
@@ -1766,6 +1813,8 @@ export type PipelineForecast = {
   commit_scenario_amount?: MoneyString;
   /** commit_scenario_amount + full, unweighted in-horizon Best case amounts. */
   best_case_scenario_amount?: MoneyString;
+  /** Targets over the whole horizon; absent from APIs older than Slice 4D. */
+  target_in_horizon?: ForecastTarget;
   stage_probabilities: { stage: DealStage; default_probability: number }[];
   assumptions: { code: ForecastAssumptionCode; detail: string }[];
   excluded_other_currency_count: number;

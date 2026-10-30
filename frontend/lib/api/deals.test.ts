@@ -13,7 +13,7 @@ import {
   validationErrors,
 } from "@/lib/api/deals";
 import { listSalesTargets, upsertSalesTarget } from "@/lib/api/sales-targets";
-import { DEALS_CHANGED_EVENT } from "@/lib/deal-events";
+import { DEALS_CHANGED_EVENT, SALES_TARGETS_CHANGED_EVENT } from "@/lib/deal-events";
 
 function mockFetch(body: unknown = {}, status = 200) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -110,6 +110,34 @@ describe("deals API client", () => {
       method: "PUT",
       body: JSON.stringify({ period_start: "2026-11-01", amount: "500000.00" }),
     });
+  });
+
+  it("announces every sales target save, including failed ones, but not deal changes", async () => {
+    const targetListener = vi.fn();
+    const dealListener = vi.fn();
+    window.addEventListener(SALES_TARGETS_CHANGED_EVENT, targetListener);
+    window.addEventListener(DEALS_CHANGED_EVENT, dealListener);
+    try {
+      mockFetch({});
+      await upsertSalesTarget({ period_start: "2026-11-01", amount: "500000.00" });
+      expect(targetListener).toHaveBeenCalledTimes(1);
+
+      vi.restoreAllMocks();
+      mockFetch({ detail: "Only owners and admins can set targets" }, 403);
+      await expect(
+        upsertSalesTarget({ period_start: "2026-11-01", amount: "1.00" }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(targetListener).toHaveBeenCalledTimes(2);
+
+      // Reads never announce a change, and target saves are not deal writes.
+      mockFetch({ items: [], limit: 50, offset: 0, total: 0 });
+      await listSalesTargets();
+      expect(targetListener).toHaveBeenCalledTimes(2);
+      expect(dealListener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(SALES_TARGETS_CHANGED_EVENT, targetListener);
+      window.removeEventListener(DEALS_CHANGED_EVENT, dealListener);
+    }
   });
 
   it("recognizes revision conflicts and maps validation errors to fields", () => {

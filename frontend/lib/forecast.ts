@@ -4,6 +4,9 @@ import type {
   ForecastCategoryTotals,
   ForecastGranularity,
   ForecastOpenTotals,
+  ForecastPeriod,
+  ForecastTarget,
+  ForecastTargetBasis,
   PipelineForecast,
 } from "@/types/api";
 
@@ -28,13 +31,16 @@ export type ForecastUrlState = {
   periods: number;
 };
 
+/** Root of the forecast query key; refreshed after deal writes and target saves. */
+export const FORECAST_QUERY_ROOT = "pipeline-forecast";
+
 /** Forecast figures change only when deals change; a minute avoids refetch churn. */
 export const FORECAST_STALE_TIME_MS = 60_000;
 
 /** Cache key: scoped to the organization, then the exact horizon requested. */
 export function forecastQueryKey(organizationId: string | null, state: ForecastUrlState) {
   return [
-    "pipeline-forecast",
+    FORECAST_QUERY_ROOT,
     organizationId,
     { granularity: state.granularity, periods: state.periods },
   ] as const;
@@ -71,7 +77,7 @@ export function forecastDealsQueryKey(
 }
 
 /** Every cached query derived from deals on this page; refreshed after any deal write. */
-export const FORECAST_QUERY_ROOTS = ["pipeline-forecast", "pipeline-forecast-deals"] as const;
+export const FORECAST_QUERY_ROOTS = [FORECAST_QUERY_ROOT, "pipeline-forecast-deals"] as const;
 
 export function parseForecastSearchParams(searchParams: URLSearchParams): ForecastUrlState {
   const granularity: ForecastGranularity =
@@ -198,5 +204,38 @@ export function categoryTotals(
       total_amount: "0.00",
       weighted_amount: "0.00",
     }
+  );
+}
+
+/** The figures compared with a target, in the API's order. */
+export const FORECAST_TARGET_BASIS_ORDER: readonly ForecastTargetBasis[] = [
+  "WON",
+  "COMMIT_SCENARIO",
+  "BEST_CASE_SCENARIO",
+  "PROJECTED",
+];
+
+export type ForecastPeriodWithTargets = ForecastPeriod &
+  Required<Pick<ForecastPeriod, "commit_scenario_amount" | "best_case_scenario_amount" | "target">>;
+
+/** A forecast whose API returned sales target comparisons (Slice 4D onwards). */
+export type ForecastWithTargets = Omit<PipelineForecast, "periods"> & {
+  periods: ForecastPeriodWithTargets[];
+  target_in_horizon: ForecastTarget;
+};
+
+/**
+ * False when an older API answered: target figures are missing and must not be shown as
+ * "no target set".
+ */
+export function hasForecastTargets(forecast: PipelineForecast): forecast is ForecastWithTargets {
+  return (
+    forecast.target_in_horizon !== undefined &&
+    forecast.periods.every(
+      (period) =>
+        period.target !== undefined &&
+        period.commit_scenario_amount !== undefined &&
+        period.best_case_scenario_amount !== undefined,
+    )
   );
 }
