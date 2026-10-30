@@ -28,6 +28,7 @@ from app.models.deal import (
     effective_probability,
 )
 from app.models.organization import Organization
+from app.models.sales_target import SalesTarget
 from app.models.user import User
 from app.schemas.pipeline import (
     ForecastAssumption,
@@ -40,6 +41,10 @@ from app.schemas.pipeline import (
     ForecastPastDue,
     ForecastPeriod,
     ForecastStageProbability,
+    ForecastTarget,
+    ForecastTargetBasis,
+    ForecastTargetComparison,
+    ForecastTargetStatus,
     PipelineForecast,
     PipelineMonth,
     PipelineStageSummary,
@@ -110,9 +115,13 @@ def _effective_probability() -> ColumnElement[Any]:
     )
 
 
-def _amount_cents() -> ColumnElement[Any]:
+def _cents(column: Any) -> ColumnElement[Any]:
     # round() makes SQLite's REAL storage exact again; PostgreSQL numeric is already exact.
-    return cast(func.round(Deal.amount * 100), BigInteger)
+    return cast(func.round(column * 100), BigInteger)
+
+
+def _amount_cents() -> ColumnElement[Any]:
+    return _cents(Deal.amount)
 
 
 def _weighted_cents() -> ColumnElement[Any]:
@@ -198,6 +207,81 @@ def _open_totals(categories: _Categories) -> ForecastOpenTotals:
             for category, totals in categories.items()
         ],
     )
+
+
+def _attainment_percent(cents: int, target_cents: int) -> str | None:
+    """cents / target as a percentage, half-up to one decimal, in integer arithmetic."""
+    if target_cents == 0:
+        return None
+    tenths = (cents * 2000 + target_cents) // (target_cents * 2)
+    return f"{tenths // 10}.{tenths % 10}"
+
+
+@dataclass
+class _Targets:
+    """Organization target cents by month start, and the months with an owner target."""
+
+    organization: dict[date, int]
+    owner_months: set[date]
+
+    def for_range(
+        self, months: Sequence[date], figures: Sequence[tuple[ForecastTargetBasis, int]]
+    ) -> ForecastTarget:
+        missing = [month for month in months if month not in self.organization]
+        set_months = len(months) - len(missing)
+        if set_months == 0:
+            status = ForecastTargetStatus.NONE
+        elif missing:
+            status = ForecastTargetStatus.PARTIAL
+        else:
+            status = ForecastTargetStatus.FULL
+        target = sum(self.organization.get(month, 0) for month in months)
+        comparisons = (
+            [
+                ForecastTargetComparison(
+                    basis=basis,
+                    amount=_money(cents),
+                    attainment_percent=_attainment_percent(cents, target),
+                    remaining_amount=_money(max(target - cents, 0)),
+                    above_target_amount=_money(max(cents - target, 0)),
+                )
+                for basis, cents in figures
+            ]
+            if status == ForecastTargetStatus.FULL
+            else []
+        )
+        return ForecastTarget(
+            status=status,
+            amount=None if status == ForecastTargetStatus.NONE else _money(target),
+            months_in_range=len(months),
+            months_with_target=set_months,
+            missing_months=missing,
+            has_owner_targets=any(month in self.owner_months for month in months),
+            comparisons=comparisons,
+        )
+
+
+def _months(start: date, end: date) -> list[date]:
+    """Month starts from start up to the exclusive end."""
+    months: list[date] = []
+    while start < end:
+        months.append(start)
+        start = _shift_months(start, 1)
+    return months
+
+
+def _target_figures(
+    won_cents: int, categories: _Categories, weighted_cents: int
+) -> list[tuple[ForecastTargetBasis, int]]:
+    """The four figures compared with a target, in ForecastTarget order."""
+    commit = won_cents + categories[ForecastCategory.COMMIT].cents
+    best_case = commit + categories[ForecastCategory.BEST_CASE].cents
+    return [
+        (ForecastTargetBasis.WON, won_cents),
+        (ForecastTargetBasis.COMMIT_SCENARIO, commit),
+        (ForecastTargetBasis.BEST_CASE_SCENARIO, best_case),
+        (ForecastTargetBasis.PROJECTED, won_cents + weighted_cents),
+    ]
 
 
 class PipelineService:
@@ -353,11 +437,15 @@ class PipelineService:
         open_total = _total(all_open)
 
         won = self._won_by_period(organization_id, currency, starts, horizon_end)
+        targets = self._organization_targets(organization_id, currency, first, horizon_end)
         won_total = _Totals()
         result_periods: list[ForecastPeriod] = []
         for index, start in enumerate(starts):
             won_total.add(won[index])
             end = starts[index + 1] if index + 1 < count else horizon_end
+            figures = _target_figures(
+                won[index].cents, open_buckets[index], _total(open_buckets[index]).weighted_cents
+            )
             result_periods.append(
                 ForecastPeriod(
                     label=_period_label(start, granularity),
@@ -365,14 +453,17 @@ class PipelineService:
                     period_end=end - timedelta(days=1),
                     won=won[index].plain(),
                     open=_open_totals(open_buckets[index]),
-                    projected_amount=_money(
-                        won[index].cents + _total(open_buckets[index]).weighted_cents
-                    ),
+                    projected_amount=_money(figures[3][1]),
+                    commit_scenario_amount=_money(figures[1][1]),
+                    best_case_scenario_amount=_money(figures[2][1]),
+                    target=targets.for_range(_months(start, end), figures),
                 )
             )
         horizon_weighted = _total(in_horizon).weighted_cents
-        commit_cents = won_total.cents + in_horizon[ForecastCategory.COMMIT].cents
-        best_case_cents = commit_cents + in_horizon[ForecastCategory.BEST_CASE].cents
+        horizon_figures = _target_figures(won_total.cents, in_horizon, horizon_weighted)
+        commit_cents = horizon_figures[1][1]
+        best_case_cents = horizon_figures[2][1]
+        target_in_horizon = targets.for_range(_months(first, horizon_end), horizon_figures)
         excluded = self._other_currency_count(organization_id, currency)
         past_due = _total(open_buckets[_PAST_DUE_BUCKET])
 
@@ -394,6 +485,7 @@ class PipelineService:
             in_horizon_open=_open_totals(in_horizon),
             commit_scenario_amount=_money(commit_cents),
             best_case_scenario_amount=_money(best_case_cents),
+            target_in_horizon=target_in_horizon,
             stage_probabilities=[
                 ForecastStageProbability(stage=stage, default_probability=probability)
                 for stage, probability in DEAL_STAGE_DEFAULT_PROBABILITY.items()
@@ -404,6 +496,8 @@ class PipelineService:
                 override_count=open_total.override_count,
                 past_due_count=past_due.count,
                 excluded=excluded,
+                months_without_target=len(target_in_horizon.missing_months),
+                horizon_months=target_in_horizon.months_in_range,
             ),
             excluded_other_currency_count=excluded,
         )
@@ -532,6 +626,34 @@ class PipelineService:
             totals[int(index)] = _Totals(count=deal_count, cents=int(cents))
         return totals
 
+    def _organization_targets(
+        self, organization_id: str, currency: str, start: date, end: date
+    ) -> _Targets:
+        """Monthly targets starting in [start, end), in one grouped query. Organization
+        targets are unique per month, so each organization group holds one row."""
+        is_organization = SalesTarget.owner_user_id.is_(None)
+        rows = self.session.execute(
+            select(
+                SalesTarget.period_start,
+                is_organization.label("is_organization"),
+                func.sum(_cents(SalesTarget.amount)),
+            )
+            .where(
+                SalesTarget.organization_id == organization_id,
+                SalesTarget.currency == currency,
+                SalesTarget.period_start >= start,
+                SalesTarget.period_start < end,
+            )
+            .group_by(SalesTarget.period_start, is_organization)
+        ).all()
+        targets = _Targets(organization={}, owner_months=set())
+        for month, organization_wide, cents in rows:
+            if organization_wide:
+                targets.organization[month] = int(cents)
+            else:
+                targets.owner_months.add(month)
+        return targets
+
     def _other_currency_count(self, organization_id: str, currency: str) -> int:
         return int(
             self.session.scalar(
@@ -550,6 +672,8 @@ def _assumptions(
     override_count: int,
     past_due_count: int,
     excluded: int,
+    months_without_target: int,
+    horizon_months: int,
 ) -> list[ForecastAssumption]:
     code = ForecastAssumptionCode
     items = [
@@ -582,6 +706,11 @@ def _assumptions(
             detail="Won revenue uses each deal's current amount, including any recorded "
             "manager correction.",
         ),
+        ForecastAssumption(
+            code=code.ORGANIZATION_TARGETS_ONLY,
+            detail="Targets are the organization-wide monthly sales targets; a quarter's "
+            "target is the sum of its three months. Owner targets are not added in.",
+        ),
     ]
     if override_count:
         items.append(
@@ -603,6 +732,15 @@ def _assumptions(
             ForecastAssumption(
                 code=code.OTHER_CURRENCY_EXCLUDED,
                 detail=f"{excluded} deal(s) in another currency are excluded, not converted.",
+            )
+        )
+    if months_without_target:
+        items.append(
+            ForecastAssumption(
+                code=code.TARGETS_INCOMPLETE,
+                detail=f"{months_without_target} of {horizon_months} month(s) in this horizon "
+                "have no organization target; attainment is shown only where every month "
+                "has one.",
             )
         )
     return items

@@ -478,8 +478,8 @@ def test_category_aggregation_adds_no_queries(client: TestClient, db: Session) -
 
     db.add(_row(org_id, "1.00", forecast_category="COMMIT"))
     db.commit()
-    # Organization, open deals (one grouped query), won deals, other-currency count.
-    assert run("month", 1) == 4
+    # Organization, open deals (one grouped query), won deals, targets, other-currency count.
+    assert run("month", 1) == 5
     rng = random.Random(7)
     db.add_all(
         [
@@ -493,8 +493,8 @@ def test_category_aggregation_adds_no_queries(client: TestClient, db: Session) -
         ]
     )
     db.commit()
-    assert run("month", 24) == 4
-    assert run("quarter", 8) == 4
+    assert run("month", 24) == 5
+    assert run("quarter", 8) == 5
     assert sum("deals" in statement for statement in statements) == 3
 
 

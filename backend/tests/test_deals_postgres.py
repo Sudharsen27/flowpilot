@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from collections.abc import Generator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -1175,6 +1175,63 @@ def test_forecast_category_totals_and_scenarios_on_postgres(pg_session: Session)
     isolated = service.forecast(other.id, granularity=ForecastGranularity.QUARTER, now=now)
     assert isolated.commit_scenario_amount == Decimal("123.00")
     assert isolated.best_case_scenario_amount == Decimal("123.00")
+
+
+def test_forecast_targets_on_postgres(pg_session: Session) -> None:
+    pg_session.execute(text("SET TIME ZONE 'Asia/Kolkata'"))
+    organization, owner = _org_with_owner(pg_session)
+    other, _ = _org_with_owner(pg_session, name="Other")
+    now = datetime(2026, 3, 15, 12, tzinfo=UTC)
+    largest = Decimal("999999999999.99")  # Numeric(14, 2) maximum
+
+    def target(org_id: str, month: date, amount: Decimal, owner_id: str | None = None) -> Any:
+        return SalesTarget(
+            organization_id=org_id,
+            owner_user_id=owner_id,
+            period_start=month,
+            period_end=date(month.year, month.month + 1, 1) - timedelta(days=1),
+            amount=amount,
+            currency="INR",
+        )
+
+    pg_session.add_all(
+        [
+            # Q1 fully set at the column maximum: the sum exceeds Numeric(14, 2).
+            *(target(organization.id, date(2026, m, 1), largest) for m in (1, 2, 3)),
+            # Q2: two months, plus an owner target that must not be added.
+            target(organization.id, date(2026, 4, 1), Decimal("0.01")),
+            target(organization.id, date(2026, 5, 1), Decimal("0.02")),
+            target(organization.id, date(2026, 6, 1), Decimal("50.00"), owner.id),
+            target(other.id, date(2026, 6, 1), Decimal("1.00")),
+            # 23:30 UTC on 31 March is already 1 April in the session time zone; it is
+            # March revenue because periods are UTC.
+            _deal_row(
+                organization.id,
+                amount=Decimal("1000.00"),
+                stage="CLOSED_WON",
+                closed_at=datetime(2026, 3, 31, 23, 30, tzinfo=UTC),
+                stage_entered_at=now,
+            ),
+        ]
+    )
+    pg_session.commit()
+
+    forecast = PipelineService(pg_session).forecast(
+        organization.id, granularity=ForecastGranularity.QUARTER, periods=2, now=now
+    )
+    q1, q2 = (period.target for period in forecast.periods)
+    assert q1.status == "FULL"
+    assert q1.amount == Decimal("2999999999999.97")
+    won = q1.comparisons[0]
+    assert (won.basis, won.amount, won.attainment_percent) == ("WON", Decimal("1000.00"), "0.0")
+    assert won.remaining_amount == Decimal("2999999998999.97")
+    assert q2.status == "PARTIAL"
+    assert q2.amount == Decimal("0.03")
+    assert q2.missing_months == [date(2026, 6, 1)]
+    assert q2.has_owner_targets is True
+    assert q2.comparisons == []
+    assert forecast.target_in_horizon.amount == Decimal("3000000000000.00")
+    assert forecast.target_in_horizon.status == "PARTIAL"
 
 
 def test_forecast_category_deals_reconcile_on_postgres(pg_session: Session) -> None:

@@ -26,6 +26,7 @@ BASE_ASSUMPTIONS = [
     "UTC_PERIODS",
     "SINGLE_CURRENCY",
     "WON_AMOUNT_CURRENT_VALUE",
+    "ORGANIZATION_TARGETS_ONLY",
 ]
 
 
@@ -124,7 +125,11 @@ def test_empty_organization_defaults_to_six_months(client: TestClient) -> None:
     assert forecast["in_horizon_open"] == zero_open
     assert forecast["commit_scenario_amount"] == "0.00"
     assert forecast["best_case_scenario_amount"] == "0.00"
-    assert [a["code"] for a in forecast["assumptions"]] == BASE_ASSUMPTIONS
+    # No targets are set, so every month of the horizon is reported as missing one.
+    assert [a["code"] for a in forecast["assumptions"]] == [
+        *BASE_ASSUMPTIONS,
+        "TARGETS_INCOMPLETE",
+    ]
     assert [p["default_probability"] for p in forecast["stage_probabilities"]] == [
         10,
         25,
@@ -415,4 +420,5 @@ def test_query_count_does_not_grow_with_deals(client: TestClient, db: Session) -
     db.add_all([_row(org_id, "1.00") for _ in range(50)])
     db.commit()
     assert run() == few
-    assert few <= 7
+    # The forecast's targets query is the eighth.
+    assert few <= 8

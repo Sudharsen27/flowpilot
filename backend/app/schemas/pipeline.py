@@ -68,6 +68,8 @@ class ForecastAssumptionCode(StrEnum):
     SINGLE_CURRENCY = "SINGLE_CURRENCY"
     OTHER_CURRENCY_EXCLUDED = "OTHER_CURRENCY_EXCLUDED"
     WON_AMOUNT_CURRENT_VALUE = "WON_AMOUNT_CURRENT_VALUE"
+    ORGANIZATION_TARGETS_ONLY = "ORGANIZATION_TARGETS_ONLY"
+    TARGETS_INCOMPLETE = "TARGETS_INCOMPLETE"
 
 
 class ForecastAssumption(BaseModel):
@@ -95,6 +97,55 @@ class ForecastPastDue(ForecastOpenTotals):
     oldest_expected_close_date: date | None
 
 
+class ForecastTargetStatus(StrEnum):
+    # Every month in the range has an organization target.
+    FULL = "FULL"
+    # Some months have one, some do not.
+    PARTIAL = "PARTIAL"
+    # No month in the range has one.
+    NONE = "NONE"
+
+
+class ForecastTargetBasis(StrEnum):
+    WON = "WON"
+    COMMIT_SCENARIO = "COMMIT_SCENARIO"
+    BEST_CASE_SCENARIO = "BEST_CASE_SCENARIO"
+    PROJECTED = "PROJECTED"
+
+
+class ForecastTargetComparison(BaseModel):
+    """One forecast figure against a FULL target. Exactly one of remaining_amount and
+    above_target_amount is non-zero, or both are zero when the figure equals the target."""
+
+    basis: ForecastTargetBasis
+    amount: MoneyOut
+    # amount / target as a percentage, half-up to one decimal ("84.3"); not capped at
+    # 100. None when the target is zero.
+    attainment_percent: str | None
+    # max(target - amount, 0)
+    remaining_amount: MoneyOut
+    # max(amount - target, 0)
+    above_target_amount: MoneyOut
+
+
+class ForecastTarget(BaseModel):
+    """Organization-wide monthly sales targets summed over a period or the horizon.
+    Owner targets are never added in. comparisons is filled only when status is FULL:
+    comparing a whole range against a partial target would overstate attainment."""
+
+    status: ForecastTargetStatus
+    # Sum of the monthly organization targets that are set; None when status is NONE.
+    amount: MoneyOut | None
+    months_in_range: int
+    months_with_target: int
+    # First day of each month in the range without an organization target.
+    missing_months: list[date]
+    # Whether any owner-level target exists for a month in the range.
+    has_owner_targets: bool
+    # WON, COMMIT_SCENARIO, BEST_CASE_SCENARIO, PROJECTED, in that order; empty unless FULL.
+    comparisons: list[ForecastTargetComparison]
+
+
 class ForecastPeriod(BaseModel):
     label: str
     period_start: date
@@ -105,6 +156,12 @@ class ForecastPeriod(BaseModel):
     open: ForecastOpenTotals
     # won.total_amount + open.weighted_amount. An estimate, not committed revenue.
     projected_amount: MoneyOut
+    # Per-period scenarios, same rules as the horizon ones: won.total_amount + COMMIT
+    # total_amount, then + BEST_CASE total_amount. Across periods they add up to
+    # commit_scenario_amount and best_case_scenario_amount.
+    commit_scenario_amount: MoneyOut
+    best_case_scenario_amount: MoneyOut
+    target: ForecastTarget
 
 
 class ForecastStageProbability(BaseModel):
@@ -140,6 +197,9 @@ class PipelineForecast(BaseModel):
     commit_scenario_amount: MoneyOut
     # commit_scenario_amount + BEST_CASE total_amount. PIPELINE deals are in neither.
     best_case_scenario_amount: MoneyOut
+    # Organization targets for every month from horizon_start to horizon_end, compared
+    # with won_in_horizon, the two scenarios and projected_in_horizon_amount.
+    target_in_horizon: ForecastTarget
     stage_probabilities: list[ForecastStageProbability]
     assumptions: list[ForecastAssumption]
     excluded_other_currency_count: int
