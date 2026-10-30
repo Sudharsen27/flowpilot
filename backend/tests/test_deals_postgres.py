@@ -1046,6 +1046,137 @@ def test_forecast_buckets_in_utc_regardless_of_session_timezone(pg_session: Sess
     assert summary.open.weighted_amount == months.open_pipeline.weighted_amount
 
 
+def test_forecast_category_totals_and_scenarios_on_postgres(pg_session: Session) -> None:
+    organization, _ = _org_with_owner(pg_session)
+    other, _ = _org_with_owner(pg_session, name="Other")
+    now = datetime(2026, 3, 15, 12, tzinfo=UTC)
+    pg_session.add_all(
+        [
+            _deal_row(
+                organization.id,
+                amount=Decimal("999999999999.99"),
+                stage="NEGOTIATION",
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 4, 1),
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("333.33"),
+                probability=33,
+                forecast_category="BEST_CASE",
+                expected_close_date=date(2026, 4, 30),
+            ),
+            _deal_row(
+                organization.id,
+                name="legacy",
+                amount=Decimal("0.05"),
+                expected_close_date=date(2026, 3, 20),
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("7.00"),
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 3, 14),
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("11.00"),
+                forecast_category="BEST_CASE",
+                expected_close_date=date(2026, 7, 1),
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("200.00"),
+                stage="CLOSED_WON",
+                closed_at=datetime(2026, 3, 2, tzinfo=UTC),
+                stage_entered_at=datetime(2026, 3, 2, tzinfo=UTC),
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("5000.00"),
+                stage="CLOSED_LOST",
+                lost_reason="No budget",
+                closed_at=now,
+            ),
+            _deal_row(
+                organization.id,
+                amount=Decimal("9.00"),
+                currency="USD",
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 4, 1),
+            ),
+            _deal_row(
+                other.id,
+                amount=Decimal("123.00"),
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 4, 1),
+            ),
+        ]
+    )
+    pg_session.commit()
+    # Rows from before migration 036 and stale categories left on closed deals by the
+    # previous release: an open NULL reads as PIPELINE, a closed deal is never categorised.
+    pg_session.execute(text("UPDATE deals SET forecast_category = NULL WHERE name = 'legacy'"))
+    pg_session.execute(
+        text("UPDATE deals SET forecast_category = 'COMMIT' WHERE stage LIKE 'CLOSED%'")
+    )
+    pg_session.commit()
+
+    service = PipelineService(pg_session)
+    forecast = service.forecast(
+        organization.id, granularity=ForecastGranularity.MONTH, periods=3, now=now
+    )
+
+    def categories(totals: Any) -> list[tuple[str, int, Decimal, Decimal]]:
+        return [
+            (row.category.value, row.count, row.total_amount, row.weighted_amount)
+            for row in totals.category_totals
+        ]
+
+    zero = Decimal("0.00")
+    assert categories(forecast.periods[0].open) == [
+        ("PIPELINE", 1, Decimal("0.05"), Decimal("0.01")),
+        ("BEST_CASE", 0, zero, zero),
+        ("COMMIT", 0, zero, zero),
+    ]
+    assert categories(forecast.periods[1].open) == [
+        ("PIPELINE", 0, zero, zero),
+        ("BEST_CASE", 1, Decimal("333.33"), Decimal("110.00")),
+        ("COMMIT", 1, Decimal("999999999999.99"), Decimal("749999999999.99")),
+    ]
+    assert categories(forecast.past_due) == [
+        ("PIPELINE", 0, zero, zero),
+        ("BEST_CASE", 0, zero, zero),
+        ("COMMIT", 1, Decimal("7.00"), Decimal("0.70")),
+    ]
+    assert categories(forecast.beyond_horizon) == [
+        ("PIPELINE", 0, zero, zero),
+        ("BEST_CASE", 1, Decimal("11.00"), Decimal("1.10")),
+        ("COMMIT", 0, zero, zero),
+    ]
+    assert forecast.in_horizon_open.weighted_amount == Decimal("750000000110.00")
+    assert forecast.won_in_horizon.total_amount == Decimal("200.00")
+    assert forecast.commit_scenario_amount == Decimal("1000000000199.99")
+    assert forecast.best_case_scenario_amount == Decimal("1000000000533.32")
+    # Unchanged weighted forecast: 200.00 + 0.01 + 110.00 + 749999999999.99.
+    assert forecast.projected_in_horizon_amount == Decimal("750000000310.00")
+    assert forecast.excluded_other_currency_count == 1
+    for bucket in (
+        forecast.past_due,
+        *(p.open for p in forecast.periods),
+        forecast.beyond_horizon,
+        forecast.in_horizon_open,
+        forecast.open_pipeline,
+    ):
+        assert sum(row.count for row in bucket.category_totals) == bucket.count
+        assert sum(row.total_amount for row in bucket.category_totals) == bucket.total_amount
+        assert sum(row.weighted_amount for row in bucket.category_totals) == bucket.weighted_amount
+
+    isolated = service.forecast(other.id, granularity=ForecastGranularity.QUARTER, now=now)
+    assert isolated.commit_scenario_amount == Decimal("123.00")
+    assert isolated.best_case_scenario_amount == Decimal("123.00")
+
+
 def test_won_amount_correction_and_probability_history_on_postgres(pg_engine: Any) -> None:
     session = sessionmaker(bind=pg_engine, expire_on_commit=False)()
     try:

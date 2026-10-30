@@ -8,6 +8,7 @@ import { useMemo, type ReactNode } from "react";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { Label } from "@/components/forms/label";
 import { Select } from "@/components/forms/select";
+import { ForecastCategories } from "@/components/forecast/forecast-categories";
 import { ForecastKpis } from "@/components/forecast/forecast-kpis";
 import { ForecastMethodology } from "@/components/forecast/forecast-methodology";
 import { ForecastOutsideHorizon } from "@/components/forecast/forecast-outside-horizon";
@@ -255,6 +256,7 @@ export function ForecastWorkspace() {
             <>
               <ForecastChart forecast={forecast} />
               <ForecastPeriodTable forecast={forecast} />
+              <ForecastCategories forecast={forecast} />
               <ForecastOutsideHorizon forecast={forecast} />
             </>
           )}

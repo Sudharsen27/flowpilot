@@ -4,6 +4,7 @@ Money is aggregated as integer cents: each deal's amount is converted to cents a
 weighted value is rounded half-up to the cent once (PER_DEAL_HALF_UP_CENTS). Totals are
 sums of those integers, so every breakdown reconciles exactly with its total and nothing
 passes through float. Integer arithmetic also keeps SQLite and PostgreSQL identical.
+Forecast category totals are sums of the same per-deal cents, so they add up exactly too.
 """
 
 from collections.abc import Sequence
@@ -19,14 +20,17 @@ from app.core.exceptions import NotFoundError, UnprocessableError
 from app.models.deal import (
     CLOSED_DEAL_STAGES,
     DEAL_STAGE_DEFAULT_PROBABILITY,
+    DEFAULT_FORECAST_CATEGORY,
     OPEN_DEAL_STAGES,
     Deal,
     DealStage,
+    ForecastCategory,
 )
 from app.models.organization import Organization
 from app.schemas.pipeline import (
     ForecastAssumption,
     ForecastAssumptionCode,
+    ForecastCategoryTotals,
     ForecastGranularity,
     ForecastOpenTotals,
     ForecastPastDue,
@@ -96,6 +100,12 @@ def _weighted_cents() -> ColumnElement[Any]:
     return (_amount_cents() * _effective_probability() + 50) // 100
 
 
+def _forecast_category() -> ColumnElement[Any]:
+    """SQL mirror of effective_forecast_category() for open deals: NULL (rows written
+    before migration 036) reads as PIPELINE."""
+    return func.coalesce(Deal.forecast_category, DEFAULT_FORECAST_CATEGORY.value)
+
+
 def _bucket(column: Any, boundaries: Sequence[date | datetime]) -> ColumnElement[Any]:
     """Index i when boundaries[i] <= column < boundaries[i + 1]; len - 1 past the last."""
     return case(
@@ -127,13 +137,47 @@ class _Totals:
             weighted_amount=_money(self.weighted_cents),
         )
 
-    def open(self) -> ForecastOpenTotals:
-        return ForecastOpenTotals(
-            count=self.count,
-            total_amount=_money(self.cents),
-            weighted_amount=_money(self.weighted_cents),
-            override_count=self.override_count,
-        )
+
+_Categories = dict[ForecastCategory, _Totals]
+
+
+def _no_categories() -> _Categories:
+    return {category: _Totals() for category in ForecastCategory}
+
+
+def _combined(groups: Sequence[_Categories]) -> _Categories:
+    merged = _no_categories()
+    for group in groups:
+        for category, totals in group.items():
+            merged[category].add(totals)
+    return merged
+
+
+def _total(categories: _Categories) -> _Totals:
+    total = _Totals()
+    for totals in categories.values():
+        total.add(totals)
+    return total
+
+
+def _open_totals(categories: _Categories) -> ForecastOpenTotals:
+    """A bucket's open totals with its category breakdown; both from the same cents."""
+    total = _total(categories)
+    return ForecastOpenTotals(
+        count=total.count,
+        total_amount=_money(total.cents),
+        weighted_amount=_money(total.weighted_cents),
+        override_count=total.override_count,
+        category_totals=[
+            ForecastCategoryTotals(
+                category=category,
+                count=totals.count,
+                total_amount=_money(totals.cents),
+                weighted_amount=_money(totals.weighted_cents),
+            )
+            for category, totals in categories.items()
+        ],
+    )
 
 
 class PipelineService:
@@ -252,6 +296,7 @@ class PipelineService:
         open_deals = (
             select(
                 bucket.label("bucket"),
+                _forecast_category().label("category"),
                 Deal.expected_close_date.label("expected_close_date"),
                 case((Deal.probability.is_not(None), 1), else_=0).label("override"),
                 _amount_cents().label("cents"),
@@ -267,28 +312,30 @@ class PipelineService:
         open_rows = self.session.execute(
             select(
                 open_deals.c.bucket,
+                open_deals.c.category,
                 func.count(),
                 func.sum(open_deals.c.cents),
                 func.sum(open_deals.c.weighted_cents),
                 func.sum(open_deals.c.override),
                 func.min(open_deals.c.expected_close_date),
-            ).group_by(open_deals.c.bucket)
+            ).group_by(open_deals.c.bucket, open_deals.c.category)
         ).all()
 
-        open_buckets = {index: _Totals() for index in range(_PAST_DUE_BUCKET, count + 1)}
+        # One row per (bucket, category); bucket totals are the sum of their categories.
+        open_buckets = {index: _no_categories() for index in range(_PAST_DUE_BUCKET, count + 1)}
         oldest_past_due: date | None = None
-        for index, deal_count, cents, weighted, overrides, earliest in open_rows:
-            open_buckets[int(index)] = _Totals(
+        for index, category, deal_count, cents, weighted, overrides, earliest in open_rows:
+            open_buckets[int(index)][ForecastCategory(category)] = _Totals(
                 count=deal_count,
                 cents=int(cents),
                 weighted_cents=int(weighted),
                 override_count=int(overrides),
             )
             if index == _PAST_DUE_BUCKET:
-                oldest_past_due = earliest
-        open_total = _Totals()
-        for totals in open_buckets.values():
-            open_total.add(totals)
+                oldest_past_due = min(earliest, oldest_past_due or earliest)
+        in_horizon = _combined([open_buckets[index] for index in range(count)])
+        all_open = _combined(list(open_buckets.values()))
+        open_total = _total(all_open)
 
         won = self._won_by_period(organization_id, currency, starts, horizon_end)
         won_total = _Totals()
@@ -302,13 +349,17 @@ class PipelineService:
                     period_start=start,
                     period_end=end - timedelta(days=1),
                     won=won[index].plain(),
-                    open=open_buckets[index].open(),
-                    projected_amount=_money(won[index].cents + open_buckets[index].weighted_cents),
+                    open=_open_totals(open_buckets[index]),
+                    projected_amount=_money(
+                        won[index].cents + _total(open_buckets[index]).weighted_cents
+                    ),
                 )
             )
-        horizon_weighted = sum(open_buckets[index].weighted_cents for index in range(count))
+        horizon_weighted = _total(in_horizon).weighted_cents
+        commit_cents = won_total.cents + in_horizon[ForecastCategory.COMMIT].cents
+        best_case_cents = commit_cents + in_horizon[ForecastCategory.BEST_CASE].cents
         excluded = self._other_currency_count(organization_id, currency)
-        past_due = open_buckets[_PAST_DUE_BUCKET]
+        past_due = _total(open_buckets[_PAST_DUE_BUCKET])
 
         return PipelineForecast(
             currency=currency,
@@ -318,12 +369,16 @@ class PipelineService:
             horizon_end=horizon_end - timedelta(days=1),
             periods=result_periods,
             past_due=ForecastPastDue(
-                **past_due.open().model_dump(), oldest_expected_close_date=oldest_past_due
+                **_open_totals(open_buckets[_PAST_DUE_BUCKET]).model_dump(),
+                oldest_expected_close_date=oldest_past_due,
             ),
-            beyond_horizon=open_buckets[count].open(),
-            open_pipeline=open_total.open(),
+            beyond_horizon=_open_totals(open_buckets[count]),
+            open_pipeline=_open_totals(all_open),
             won_in_horizon=won_total.plain(),
             projected_in_horizon_amount=_money(won_total.cents + horizon_weighted),
+            in_horizon_open=_open_totals(in_horizon),
+            commit_scenario_amount=_money(commit_cents),
+            best_case_scenario_amount=_money(best_case_cents),
             stage_probabilities=[
                 ForecastStageProbability(stage=stage, default_probability=probability)
                 for stage, probability in DEAL_STAGE_DEFAULT_PROBABILITY.items()

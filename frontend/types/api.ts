@@ -1703,10 +1703,22 @@ export type ForecastAssumptionCode =
   | "OTHER_CURRENCY_EXCLUDED"
   | "WON_AMOUNT_CURRENT_VALUE";
 
-/** Open deals in a bucket; override_count use a manual probability override. */
+/** Open deals of one forecast category within a bucket. */
+export type ForecastCategoryTotals = PipelineTotals & {
+  category: ForecastCategory;
+  weighted_amount: MoneyString;
+};
+
+/**
+ * Open deals in a bucket; override_count use a manual probability override.
+ * category_totals has one entry per category (zeros included) and adds up exactly to
+ * the bucket's count, total_amount and weighted_amount.
+ */
 export type ForecastOpenTotals = PipelineTotals & {
   weighted_amount: MoneyString;
   override_count: number;
+  /** Absent from APIs older than forecast category totals (Phase 8 Slice 4C-2). */
+  category_totals?: ForecastCategoryTotals[];
 };
 
 export type ForecastPeriod = {
@@ -1742,6 +1754,18 @@ export type PipelineForecast = {
   open_pipeline: ForecastOpenTotals;
   won_in_horizon: PipelineTotals;
   projected_in_horizon_amount: MoneyString;
+  /**
+   * Open deals expected to close inside the horizon: every period's open combined.
+   * This and the two scenarios are absent from APIs older than Slice 4C-2.
+   */
+  in_horizon_open?: ForecastOpenTotals;
+  /**
+   * Won in horizon + full, unweighted in-horizon Commit amounts. A scenario, not
+   * committed revenue.
+   */
+  commit_scenario_amount?: MoneyString;
+  /** commit_scenario_amount + full, unweighted in-horizon Best case amounts. */
+  best_case_scenario_amount?: MoneyString;
   stage_probabilities: { stage: DealStage; default_probability: number }[];
   assumptions: { code: ForecastAssumptionCode; detail: string }[];
   excluded_other_currency_count: number;

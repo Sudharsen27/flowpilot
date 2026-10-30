@@ -1,5 +1,11 @@
 import { formatMonth } from "@/lib/money";
-import type { ForecastGranularity, PipelineForecast } from "@/types/api";
+import type {
+  ForecastCategory,
+  ForecastCategoryTotals,
+  ForecastGranularity,
+  ForecastOpenTotals,
+  PipelineForecast,
+} from "@/types/api";
 
 /**
  * URL state and labels for the forecast page. Nothing here touches amounts: every
@@ -120,4 +126,44 @@ export function isForecastEmpty(forecast: PipelineForecast): boolean {
 
 export function dealCount(count: number): string {
   return `${count} ${count === 1 ? "deal" : "deals"}`;
+}
+
+/** Most to least confident, the order the cumulative scenarios build up in. */
+export const FORECAST_CATEGORY_DISPLAY_ORDER: readonly ForecastCategory[] = [
+  "COMMIT",
+  "BEST_CASE",
+  "PIPELINE",
+];
+
+/** A forecast whose API returned category totals and scenarios (Slice 4C-2 onwards). */
+export type ForecastWithCategories = PipelineForecast &
+  Required<
+    Pick<PipelineForecast, "in_horizon_open" | "commit_scenario_amount" | "best_case_scenario_amount">
+  >;
+
+/**
+ * False when an older API answered (for example a backend not yet restarted after a
+ * deploy): the category figures are missing and must not be shown as zero.
+ */
+export function hasForecastCategories(forecast: PipelineForecast): forecast is ForecastWithCategories {
+  return (
+    forecast.in_horizon_open?.category_totals !== undefined &&
+    forecast.commit_scenario_amount !== undefined &&
+    forecast.best_case_scenario_amount !== undefined
+  );
+}
+
+/** One category's totals in a bucket, exactly as returned; zeros if the API omitted it. */
+export function categoryTotals(
+  totals: ForecastOpenTotals | undefined,
+  category: ForecastCategory,
+): ForecastCategoryTotals {
+  return (
+    totals?.category_totals?.find((row) => row.category === category) ?? {
+      category,
+      count: 0,
+      total_amount: "0.00",
+      weighted_amount: "0.00",
+    }
+  );
 }

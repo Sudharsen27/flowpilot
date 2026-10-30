@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.models.deal import DealStage
+from app.models.deal import DealStage, ForecastCategory
 from app.schemas.money import MoneyOut
 
 # Each deal's weighted value is rounded half-up to the cent once; every total is a sum
@@ -74,11 +74,20 @@ class ForecastAssumption(BaseModel):
     detail: str
 
 
+class ForecastCategoryTotals(PipelineWeightedTotals):
+    """Open deals of one forecast category within a bucket."""
+
+    category: ForecastCategory
+
+
 class ForecastOpenTotals(PipelineWeightedTotals):
     """Open deals in a bucket: unweighted pipeline value and probability-weighted value.
-    override_count is how many of them use a manual probability override."""
+    override_count is how many of them use a manual probability override.
+    category_totals has one entry per forecast category, in a fixed order and including
+    empty ones; its counts and amounts add up exactly to the bucket's."""
 
     override_count: int
+    category_totals: list[ForecastCategoryTotals]
 
 
 class ForecastPastDue(ForecastOpenTotals):
@@ -122,6 +131,14 @@ class PipelineForecast(BaseModel):
     open_pipeline: ForecastOpenTotals
     won_in_horizon: PipelineTotals
     projected_in_horizon_amount: MoneyOut
+    # Open deals expected to close inside the horizon = every period's open combined.
+    in_horizon_open: ForecastOpenTotals
+    # Scenarios use full, unweighted amounts of in-horizon open deals; they are
+    # cumulative (best case includes commit) and estimates, not committed revenue.
+    # won_in_horizon.total_amount + COMMIT total_amount.
+    commit_scenario_amount: MoneyOut
+    # commit_scenario_amount + BEST_CASE total_amount. PIPELINE deals are in neither.
+    best_case_scenario_amount: MoneyOut
     stage_probabilities: list[ForecastStageProbability]
     assumptions: list[ForecastAssumption]
     excluded_other_currency_count: int

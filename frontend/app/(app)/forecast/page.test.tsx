@@ -7,7 +7,13 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { ApiError } from "@/lib/api/client";
 import { getPipelineForecast } from "@/lib/api/pipeline";
 import { createQueryClient } from "@/lib/query-client";
-import type { ForecastGranularity, ForecastPeriod, PipelineForecast } from "@/types/api";
+import type {
+  ForecastCategory,
+  ForecastCategoryTotals,
+  ForecastGranularity,
+  ForecastPeriod,
+  PipelineForecast,
+} from "@/types/api";
 
 const mockReplace = vi.fn();
 let currentSearch = "";
@@ -68,7 +74,33 @@ function requested(granularity: ForecastGranularity, periods: number) {
   return [{ granularity, periods }, { signal: expect.any(AbortSignal) }] as const;
 }
 
-const zeroOpen = { count: 0, total_amount: "0.00", weighted_amount: "0.00", override_count: 0 };
+/** Category totals in the API's order; unlisted categories are zero. */
+function categories(
+  values: Partial<Record<ForecastCategory, [count: number, total: string, weighted: string]>> = {},
+): ForecastCategoryTotals[] {
+  return (["PIPELINE", "BEST_CASE", "COMMIT"] as const).map((category) => {
+    const [count, total_amount, weighted_amount] = values[category] ?? [0, "0.00", "0.00"];
+    return { category, count, total_amount, weighted_amount };
+  });
+}
+
+const zeroOpen = {
+  count: 0,
+  total_amount: "0.00",
+  weighted_amount: "0.00",
+  override_count: 0,
+  category_totals: categories(),
+};
+
+/** The period table; the category section has its own tables. */
+function periodTable() {
+  return within(screen.getByRole("region", { name: /^Forecast by (quarter|month)$/ })).getByRole("table");
+}
+
+async function findPeriodTable() {
+  const section = await screen.findByRole("region", { name: /^Forecast by (quarter|month)$/ });
+  return within(section).getByRole("table");
+}
 
 function period(overrides: Partial<ForecastPeriod> & Pick<ForecastPeriod, "label" | "period_start" | "period_end">): ForecastPeriod {
   return {
@@ -85,14 +117,30 @@ const quarterPeriods: ForecastPeriod[] = [
     period_start: "2026-10-01",
     period_end: "2026-12-31",
     won: { count: 2, total_amount: "150000.00" },
-    open: { count: 3, total_amount: "500000.00", weighted_amount: "125000.25", override_count: 1 },
+    open: {
+      count: 3,
+      total_amount: "500000.00",
+      weighted_amount: "125000.25",
+      override_count: 1,
+      category_totals: categories({
+        PIPELINE: [1, "50000.00", "5000.00"],
+        BEST_CASE: [1, "150000.00", "20000.00"],
+        COMMIT: [1, "300000.00", "100000.25"],
+      }),
+    },
     projected_amount: "275000.25",
   }),
   period({
     label: "2027-Q1",
     period_start: "2027-01-01",
     period_end: "2027-03-31",
-    open: { count: 1, total_amount: "80000.00", weighted_amount: "40000.00", override_count: 0 },
+    open: {
+      count: 1,
+      total_amount: "80000.00",
+      weighted_amount: "40000.00",
+      override_count: 0,
+      category_totals: categories({ BEST_CASE: [1, "80000.00", "40000.00"] }),
+    },
     projected_amount: "40000.00",
   }),
   period({ label: "2027-Q2", period_start: "2027-04-01", period_end: "2027-06-30" }),
@@ -100,7 +148,13 @@ const quarterPeriods: ForecastPeriod[] = [
     label: "2027-Q3",
     period_start: "2027-07-01",
     period_end: "2027-09-30",
-    open: { count: 1, total_amount: "20000.00", weighted_amount: "5000.00", override_count: 0 },
+    open: {
+      count: 1,
+      total_amount: "20000.00",
+      weighted_amount: "5000.00",
+      override_count: 0,
+      category_totals: categories({ PIPELINE: [1, "20000.00", "5000.00"] }),
+    },
     projected_amount: "5000.00",
   }),
 ];
@@ -135,12 +189,42 @@ function forecast(overrides: Partial<PipelineForecast> = {}): PipelineForecast {
       total_amount: "60000.00",
       weighted_amount: "15000.00",
       override_count: 0,
+      category_totals: categories({ PIPELINE: [1, "20000.00", "5000.00"], COMMIT: [1, "40000.00", "10000.00"] }),
       oldest_expected_close_date: "2026-08-15",
     },
-    beyond_horizon: { count: 1, total_amount: "90000.00", weighted_amount: "45000.00", override_count: 0 },
-    open_pipeline: { count: 8, total_amount: "750000.00", weighted_amount: "230000.25", override_count: 1 },
+    beyond_horizon: {
+      count: 1,
+      total_amount: "90000.00",
+      weighted_amount: "45000.00",
+      override_count: 0,
+      category_totals: categories({ BEST_CASE: [1, "90000.00", "45000.00"] }),
+    },
+    open_pipeline: {
+      count: 8,
+      total_amount: "750000.00",
+      weighted_amount: "230000.25",
+      override_count: 1,
+      category_totals: categories({
+        PIPELINE: [3, "90000.00", "15000.00"],
+        BEST_CASE: [3, "320000.00", "105000.00"],
+        COMMIT: [2, "340000.00", "110000.25"],
+      }),
+    },
     won_in_horizon: { count: 2, total_amount: "150000.00" },
     projected_in_horizon_amount: "320000.25",
+    in_horizon_open: {
+      count: 5,
+      total_amount: "600000.00",
+      weighted_amount: "170000.25",
+      override_count: 1,
+      category_totals: categories({
+        PIPELINE: [2, "70000.00", "10000.00"],
+        BEST_CASE: [2, "230000.00", "60000.00"],
+        COMMIT: [1, "300000.00", "100000.25"],
+      }),
+    },
+    commit_scenario_amount: "450000.00",
+    best_case_scenario_amount: "680000.00",
     stage_probabilities: [
       { stage: "QUALIFICATION", default_probability: 10 },
       { stage: "DISCOVERY", default_probability: 25 },
@@ -171,7 +255,15 @@ function forecast(overrides: Partial<PipelineForecast> = {}): PipelineForecast {
 function respondByParams() {
   forecastMock.mockImplementation(async ({ granularity, periods }: { granularity: ForecastGranularity; periods: number }) =>
     granularity === "month"
-      ? forecast({ granularity: "month", periods: monthPeriods(periods), horizon_end: "2027-09-30" })
+      ? forecast({
+          granularity: "month",
+          periods: monthPeriods(periods),
+          horizon_end: "2027-09-30",
+          won_in_horizon: { count: 1, total_amount: "1000.00" },
+          in_horizon_open: zeroOpen,
+          commit_scenario_amount: "1000.00",
+          best_case_scenario_amount: "1000.00",
+        })
       : forecast({ periods: quarterPeriods.slice(0, periods) }),
   );
 }
@@ -185,7 +277,7 @@ describe("Forecast page", () => {
 
   it("defaults to 4 quarters and requests the forecast once", async () => {
     renderPage();
-    await screen.findByRole("table");
+    await findPeriodTable();
     expect(forecastMock).toHaveBeenCalledTimes(1);
     expect(forecastMock).toHaveBeenCalledWith(...requested("quarter", 4));
     expect(screen.getByRole("button", { name: "Quarter" })).toHaveAttribute("aria-pressed", "true");
@@ -217,7 +309,7 @@ describe("Forecast page", () => {
     // Distinct values: in-horizon period weights, past due, beyond horizon and the
     // all-horizons total differ, so the card can only match open_pipeline.weighted_amount.
     forecastMock.mockResolvedValue(
-      forecast({ open_pipeline: { count: 8, total_amount: "750000.00", weighted_amount: "987654.32", override_count: 1 } }),
+      forecast({ open_pipeline: { ...forecast().open_pipeline, weighted_amount: "987654.32" } }),
     );
     renderPage();
     const heading = await screen.findByRole("heading", { level: 3, name: "Weighted open pipeline (all horizons)" });
@@ -239,7 +331,7 @@ describe("Forecast page", () => {
 
   it("lists every period with backend values", async () => {
     renderPage();
-    const table = await screen.findByRole("table");
+    const table = await findPeriodTable();
     const headers = within(table).getAllByRole("columnheader").map((cell) => cell.textContent);
     expect(headers).toEqual([
       "Period",
@@ -280,11 +372,11 @@ describe("Forecast page", () => {
       forecast({
         periods: [{ ...quarterPeriods[0]!, projected_amount: "777.77" }],
         projected_in_horizon_amount: "12.34",
-        open_pipeline: { count: 8, total_amount: "1.00", weighted_amount: "2.00", override_count: 0 },
+        open_pipeline: { ...zeroOpen, count: 8, total_amount: "1.00", weighted_amount: "2.00" },
       }),
     );
     renderPage();
-    const table = await screen.findByRole("table");
+    const table = await findPeriodTable();
     expect(within(table).getByText("₹777.77")).toBeInTheDocument();
     expect(screen.getByLabelText("₹12.34")).toBeInTheDocument();
     expect(screen.getByLabelText("₹1.00")).toBeInTheDocument();
@@ -295,12 +387,12 @@ describe("Forecast page", () => {
   it("switches to 12 months and back to the cached 4 quarters through the URL", async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByRole("table");
+    await findPeriodTable();
 
     await user.click(screen.getByRole("button", { name: "Month" }));
     expect(mockReplace).toHaveBeenLastCalledWith("/forecast?granularity=month", { scroll: false });
     await waitFor(() => expect(forecastMock).toHaveBeenLastCalledWith(...requested("month", 12)));
-    const table = await screen.findByRole("table");
+    const table = await findPeriodTable();
     await waitFor(() => expect(within(table).getAllByRole("row").slice(1)).toHaveLength(12));
     expect(within(table).getByRole("row", { name: /October 2026/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Forecast by month" })).toBeInTheDocument();
@@ -309,7 +401,7 @@ describe("Forecast page", () => {
     await user.click(screen.getByRole("button", { name: "Quarter" }));
     expect(mockReplace).toHaveBeenLastCalledWith("/forecast", { scroll: false });
     await waitFor(() =>
-      expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(4),
+      expect(within(periodTable()).getAllByRole("row").slice(1)).toHaveLength(4),
     );
     // The quarter result is still fresh, so returning to it sends no new request.
     expect(forecastMock).toHaveBeenCalledTimes(2);
@@ -318,7 +410,7 @@ describe("Forecast page", () => {
   it("changes the horizon within backend limits", async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByRole("table");
+    await findPeriodTable();
     const horizon = screen.getByLabelText("Horizon");
     expect(within(horizon).getAllByRole("option").map((option) => option.textContent)).toEqual([
       "2 quarters",
@@ -334,7 +426,7 @@ describe("Forecast page", () => {
   it("restores the selection from the URL", async () => {
     currentSearch = "granularity=month&periods=6";
     renderPage();
-    await screen.findByRole("table");
+    await findPeriodTable();
     expect(forecastMock).toHaveBeenCalledWith(...requested("month", 6));
     expect(screen.getByRole("button", { name: "Month" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Horizon")).toHaveValue("6");
@@ -343,7 +435,7 @@ describe("Forecast page", () => {
   it("ignores an out-of-range URL horizon", async () => {
     currentSearch = "periods=40";
     renderPage();
-    await screen.findByRole("table");
+    await findPeriodTable();
     expect(forecastMock).toHaveBeenCalledWith(...requested("quarter", 4));
   });
 
@@ -460,7 +552,7 @@ describe("Forecast page", () => {
 
     respondByParams();
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(await findPeriodTable()).toBeInTheDocument();
     expect(forecastMock).toHaveBeenCalledTimes(4);
   });
 
@@ -492,7 +584,7 @@ describe("Forecast page", () => {
         : new Promise(() => {});
     });
     renderPage();
-    await screen.findByRole("table");
+    await findPeriodTable();
 
     await user.click(screen.getByRole("button", { name: "Month" }));
     await waitFor(() => expect(forecastMock).toHaveBeenLastCalledWith(...requested("month", 12)));
@@ -503,7 +595,7 @@ describe("Forecast page", () => {
 
     // Going back cancels the pending month request and reuses the cached quarter.
     await user.click(screen.getByRole("button", { name: "Quarter" }));
-    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(await findPeriodTable()).toBeInTheDocument();
     expect(signals[1]?.aborted).toBe(true);
     expect(forecastMock).toHaveBeenCalledTimes(2);
   });
@@ -517,6 +609,9 @@ describe("Forecast page", () => {
         open_pipeline: zeroOpen,
         won_in_horizon: { count: 0, total_amount: "0.00" },
         projected_in_horizon_amount: "0.00",
+        in_horizon_open: zeroOpen,
+        commit_scenario_amount: "0.00",
+        best_case_scenario_amount: "0.00",
       }),
     );
     renderPage();
@@ -525,5 +620,104 @@ describe("Forecast page", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: /by quarter/ })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Methodology and assumptions" })).toBeInTheDocument();
+  });
+  describe("forecast categories", () => {
+    function categoriesRegion() {
+      return screen.findByRole("region", { name: "Forecast categories" });
+    }
+
+    it("shows the category section between the periods and the outside-horizon pipeline", async () => {
+      renderPage();
+      const region = await categoriesRegion();
+      const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+      const at = (title: string) => headings.indexOf(title);
+      expect(at("Forecast by quarter")).toBeLessThan(at("Forecast categories"));
+      expect(at("Forecast categories")).toBeLessThan(at("Pipeline outside the forecast periods"));
+      expect(within(region).getByText("Commit scenario", { selector: "dt" }).parentElement).toHaveTextContent(
+        "₹4,50,000.00",
+      );
+      expect(within(region).getByText("Best case scenario", { selector: "dt" }).parentElement).toHaveTextContent(
+        "₹6,80,000.00",
+      );
+      const breakdown = within(region)
+        .getAllByRole("table")
+        .find((table) => !table.closest(".sr-only")) as HTMLElement;
+      const commit = within(breakdown).getByRole("row", { name: /^Commit/ });
+      expect(within(commit).getAllByRole("cell").map((cell) => cell.textContent).slice(1)).toEqual([
+        "1",
+        "₹3,00,000.00",
+        "₹1,00,000.25",
+      ]);
+      const bestCase = within(breakdown).getByRole("row", { name: /^Best case/ });
+      expect(within(bestCase).getByText("₹2,30,000.00")).toBeInTheDocument();
+      expect(within(region).getByText(/full, unweighted value/)).toHaveTextContent("not guaranteed revenue");
+      // Existing figures stay where they were.
+      expect(screen.getByRole("region", { name: "Past due" })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "Methodology and assumptions" })).toBeInTheDocument();
+    });
+
+    it("follows month and quarter switching", async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await categoriesRegion();
+      expect(screen.getByRole("group", { name: "Open pipeline by forecast category and quarter" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Month" }));
+      expect(await screen.findByText("No open deals are expected to close in this horizon.")).toBeInTheDocument();
+      const region = await categoriesRegion();
+      expect(within(region).getByText("Commit scenario", { selector: "dt" }).parentElement).toHaveTextContent(
+        "₹1,000.00",
+      );
+      expect(currentSearch).toBe("granularity=month");
+
+      await user.click(screen.getByRole("button", { name: "Quarter" }));
+      expect(
+        await screen.findByRole("group", { name: "Open pipeline by forecast category and quarter" }),
+      ).toBeInTheDocument();
+      expect(forecastMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the rest of the page working when the API has no category totals", async () => {
+      const older = forecast();
+      delete older.in_horizon_open;
+      delete older.commit_scenario_amount;
+      delete older.best_case_scenario_amount;
+      forecastMock.mockResolvedValue(older);
+      renderPage();
+      expect(await screen.findByText("Category totals unavailable")).toBeInTheDocument();
+      expect(await findPeriodTable()).toBeInTheDocument();
+      expect(screen.getByLabelText("₹3,20,000.25")).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "Past due" })).toBeInTheDocument();
+    });
+
+    it("is not shown while loading, on error or when there is nothing to forecast", async () => {
+      forecastMock.mockReturnValue(new Promise(() => {}));
+      const { unmount } = renderPage();
+      expect(screen.queryByRole("region", { name: "Forecast categories" })).not.toBeInTheDocument();
+      unmount();
+
+      forecastMock.mockRejectedValue(new ApiError("Request failed: 403", 403));
+      const failed = renderPage();
+      expect(await screen.findByText("Forecast unavailable")).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Forecast categories" })).not.toBeInTheDocument();
+      failed.unmount();
+
+      forecastMock.mockResolvedValue(
+        forecast({
+          periods: quarterPeriods.map((item) => ({ ...item, won: { count: 0, total_amount: "0.00" }, open: zeroOpen, projected_amount: "0.00" })),
+          past_due: { ...zeroOpen, oldest_expected_close_date: null },
+          beyond_horizon: zeroOpen,
+          open_pipeline: zeroOpen,
+          in_horizon_open: zeroOpen,
+          won_in_horizon: { count: 0, total_amount: "0.00" },
+          projected_in_horizon_amount: "0.00",
+          commit_scenario_amount: "0.00",
+          best_case_scenario_amount: "0.00",
+        }),
+      );
+      renderPage();
+      expect(await screen.findByText("No deals to forecast yet")).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Forecast categories" })).not.toBeInTheDocument();
+    });
   });
 });

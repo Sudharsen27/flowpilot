@@ -104,13 +104,26 @@ def test_empty_organization_defaults_to_six_months(client: TestClient) -> None:
     first_month = date.today().replace(day=1)
     assert forecast["horizon_start"] == first_month.isoformat()
     assert forecast["periods"][0]["label"] == f"{first_month.year}-{first_month.month:02d}"
-    zero_open = {"count": 0, "total_amount": "0.00", "weighted_amount": "0.00", "override_count": 0}
+    zero_categories = [
+        {"category": category, "count": 0, "total_amount": "0.00", "weighted_amount": "0.00"}
+        for category in ("PIPELINE", "BEST_CASE", "COMMIT")
+    ]
+    zero_open = {
+        "count": 0,
+        "total_amount": "0.00",
+        "weighted_amount": "0.00",
+        "override_count": 0,
+        "category_totals": zero_categories,
+    }
     assert all(period["open"] == zero_open for period in forecast["periods"])
     assert all(period["projected_amount"] == "0.00" for period in forecast["periods"])
     assert forecast["past_due"] == {**zero_open, "oldest_expected_close_date": None}
     assert forecast["beyond_horizon"] == zero_open
     assert forecast["open_pipeline"] == zero_open
     assert forecast["won_in_horizon"] == {"count": 0, "total_amount": "0.00"}
+    assert forecast["in_horizon_open"] == zero_open
+    assert forecast["commit_scenario_amount"] == "0.00"
+    assert forecast["best_case_scenario_amount"] == "0.00"
     assert [a["code"] for a in forecast["assumptions"]] == BASE_ASSUMPTIONS
     assert [p["default_probability"] for p in forecast["stage_probabilities"]] == [
         10,

@@ -300,6 +300,151 @@ export function GroupedColumnChart({ series, data, label, emptyMessage }: Groupe
   );
 }
 
+export type StackedBarDatum = {
+  key: string;
+  /** Row label, e.g. "Q4 2026". */
+  label: string;
+  /** Full name for tooltips and screen readers. */
+  fullLabel: string;
+  /** Exact total shown at the bar's end, as returned by the API. */
+  total: string;
+  /** One entry per series, in series order. */
+  values: { value: string; magnitude: number }[];
+};
+
+type StackedBarChartProps = {
+  series: ColumnSeries[];
+  data: StackedBarDatum[];
+  /** Accessible name of the plot, e.g. "Open pipeline by category and quarter". */
+  label: string;
+  /** Header of the row column in the data table, e.g. "Quarter". */
+  categoryLabel: string;
+  emptyMessage?: string;
+};
+
+/**
+ * Horizontal bars split into one segment per series, on a scale shared by every row.
+ * Segments are separated by a 2px gap, each row is one keyboard stop naming every
+ * value, and a visually hidden table carries the same figures.
+ */
+export function StackedBarChart({ series, data, label, categoryLabel, emptyMessage }: StackedBarChartProps) {
+  const [active, setActive] = useState<string | null>(null);
+  const rowMagnitude = (item: StackedBarDatum) =>
+    item.values.reduce((sum, entry) => sum + Math.max(entry.magnitude, 0), 0);
+  const max = Math.max(0, ...data.map(rowMagnitude));
+  const hasData = data.length > 0 && max > 0;
+  const describe = (item: StackedBarDatum) =>
+    series.map((entry, index) => `${entry.label} ${item.values[index]?.value ?? "—"}`).join(", ");
+  return (
+    <div>
+      <ul className="text-muted-foreground mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label={`Legend: ${label}`}>
+        {series.map((entry) => (
+          <li key={entry.key} className="flex items-center gap-1.5">
+            <span className={cn("block size-2.5 rounded-[2px]", entry.markClassName)} aria-hidden="true" />
+            {entry.label}
+          </li>
+        ))}
+      </ul>
+      {hasData ? (
+        <ul className="grid gap-2.5" role="group" aria-label={label}>
+          {data.map((item) => {
+            const share = ratio(rowMagnitude(item), max);
+            return (
+              <li
+                key={item.key}
+                className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-xs sm:grid-cols-[6.5rem_minmax(0,1fr)]"
+              >
+                <span className="text-muted-foreground truncate" aria-hidden="true">
+                  {item.label}
+                </span>
+                <div className="relative flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`${item.fullLabel}: total ${item.total}; ${describe(item)}`}
+                    onPointerEnter={() => setActive(item.key)}
+                    onPointerLeave={() => setActive(null)}
+                    onFocus={() => setActive(item.key)}
+                    onBlur={() => setActive(null)}
+                    className={cn(
+                      "focus-visible:ring-ring flex h-5 min-w-0 flex-1 items-center rounded-sm outline-none focus-visible:ring-2",
+                      active && active !== item.key ? "opacity-60" : undefined,
+                    )}
+                  >
+                    <span className="flex h-full gap-0.5" style={{ width: `${share * 100}%` }}>
+                      {series.map((entry, index) => {
+                        const magnitude = item.values[index]?.magnitude ?? 0;
+                        // A zero value draws nothing, so no empty gap appears in the bar.
+                        if (!(magnitude > 0)) return null;
+                        return (
+                          <span
+                            key={entry.key}
+                            data-series={entry.key}
+                            className={cn("block h-full min-w-[2px] last:rounded-r-[4px]", entry.markClassName)}
+                            style={{ flexGrow: magnitude, flexBasis: 0 }}
+                          />
+                        );
+                      })}
+                    </span>
+                  </button>
+                  <span className="text-foreground w-20 shrink-0 text-right font-medium tabular-nums" aria-hidden="true">
+                    {item.total}
+                  </span>
+                  {active === item.key ? (
+                    <div className="absolute top-6 left-0">
+                      <Tooltip
+                        item={{
+                          key: item.key,
+                          label: "",
+                          value: `${item.fullLabel}: ${item.total}`,
+                          magnitude: 0,
+                          details: series.map(
+                            (entry, index) => `${entry.label}: ${item.values[index]?.value ?? "—"}`,
+                          ),
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground py-6 text-center text-sm">{emptyMessage ?? "No data yet."}</p>
+      )}
+      {/* sr-only sits on a wrapper: a table sizes to its columns and ignores width: 1px,
+          so on its own it would widen the page at 320px. */}
+      <div className="sr-only">
+        <table>
+          <caption>{label}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{categoryLabel}</th>
+              {series.map((entry) => (
+                <th key={entry.key} scope="col">
+                  {entry.label}
+                </th>
+              ))}
+              <th scope="col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((item) => (
+              <tr key={item.key}>
+                <th scope="row">{item.fullLabel}</th>
+                {series.map((entry, index) => (
+                  <td key={entry.key}>{item.values[index]?.value ?? "—"}</td>
+                ))}
+                <td>{item.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /** Bar length from an API decimal string. Geometry only; never shown or summed. */
 export function magnitudeOf(amount: string): number {
   const value = Number(amount);

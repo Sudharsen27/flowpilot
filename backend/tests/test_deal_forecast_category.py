@@ -282,6 +282,15 @@ def test_forecast_figures_do_not_depend_on_categories(client: TestClient, db: Se
         )
     ]
 
+    category_fields = {"category_totals", "commit_scenario_amount", "best_case_scenario_amount"}
+
+    def without_categories(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: without_categories(v) for k, v in value.items() if k not in category_fields}
+        if isinstance(value, list):
+            return [without_categories(item) for item in value]
+        return value
+
     def forecast() -> dict[str, Any]:
         body = client.get(
             "/api/v1/pipeline/forecast",
@@ -294,7 +303,14 @@ def test_forecast_figures_do_not_depend_on_categories(client: TestClient, db: Se
     before = forecast()
     for deal, category in zip(deals, ("COMMIT", "BEST_CASE", "COMMIT"), strict=True):
         assert _patch(client, token, deal, forecast_category=category).status_code == 200
-    assert forecast() == before
+    after = forecast()
+    # Categories only regroup deals: every weighted and projected figure is unchanged.
+    assert without_categories(after) == without_categories(before)
+    assert (before["commit_scenario_amount"], after["commit_scenario_amount"]) == (
+        "0.00",
+        "1333.33",
+    )
+    assert after["best_case_scenario_amount"] == "3833.88"
 
 
 def _raw_org(db: Session) -> Organization:
