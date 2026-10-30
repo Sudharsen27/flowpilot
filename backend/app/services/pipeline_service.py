@@ -25,11 +25,15 @@ from app.models.deal import (
     Deal,
     DealStage,
     ForecastCategory,
+    effective_probability,
 )
 from app.models.organization import Organization
+from app.models.user import User
 from app.schemas.pipeline import (
     ForecastAssumption,
     ForecastAssumptionCode,
+    ForecastCategoryDeal,
+    ForecastCategoryDeals,
     ForecastCategoryTotals,
     ForecastGranularity,
     ForecastOpenTotals,
@@ -72,6 +76,22 @@ def _period_label(start: date, granularity: ForecastGranularity) -> str:
     if granularity == ForecastGranularity.QUARTER:
         return f"{start.year}-Q{(start.month - 1) // 3 + 1}"
     return f"{start.year}-{start.month:02d}"
+
+
+def _period_count(granularity: ForecastGranularity, periods: int | None) -> int:
+    count = FORECAST_DEFAULT_PERIODS[granularity] if periods is None else periods
+    maximum = FORECAST_MAX_PERIODS[granularity]
+    if not 1 <= count <= maximum:
+        raise UnprocessableError(f"periods must be between 1 and {maximum} for {granularity}")
+    return count
+
+
+def _horizon(today: date, granularity: ForecastGranularity, count: int) -> tuple[list[date], date]:
+    """Period starts from the period containing today, and the exclusive horizon end."""
+    step = _MONTHS_PER_PERIOD[granularity]
+    first = _period_start(today, granularity)
+    starts = [_shift_months(first, step * offset) for offset in range(count)]
+    return starts, _shift_months(first, step * count)
 
 
 def _utc_midnight(day: date) -> datetime:
@@ -276,18 +296,13 @@ class PipelineService:
         periods: int | None = None,
         now: datetime | None = None,
     ) -> PipelineForecast:
-        count = FORECAST_DEFAULT_PERIODS[granularity] if periods is None else periods
-        maximum = FORECAST_MAX_PERIODS[granularity]
-        if not 1 <= count <= maximum:
-            raise UnprocessableError(f"periods must be between 1 and {maximum} for {granularity}")
+        count = _period_count(granularity, periods)
         currency = self._currency(organization_id)
         as_of = (now or datetime.now(UTC)).astimezone(UTC)
         today = as_of.date()
 
-        step = _MONTHS_PER_PERIOD[granularity]
-        first = _period_start(today, granularity)
-        starts = [_shift_months(first, step * offset) for offset in range(count)]
-        horizon_end = _shift_months(first, step * count)  # exclusive
+        starts, horizon_end = _horizon(today, granularity, count)  # end is exclusive
+        first = starts[0]
 
         bucket = case(
             (Deal.expected_close_date < today, _PAST_DUE_BUCKET),
@@ -391,6 +406,98 @@ class PipelineService:
                 excluded=excluded,
             ),
             excluded_other_currency_count=excluded,
+        )
+
+    def forecast_deals(
+        self,
+        organization_id: str,
+        *,
+        category: ForecastCategory,
+        granularity: ForecastGranularity,
+        periods: int | None = None,
+        period_start: date | None = None,
+        limit: int,
+        offset: int,
+        now: datetime | None = None,
+    ) -> ForecastCategoryDeals:
+        """The open deals behind one category of forecast(), for one period or the whole
+        horizon, selected with the forecast's own SQL so the totals match to the cent."""
+        count = _period_count(granularity, periods)
+        currency = self._currency(organization_id)
+        as_of = (now or datetime.now(UTC)).astimezone(UTC)
+        today = as_of.date()
+        starts, horizon_end = _horizon(today, granularity, count)
+        if period_start is None:
+            range_start, range_end = starts[0], horizon_end
+        elif period_start in starts:
+            index = starts.index(period_start)
+            range_start = period_start
+            range_end = starts[index + 1] if index + 1 < count else horizon_end
+        else:
+            raise UnprocessableError("period_start must be the start of a period in the horizon")
+
+        conditions = [
+            Deal.organization_id == organization_id,
+            Deal.currency == currency,
+            Deal.stage.in_(_OPEN_STAGE_VALUES),
+            _forecast_category() == category.value,
+            # Deals expected before as_of are past due, never in a period.
+            Deal.expected_close_date >= max(today, range_start),
+            Deal.expected_close_date < range_end,
+        ]
+        deal_count, cents, weighted = self.session.execute(
+            select(
+                func.count(),
+                func.coalesce(func.sum(_amount_cents()), 0),
+                func.coalesce(func.sum(_weighted_cents()), 0),
+            ).where(*conditions)
+        ).one()
+        # One query for the page, owner names joined in: no per-deal lookups.
+        rows = self.session.execute(
+            select(Deal, _amount_cents(), _weighted_cents(), User.name)
+            .outerjoin(User, User.id == Deal.owner_user_id)
+            .where(*conditions)
+            .order_by(Deal.expected_close_date, Deal.amount.desc(), Deal.id)
+            .limit(limit)
+            .offset(offset)
+        ).all()
+
+        return ForecastCategoryDeals(
+            currency=currency,
+            as_of=as_of,
+            granularity=granularity,
+            category=category,
+            horizon_start=starts[0],
+            horizon_end=horizon_end - timedelta(days=1),
+            range_start=range_start,
+            range_end=range_end - timedelta(days=1),
+            totals=PipelineWeightedTotals(
+                count=deal_count,
+                total_amount=_money(int(cents)),
+                weighted_amount=_money(int(weighted)),
+            ),
+            items=[
+                ForecastCategoryDeal(
+                    id=deal.id,
+                    name=deal.name,
+                    amount=_money(int(deal_cents)),
+                    currency=deal.currency,
+                    stage=DealStage(deal.stage),
+                    probability=deal.probability,
+                    effective_probability=effective_probability(deal.stage, deal.probability),
+                    probability_source="STAGE_DEFAULT" if deal.probability is None else "OVERRIDE",
+                    forecast_category=category,
+                    weighted_amount=_money(int(deal_weighted)),
+                    expected_close_date=deal.expected_close_date,
+                    period_start=_period_start(deal.expected_close_date, granularity),
+                    owner_user_id=deal.owner_user_id,
+                    owner_name=owner_name,
+                )
+                for deal, deal_cents, deal_weighted, owner_name in rows
+            ],
+            limit=limit,
+            offset=offset,
+            total=deal_count,
         )
 
     def _currency(self, organization_id: str) -> str:

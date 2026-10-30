@@ -27,7 +27,7 @@ from app.core.rate_limit import website_capture_limiter
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.deal import Deal, DealStage, DealStageEvent
+from app.models.deal import Deal, DealStage, DealStageEvent, ForecastCategory
 from app.models.lead import Lead
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
@@ -1175,6 +1175,142 @@ def test_forecast_category_totals_and_scenarios_on_postgres(pg_session: Session)
     isolated = service.forecast(other.id, granularity=ForecastGranularity.QUARTER, now=now)
     assert isolated.commit_scenario_amount == Decimal("123.00")
     assert isolated.best_case_scenario_amount == Decimal("123.00")
+
+
+def test_forecast_category_deals_reconcile_on_postgres(pg_session: Session) -> None:
+    organization, owner = _org_with_owner(pg_session)
+    other, _ = _org_with_owner(pg_session, name="Other")
+    now = datetime(2026, 3, 15, 12, tzinfo=UTC)
+    pg_session.add_all(
+        [
+            _deal_row(
+                organization.id,
+                name="largest",
+                amount=Decimal("999999999999.99"),
+                stage="NEGOTIATION",
+                forecast_category="COMMIT",
+                owner_user_id=owner.id,
+                expected_close_date=date(2026, 4, 1),
+            ),
+            _deal_row(
+                organization.id,
+                name="override",
+                amount=Decimal("333.33"),
+                probability=33,
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 4, 30),
+            ),
+            _deal_row(
+                organization.id,
+                name="legacy",
+                amount=Decimal("0.05"),
+                expected_close_date=date(2026, 3, 15),
+            ),
+            _deal_row(
+                organization.id,
+                name="past due",
+                amount=Decimal("7.00"),
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 3, 14),
+            ),
+            _deal_row(
+                organization.id,
+                name="beyond",
+                amount=Decimal("11.00"),
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 7, 1),
+            ),
+            _deal_row(
+                organization.id,
+                name="won",
+                amount=Decimal("200.00"),
+                stage="CLOSED_WON",
+                closed_at=datetime(2026, 3, 2, tzinfo=UTC),
+            ),
+            _deal_row(
+                organization.id,
+                name="lost",
+                amount=Decimal("5000.00"),
+                stage="CLOSED_LOST",
+                lost_reason="No budget",
+                closed_at=now,
+            ),
+            _deal_row(
+                organization.id,
+                name="usd",
+                amount=Decimal("9.00"),
+                currency="USD",
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 4, 1),
+            ),
+            _deal_row(
+                other.id,
+                name="other org",
+                amount=Decimal("123.00"),
+                forecast_category="COMMIT",
+                expected_close_date=date(2026, 4, 1),
+            ),
+        ]
+    )
+    pg_session.commit()
+    # Pre-036 rows and stale categories on closed deals, as in the forecast test above.
+    pg_session.execute(text("UPDATE deals SET forecast_category = NULL WHERE name = 'legacy'"))
+    pg_session.execute(
+        text("UPDATE deals SET forecast_category = 'COMMIT' WHERE stage LIKE 'CLOSED%'")
+    )
+    pg_session.commit()
+
+    service = PipelineService(pg_session)
+    month = ForecastGranularity.MONTH
+    forecast = service.forecast(organization.id, granularity=month, periods=3, now=now)
+
+    def drill(category: str, organization_id: str = organization.id, **kwargs: Any) -> Any:
+        return service.forecast_deals(
+            organization_id,
+            category=ForecastCategory(category),
+            granularity=month,
+            periods=3,
+            limit=100,
+            offset=0,
+            now=now,
+            **kwargs,
+        )
+
+    for category in ("PIPELINE", "BEST_CASE", "COMMIT"):
+        for period in forecast.periods:
+            page = drill(category, period_start=period.period_start)
+            expected = next(
+                row for row in period.open.category_totals if row.category.value == category
+            )
+            assert (page.totals.count, page.totals.total_amount, page.totals.weighted_amount) == (
+                expected.count,
+                expected.total_amount,
+                expected.weighted_amount,
+            )
+            assert sum(item.amount for item in page.items) == page.totals.total_amount
+            assert sum(item.weighted_amount for item in page.items) == page.totals.weighted_amount
+
+    commit = drill("COMMIT")
+    assert [item.name for item in commit.items] == ["largest", "override"]
+    largest, override = commit.items
+    assert largest.amount == Decimal("999999999999.99")
+    assert largest.weighted_amount == Decimal("749999999999.99")
+    assert (largest.owner_user_id, largest.owner_name) == (owner.id, "Acme Owner")
+    assert override.weighted_amount == Decimal("110.00")
+    assert override.owner_name is None
+    assert commit.totals.total_amount == Decimal("1000000000333.32")
+    assert forecast.commit_scenario_amount == (
+        forecast.won_in_horizon.total_amount + commit.totals.total_amount
+    )
+    pipeline = drill("PIPELINE")
+    assert [(item.name, item.forecast_category.value) for item in pipeline.items] == [
+        ("legacy", "PIPELINE")
+    ]
+    assert drill("BEST_CASE").items == []
+
+    isolated = drill("COMMIT", organization_id=other.id)
+    assert [item.name for item in isolated.items] == ["other org"]
+    assert isolated.totals.total_amount == Decimal("123.00")
 
 
 def test_won_amount_correction_and_probability_history_on_postgres(pg_engine: Any) -> None:

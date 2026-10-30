@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.models.deal import DealStage, ForecastCategory
+from app.schemas.deals import ProbabilitySource
 from app.schemas.money import MoneyOut
 
 # Each deal's weighted value is rounded half-up to the cent once; every total is a sum
@@ -142,3 +143,48 @@ class PipelineForecast(BaseModel):
     stage_probabilities: list[ForecastStageProbability]
     assumptions: list[ForecastAssumption]
     excluded_other_currency_count: int
+
+
+class ForecastCategoryDeal(BaseModel):
+    """One open deal counted in a forecast category; weighted_amount is the same per-deal
+    half-up cents the forecast sums."""
+
+    id: str
+    name: str
+    amount: MoneyOut
+    currency: str
+    stage: DealStage
+    probability: int | None
+    effective_probability: int
+    probability_source: ProbabilitySource
+    forecast_category: ForecastCategory
+    weighted_amount: MoneyOut
+    expected_close_date: date
+    # Start of the forecast period the deal is counted in.
+    period_start: date
+    owner_user_id: str | None
+    owner_name: str | None
+
+
+class ForecastCategoryDeals(BaseModel):
+    """The open deals behind one forecast category, for one period or the whole horizon.
+    Selected exactly as the forecast buckets them (open, organization currency, expected
+    to close from as_of up to range_end), so totals equal the matching category_totals
+    entry: a period's open.category_totals, or in_horizon_open's when no period is given."""
+
+    currency: str
+    as_of: datetime
+    granularity: ForecastGranularity
+    rounding: PipelineRounding = "PER_DEAL_HALF_UP_CENTS"
+    category: ForecastCategory
+    horizon_start: date
+    horizon_end: date
+    # The selected period, or the whole horizon.
+    range_start: date
+    range_end: date
+    # Every matching deal, not only this page.
+    totals: PipelineWeightedTotals
+    items: list[ForecastCategoryDeal]
+    limit: int
+    offset: int
+    total: int
