@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ForecastCategories } from "@/components/forecast/forecast-categories";
 import { formatMoneyCompact } from "@/lib/money";
@@ -138,6 +138,28 @@ describe("ForecastCategories", () => {
     const explanation = screen.getByText(/Commit and Best case add the full, unweighted value/);
     expect(explanation).toHaveTextContent("not guaranteed revenue");
     expect(explanation).toHaveTextContent("Best case already includes Commit; Pipeline deals are in neither.");
+  });
+
+  it("opens a category's deals from its row without changing the figures", async () => {
+    const onOpenCategory = vi.fn();
+    render(<ForecastCategories forecast={forecast()} onOpenCategory={onOpenCategory} />);
+    const table = breakdownTable();
+    await userEvent.click(within(table).getByRole("button", { name: "View 1 deal in Best case" }));
+    expect(onOpenCategory).toHaveBeenCalledWith("BEST_CASE");
+    // Three category rows open deals; the total row does not.
+    expect(within(table).getAllByRole("button")).toHaveLength(3);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(within(rows[0]!).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "CommitSeller expects to close",
+      "1",
+      "₹3,00,000.00",
+      "₹1,00,000.25",
+    ]);
+  });
+
+  it("keeps category rows static when nothing handles them", () => {
+    renderSection();
+    expect(within(breakdownTable()).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("lists every category with deal counts, full and weighted amounts", () => {

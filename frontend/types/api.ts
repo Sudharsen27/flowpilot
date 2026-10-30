@@ -1770,3 +1770,49 @@ export type PipelineForecast = {
   assumptions: { code: ForecastAssumptionCode; detail: string }[];
   excluded_other_currency_count: number;
 };
+
+/** One open deal counted in a forecast category (Phase 8 Slice 4C-3). */
+export type ForecastCategoryDeal = {
+  id: string;
+  name: string;
+  amount: MoneyString;
+  currency: string;
+  stage: DealStage;
+  /** Stored override; null means the stage default applies. */
+  probability: number | null;
+  effective_probability: number;
+  probability_source: DealProbabilitySource;
+  forecast_category: ForecastCategory;
+  /** The same per-deal half-up cents the forecast sums. */
+  weighted_amount: MoneyString;
+  expected_close_date: string;
+  /** Start of the forecast period the deal is counted in. */
+  period_start: string;
+  owner_user_id: string | null;
+  owner_name: string | null;
+};
+
+/**
+ * The open deals behind one forecast category, for one period or the whole horizon.
+ * totals cover every matching deal (not only this page) and equal the matching
+ * category_totals entry of the forecast.
+ */
+export type ForecastCategoryDeals = {
+  currency: string;
+  as_of: string;
+  granularity: ForecastGranularity;
+  rounding: "PER_DEAL_HALF_UP_CENTS";
+  category: ForecastCategory;
+  horizon_start: string;
+  /** Inclusive. */
+  horizon_end: string;
+  /** The selected period, or the whole horizon. */
+  range_start: string;
+  /** Inclusive. */
+  range_end: string;
+  totals: PipelineTotals & { weighted_amount: MoneyString };
+  items: ForecastCategoryDeal[];
+  limit: number;
+  offset: number;
+  total: number;
+};

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/client";
-import { getPipelineForecast } from "@/lib/api/pipeline";
+import { getForecastCategoryDeals, getPipelineForecast } from "@/lib/api/pipeline";
 
 function mockFetch(body: unknown = {}, status = 200) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -51,5 +51,40 @@ describe("pipeline forecast API client", () => {
     await expect(getPipelineForecast({ granularity: "quarter", periods: 9 })).rejects.toMatchObject({
       status: 422,
     } satisfies Partial<ApiError>);
+  });
+});
+
+describe("forecast category deals API client", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.setItem("flowpilot.access_token", "forecast-token");
+  });
+
+  const base = { category: "COMMIT", granularity: "quarter", periods: 4, limit: 20, offset: 0 } as const;
+
+  it("requests one category for the whole horizon with backend parameter names", async () => {
+    const fetchMock = mockFetch({ total: 0 });
+    await getForecastCategoryDeals({ ...base, periodStart: null });
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toMatch(
+      /\/api\/v1\/pipeline\/forecast\/deals\?category=COMMIT&granularity=quarter&periods=4&limit=20&offset=0$/,
+    );
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer forecast-token");
+  });
+
+  it("adds period_start for one period and clamps the page to backend limits", async () => {
+    const fetchMock = mockFetch({ total: 0 });
+    await getForecastCategoryDeals({ ...base, periodStart: "2027-01-01", limit: 500, offset: -5 });
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("period_start")).toBe("2027-01-01");
+    expect(url.searchParams.get("limit")).toBe("100");
+    expect(url.searchParams.get("offset")).toBe("0");
+  });
+
+  it("passes the abort signal to fetch", async () => {
+    const fetchMock = mockFetch({ total: 0 });
+    const controller = new AbortController();
+    await getForecastCategoryDeals({ ...base, periodStart: null }, { signal: controller.signal });
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
   });
 });

@@ -8,7 +8,11 @@ export function DealStageBadge({ stage }: { stage: DealStage }) {
 }
 
 /** "75%" plus whether it is the stage default or an override, from the API. */
-export function DealProbability({ deal }: { deal: Deal }) {
+export function DealProbability({
+  deal,
+}: {
+  deal: Pick<Deal, "effective_probability" | "probability_source">;
+}) {
   return (
     <span className="inline-flex items-baseline gap-1.5 tabular-nums">
       <span>{deal.effective_probability}%</span>

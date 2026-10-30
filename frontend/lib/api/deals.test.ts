@@ -13,6 +13,7 @@ import {
   validationErrors,
 } from "@/lib/api/deals";
 import { listSalesTargets, upsertSalesTarget } from "@/lib/api/sales-targets";
+import { DEALS_CHANGED_EVENT } from "@/lib/deal-events";
 
 function mockFetch(body: unknown = {}, status = 200) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -49,6 +50,33 @@ describe("deals API client", () => {
         headers: expect.objectContaining({ Authorization: "Bearer deal-token" }),
       }),
     );
+  });
+
+  it("announces every deal write, including failed ones, so cached forecasts refresh", async () => {
+    const listener = vi.fn();
+    window.addEventListener(DEALS_CHANGED_EVENT, listener);
+    try {
+      mockFetch({});
+      await createDeal({ name: "Acme", amount: "1.00", expected_close_date: "2026-12-15" });
+      await updateDeal("deal-1", { expected_revision: 1, amount: "2.00" });
+      await changeDealStage("deal-1", { expected_revision: 2, stage: "PROPOSAL" });
+      await correctWonDealAmount("deal-1", { expected_revision: 3, amount: "3.00", reason: "Fix" });
+      expect(listener).toHaveBeenCalledTimes(4);
+
+      vi.restoreAllMocks();
+      mockFetch({ detail: "Deal changed" }, 409);
+      await expect(updateDeal("deal-1", { expected_revision: 1, forecast_category: "COMMIT" })).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(listener).toHaveBeenCalledTimes(5);
+
+      // Reads never announce a change.
+      mockFetch({ items: [], limit: 20, offset: 0, total: 0 });
+      await listDeals();
+      expect(listener).toHaveBeenCalledTimes(5);
+    } finally {
+      window.removeEventListener(DEALS_CHANGED_EVENT, listener);
+    }
   });
 
   it("sends amounts as strings and writes to the documented endpoints", async () => {

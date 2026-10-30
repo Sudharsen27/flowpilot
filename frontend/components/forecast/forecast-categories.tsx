@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { magnitudeOf, StackedBarChart, type ColumnSeries } from "@/components/charts/bar-charts";
@@ -20,13 +21,13 @@ import { cn } from "@/lib/utils";
 import type { ForecastCategory, ForecastCategoryTotals, PipelineForecast } from "@/types/api";
 
 /** Fixed hue per category, never per rank; Pipeline stays the recessive neutral. */
-const CATEGORY_MARKS: Record<ForecastCategory, string> = {
+export const CATEGORY_MARKS: Record<ForecastCategory, string> = {
   COMMIT: "bg-chart-2",
   BEST_CASE: "bg-chart-3",
   PIPELINE: "bg-chart-4",
 };
 
-const CATEGORY_HINTS: Record<ForecastCategory, string> = {
+export const CATEGORY_HINTS: Record<ForecastCategory, string> = {
   COMMIT: "Seller expects to close",
   BEST_CASE: "Could close with upside",
   PIPELINE: "Not yet committed",
@@ -38,7 +39,7 @@ const SERIES: ColumnSeries[] = FORECAST_CATEGORY_DISPLAY_ORDER.map((category) =>
   markClassName: CATEGORY_MARKS[category],
 }));
 
-function Swatch({ category }: { category: ForecastCategory }) {
+export function Swatch({ category }: { category: ForecastCategory }) {
   return (
     <span
       className={cn("block size-2.5 shrink-0 rounded-[2px]", CATEGORY_MARKS[category])}
@@ -171,7 +172,13 @@ type BreakdownRow = {
   totals: Pick<ForecastCategoryTotals, "count" | "total_amount" | "weighted_amount">;
 };
 
-function CategoryTable({ forecast }: { forecast: ForecastWithCategories }) {
+function CategoryTable({
+  forecast,
+  onOpenCategory,
+}: {
+  forecast: ForecastWithCategories;
+  onOpenCategory?: (category: ForecastCategory) => void;
+}) {
   const { currency, in_horizon_open: inHorizon } = forecast;
   const rows: BreakdownRow[] = [
     ...FORECAST_CATEGORY_DISPLAY_ORDER.map((category) => ({
@@ -187,15 +194,34 @@ function CategoryTable({ forecast }: { forecast: ForecastWithCategories }) {
     {
       key: "category",
       header: "Category",
-      cell: (row) => (
-        <span className="flex items-start gap-2">
-          {row.category ? <span className="mt-1"><Swatch category={row.category} /></span> : null}
-          <span className="grid">
-            <span className="font-medium">{row.label}</span>
-            <span className="text-muted-foreground text-xs">{row.hint}</span>
+      cell: (row) => {
+        const label = (
+          <span className="flex items-start gap-2">
+            {row.category ? <span className="mt-1"><Swatch category={row.category} /></span> : null}
+            <span className="grid">
+              <span className="font-medium">{row.label}</span>
+              <span className="text-muted-foreground text-xs">{row.hint}</span>
+            </span>
           </span>
-        </span>
-      ),
+        );
+        const { category } = row;
+        if (!category || !onOpenCategory) return label;
+        return (
+          <button
+            type="button"
+            onClick={() => onOpenCategory(category)}
+            aria-label={`View ${dealCount(row.totals.count)} in ${row.label}`}
+            aria-haspopup="dialog"
+            className="focus-visible:ring-ring group/category -mx-1.5 -my-1 flex items-center gap-1 rounded-md px-1.5 py-1 text-left outline-none hover:bg-muted focus-visible:ring-2"
+          >
+            {label}
+            <ChevronRight
+              className="text-muted-foreground group-hover/category:text-foreground size-4 shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+        );
+      },
     },
     {
       key: "count",
@@ -232,8 +258,17 @@ function CategoryTable({ forecast }: { forecast: ForecastWithCategories }) {
   );
 }
 
-/** Open pipeline in the horizon by forecast category, and the scenarios built from it. */
-export function ForecastCategories({ forecast }: { forecast: PipelineForecast }) {
+/**
+ * Open pipeline in the horizon by forecast category, and the scenarios built from it.
+ * With onOpenCategory, each category row opens the deals behind its totals.
+ */
+export function ForecastCategories({
+  forecast,
+  onOpenCategory,
+}: {
+  forecast: PipelineForecast;
+  onOpenCategory?: (category: ForecastCategory) => void;
+}) {
   return (
     <section className="grid gap-3" aria-labelledby="forecast-categories-heading">
       <SectionHeader
@@ -246,7 +281,7 @@ export function ForecastCategories({ forecast }: { forecast: PipelineForecast })
           <ForecastScenarios forecast={forecast} />
           <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             <CategoryChart forecast={forecast} />
-            <CategoryTable forecast={forecast} />
+            <CategoryTable forecast={forecast} onOpenCategory={onOpenCategory} />
           </div>
         </>
       ) : (

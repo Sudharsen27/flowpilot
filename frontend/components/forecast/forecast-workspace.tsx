@@ -3,12 +3,13 @@
 import { Columns3, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { StatePanel } from "@/components/data-display/state-panel";
 import { Label } from "@/components/forms/label";
 import { Select } from "@/components/forms/select";
 import { ForecastCategories } from "@/components/forecast/forecast-categories";
+import { ForecastCategoryDealsSheet } from "@/components/forecast/forecast-category-deals";
 import { ForecastKpis } from "@/components/forecast/forecast-kpis";
 import { ForecastMethodology } from "@/components/forecast/forecast-methodology";
 import { ForecastOutsideHorizon } from "@/components/forecast/forecast-outside-horizon";
@@ -26,6 +27,7 @@ import {
   isForecastEmpty,
   parseForecastSearchParams,
   serializeForecastSearchParams,
+  type ForecastDealsSelection,
   type ForecastUrlState,
 } from "@/lib/forecast";
 import { cn } from "@/lib/utils";
@@ -168,6 +170,13 @@ export function ForecastWorkspace() {
   const searchParams = useSearchParams();
   const urlState = useMemo(() => parseForecastSearchParams(searchParams), [searchParams]);
   const query = usePipelineForecast(urlState);
+  // The drill-down belongs to the horizon it was opened from; a new horizon closes it.
+  const [drillDown, setDrillDown] = useState<{
+    horizon: string;
+    selection: ForecastDealsSelection;
+  } | null>(null);
+  const horizonKey = `${urlState.granularity}:${urlState.periods}`;
+  const selection = drillDown?.horizon === horizonKey ? drillDown.selection : null;
 
   // Data belongs to the current key only (no placeholder from another horizon). A
   // failed horizon shows its error until a retry is in flight, then loads again.
@@ -256,7 +265,20 @@ export function ForecastWorkspace() {
             <>
               <ForecastChart forecast={forecast} />
               <ForecastPeriodTable forecast={forecast} />
-              <ForecastCategories forecast={forecast} />
+              <ForecastCategories
+                forecast={forecast}
+                onOpenCategory={(category) =>
+                  setDrillDown({ horizon: horizonKey, selection: { category, periodStart: null } })
+                }
+              />
+              <ForecastCategoryDealsSheet
+                forecast={forecast}
+                state={urlState}
+                selection={selection}
+                onSelectionChange={(next) =>
+                  setDrillDown(next ? { horizon: horizonKey, selection: next } : null)
+                }
+              />
               <ForecastOutsideHorizon forecast={forecast} />
             </>
           )}

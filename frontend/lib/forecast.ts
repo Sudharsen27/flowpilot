@@ -40,6 +40,39 @@ export function forecastQueryKey(organizationId: string | null, state: ForecastU
   ] as const;
 }
 
+/** One page of a category drill-down. */
+export const FORECAST_DEALS_PAGE_SIZE = 20;
+
+export type ForecastDealsSelection = {
+  category: ForecastCategory;
+  /** A period's start, or null for the whole horizon. */
+  periodStart: string | null;
+};
+
+/** Cache key: the organization, then the horizon, category, period and page. */
+export function forecastDealsQueryKey(
+  organizationId: string | null,
+  state: ForecastUrlState,
+  selection: ForecastDealsSelection,
+  offset: number,
+) {
+  return [
+    "pipeline-forecast-deals",
+    organizationId,
+    {
+      granularity: state.granularity,
+      periods: state.periods,
+      category: selection.category,
+      periodStart: selection.periodStart,
+      limit: FORECAST_DEALS_PAGE_SIZE,
+      offset,
+    },
+  ] as const;
+}
+
+/** Every cached query derived from deals on this page; refreshed after any deal write. */
+export const FORECAST_QUERY_ROOTS = ["pipeline-forecast", "pipeline-forecast-deals"] as const;
+
 export function parseForecastSearchParams(searchParams: URLSearchParams): ForecastUrlState {
   const granularity: ForecastGranularity =
     searchParams.get("granularity")?.trim().toLowerCase() === "month" ? "month" : "quarter";

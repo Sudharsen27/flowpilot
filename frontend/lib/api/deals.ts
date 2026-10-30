@@ -1,4 +1,5 @@
 import { ApiError, apiGet, apiPatch, apiPost } from "@/lib/api/client";
+import { notifyDealsChanged } from "@/lib/deal-events";
 import type {
   Deal,
   DealAmountCorrectionRequest,
@@ -51,23 +52,27 @@ export function getDeal(dealId: string) {
   return apiGet<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}`);
 }
 
+/** Every deal write goes through here so cached forecast figures are refreshed after it. */
+function writeDeal(request: Promise<Deal>): Promise<Deal> {
+  return request.finally(notifyDealsChanged);
+}
+
 export function createDeal(input: DealCreateRequest) {
-  return apiPost<Deal>("/api/v1/deals", input);
+  return writeDeal(apiPost<Deal>("/api/v1/deals", input));
 }
 
 export function updateDeal(dealId: string, input: DealUpdateRequest) {
-  return apiPatch<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}`, input);
+  return writeDeal(apiPatch<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}`, input));
 }
 
 export function changeDealStage(dealId: string, input: DealStageChangeRequest) {
-  return apiPost<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}/stage`, input);
+  return writeDeal(apiPost<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}/stage`, input));
 }
 
 /** OWNER/ADMIN only: the audited way to change a won deal's amount. */
 export function correctWonDealAmount(dealId: string, input: DealAmountCorrectionRequest) {
-  return apiPost<Deal>(
-    `/api/v1/deals/${encodeURIComponent(dealId)}/amount-correction`,
-    input,
+  return writeDeal(
+    apiPost<Deal>(`/api/v1/deals/${encodeURIComponent(dealId)}/amount-correction`, input),
   );
 }
 
