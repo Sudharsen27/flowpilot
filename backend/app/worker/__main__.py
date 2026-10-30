@@ -1,10 +1,10 @@
 """Worker entrypoint: `python -m app.worker`.
 
 Runs as a separate process from the API. Follow-up sending, Sales Agent
-auto-start, workflow runs and outgoing webhooks each have their own enable
-flag and can share this process. All are disabled by default so a local
-checkout never emails customers, calls the model, or sends event data out
-unexpectedly.
+auto-start, workflow runs, outgoing webhooks and daily forecast snapshots each
+have their own enable flag and can share this process. All are disabled by
+default so a local checkout never emails customers, calls the model, or sends
+event data out unexpectedly.
 """
 
 import logging
@@ -16,6 +16,7 @@ from typing import Protocol
 
 from app.core.config import settings
 from app.worker.follow_up_worker import FollowUpWorker
+from app.worker.forecast_snapshot_worker import ForecastSnapshotWorker
 from app.worker.sales_agent_auto_start_worker import SalesAgentAutoStartWorker
 from app.worker.webhook_worker import WebhookWorker
 from app.worker.workflow_worker import WorkflowWorker
@@ -52,11 +53,13 @@ def main() -> int:
         workers.append(WorkflowWorker())
     if settings.webhook_worker_enabled:
         workers.append(WebhookWorker())
+    if settings.forecast_snapshot_worker_enabled:
+        workers.append(ForecastSnapshotWorker())
     if not workers:
         logger.info(
             "no worker is enabled; set FOLLOW_UP_WORKER_ENABLED, "
-            "SALES_AGENT_AUTO_START_WORKER_ENABLED, WORKFLOW_WORKER_ENABLED or "
-            "WEBHOOK_WORKER_ENABLED to run"
+            "SALES_AGENT_AUTO_START_WORKER_ENABLED, WORKFLOW_WORKER_ENABLED, "
+            "WEBHOOK_WORKER_ENABLED or FORECAST_SNAPSHOT_WORKER_ENABLED to run"
         )
         return 0
     if len(workers) == 1:

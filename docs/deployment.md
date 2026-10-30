@@ -95,8 +95,21 @@ Enable the loops this process should run:
 
 - `FOLLOW_UP_WORKER_ENABLED=true` for due follow-up email
 - `SALES_AGENT_AUTO_START_WORKER_ENABLED=true` for website-enquiry Sales Agent starts
+- `FORECAST_SNAPSHOT_WORKER_ENABLED=true` for the daily forecast snapshots used by forecast accuracy. Optional: `FORECAST_SNAPSHOT_WORKER_POLL_INTERVAL_SECONDS` (default 300) and `FORECAST_SNAPSHOT_WORKER_BATCH_SIZE` (default 100). Needs migration `038_forecast_snapshots`.
 
-If both flags are false, the process exits immediately. Leave both false on the API service. The worker does not use Celery, Redis, or another queue.
+If all of these flags are false, the process exits immediately. Leave both false on the API service. The worker does not use Celery, Redis, or another queue.
+
+Forecast snapshots are captured once per organization per UTC day; the worker logs `forecast snapshots complete date=YYYY-MM-DD` when every organization has one and none is waiting for a retry. To see how many organizations still lack today's snapshot:
+
+```sql
+SELECT count(*) AS missing
+FROM organizations o
+LEFT JOIN forecast_snapshots s
+  ON s.organization_id = o.id
+ AND s.snapshot_date = (now() AT TIME ZONE 'UTC')::date
+ AND s.granularity = 'month'
+WHERE s.id IS NULL;
+```
 
 ## Migrations
 

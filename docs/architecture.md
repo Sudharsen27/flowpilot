@@ -564,7 +564,19 @@ Forecast accuracy compares what was forecast with what was later won, so forecas
 
 Capture is idempotent per organization, UTC day and granularity: a unique constraint allows one snapshot, a repeat returns the stored one unchanged (even if deals changed since), and a concurrent capture that loses the insert race returns the winner's. Snapshots are append-only and never updated. Each period row repeats its snapshot's `organization_id` under a composite foreign key, so a period cannot belong to another organization's snapshot; deleting an organization deletes its snapshots. Capture only reads deals and targets.
 
-Migration `038_forecast_snapshots` adds both tables and changes nothing existing. It revises `036` directly: `037` stays reserved for the 4C contract step, which will revise `038` when it ships, keeping one Alembic head. Nothing captures snapshots yet and there is no API: the daily worker (4E-2) and the accuracy API (4E-3) follow.
+Migration `038_forecast_snapshots` adds both tables and changes nothing existing. It revises `036` directly: `037` stays reserved for the 4C contract step, which will revise `038` when it ships, keeping one Alembic head. The daily worker (4E-2, below) captures snapshots; there is no API yet: the accuracy API (4E-3) follows.
+
+## Forecast snapshot worker (Phase 8, Slice 4E-2)
+
+`ForecastSnapshotWorker` runs only in `python -m app.worker`, behind `FORECAST_SNAPSHOT_WORKER_ENABLED` (off by default), alone or in the combined loop with the other workers. There is no scheduler and no wall-clock trigger: each check asks which organizations have no monthly snapshot for today (UTC) and captures them with `ForecastSnapshotService.capture()`, so it catches up by itself after downtime or a restart. No new dependency, lock or migration is involved.
+
+- **One timestamp per batch.** Each batch takes one UTC `capture_at` and uses it for the snapshot day, the lookup and every capture, so a batch that runs past midnight files every snapshot under the day it started.
+- **Lookup.** An anti-join of `organizations` against today's `forecast_snapshots` (`FORECAST_SNAPSHOT_WORKER_BATCH_SIZE`, default 100, in id order). It locks no rows. Organization ids come only from the database, and each capture uses its own session, closed afterwards.
+- **Failures.** One organization's error is logged with its id and does not stop the batch; the session is closed, which rolls back its transaction. The organization is retried after 5, 10, 20 and 40 minutes, then every 60 minutes. The retry schedule is in memory and resets each UTC day. An organization deleted after the lookup is skipped.
+- **Completion.** The day is complete only when no organization is missing today's snapshot and none is waiting for a retry; then the worker logs `forecast snapshots complete date=…` once. A retry whose organization was captured by another worker no longer counts.
+- **Pacing.** A full batch is followed at once by the next. Otherwise the next database check is the earlier of the next retry time and `FORECAST_SNAPSHOT_WORKER_POLL_INTERVAL_SECONDS` (default 300), which also picks up new organizations; until then `run_once()` returns without touching the database, so the combined loop's shorter sleep costs nothing. A failing lookup still waits a full interval.
+- **Overlap.** Several workers may run at once (a deploy overlap, or more than one instance): the unique constraint and `capture()`'s race handling keep one snapshot per organization and day, so the cost is only a repeated forecast calculation.
+- **Shutdown.** SIGTERM stops the batch before the next organization; a capture in progress commits or rolls back as a whole.
 
 ## LLM providers
 

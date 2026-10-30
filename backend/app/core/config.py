@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     webhook_worker_enabled: bool = False
     webhook_worker_poll_interval_seconds: float = Field(default=15, ge=1)
     webhook_worker_batch_size: int = Field(default=20, ge=1, le=100)
+    # Daily forecast snapshots also run only in `python -m app.worker`. Disabled by
+    # default; each check captures organizations without a snapshot for today (UTC).
+    forecast_snapshot_worker_enabled: bool = False
+    forecast_snapshot_worker_poll_interval_seconds: float = Field(default=300, ge=1)
+    forecast_snapshot_worker_batch_size: int = Field(default=100, ge=1, le=1000)
     # In-process sliding window for public website capture. Single-instance only;
     # it is not shared across API processes and does not use Redis.
     website_capture_rate_limit_max: int = Field(default=5, ge=1)
