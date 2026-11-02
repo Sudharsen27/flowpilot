@@ -38,12 +38,15 @@ describe("QueryProvider", () => {
     expect(client.getQueryCache().getAll()).toHaveLength(0);
   });
 
-  it("invalidates forecast and drill-down queries after a deal write, and nothing else", () => {
+  it("invalidates forecast, drill-down and accuracy queries after a deal write, and nothing else", () => {
     const client = createQueryClient();
     const forecastKey = ["pipeline-forecast", "org-1", { granularity: "quarter", periods: 4 }];
     const dealsKey = ["pipeline-forecast-deals", "org-1", { category: "COMMIT", offset: 0 }];
+    const accuracyKey = ["pipeline-forecast-accuracy", "org-1", { fromMonth: null, toMonth: null }];
     const otherKey = ["leads", "org-1"];
-    for (const key of [forecastKey, dealsKey, otherKey]) client.setQueryData(key, { cached: true });
+    for (const key of [forecastKey, dealsKey, accuracyKey, otherKey]) {
+      client.setQueryData(key, { cached: true });
+    }
     render(
       <QueryProvider client={client}>
         <Probe />
@@ -52,6 +55,8 @@ describe("QueryProvider", () => {
     act(() => notifyDealsChanged());
     expect(client.getQueryState(forecastKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(dealsKey)?.isInvalidated).toBe(true);
+    // Actual revenue changes when a won deal is corrected or reopened.
+    expect(client.getQueryState(accuracyKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(otherKey)?.isInvalidated).toBe(false);
     // Invalidated, not dropped: cached figures stay on screen while they refetch.
     expect(client.getQueryData(forecastKey)).toEqual({ cached: true });
@@ -61,8 +66,11 @@ describe("QueryProvider", () => {
     const client = createQueryClient();
     const forecastKey = ["pipeline-forecast", "org-1", { granularity: "month", periods: 12 }];
     const dealsKey = ["pipeline-forecast-deals", "org-1", { category: "COMMIT", offset: 0 }];
+    const accuracyKey = ["pipeline-forecast-accuracy", "org-1", { fromMonth: null, toMonth: null }];
     const otherKey = ["leads", "org-1"];
-    for (const key of [forecastKey, dealsKey, otherKey]) client.setQueryData(key, { cached: true });
+    for (const key of [forecastKey, dealsKey, accuracyKey, otherKey]) {
+      client.setQueryData(key, { cached: true });
+    }
     render(
       <QueryProvider client={client}>
         <Probe />
@@ -70,8 +78,9 @@ describe("QueryProvider", () => {
     );
     act(() => notifySalesTargetsChanged());
     expect(client.getQueryState(forecastKey)?.isInvalidated).toBe(true);
-    // Drill-down deal lists do not use targets.
+    // Drill-down deal lists and forecast accuracy do not use targets.
     expect(client.getQueryState(dealsKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(accuracyKey)?.isInvalidated).toBe(false);
     expect(client.getQueryState(otherKey)?.isInvalidated).toBe(false);
     expect(client.getQueryData(forecastKey)).toEqual({ cached: true });
   });

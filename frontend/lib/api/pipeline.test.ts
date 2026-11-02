@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/client";
-import { getForecastCategoryDeals, getPipelineForecast } from "@/lib/api/pipeline";
+import { getForecastAccuracy, getForecastCategoryDeals, getPipelineForecast } from "@/lib/api/pipeline";
 
 function mockFetch(body: unknown = {}, status = 200) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -86,5 +86,47 @@ describe("forecast category deals API client", () => {
     const controller = new AbortController();
     await getForecastCategoryDeals({ ...base, periodStart: null }, { signal: controller.signal });
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+});
+
+describe("forecast accuracy API client", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.setItem("flowpilot.access_token", "forecast-token");
+  });
+
+  const leads = [0, 30, 60, 90];
+
+  it("requests a range with every lead as a repeated parameter and the session token", async () => {
+    const body = { currency: "INR", summary: [{ variance_amount: "-1000001234567.88" }] };
+    const fetchMock = mockFetch(body);
+    const result = await getForecastAccuracy({ fromMonth: "2026-01-01", toMonth: "2026-06-01", leadDays: leads });
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toMatch(
+      /\/api\/v1\/pipeline\/forecast\/accuracy\?from_month=2026-01-01&to_month=2026-06-01&lead_days=0&lead_days=30&lead_days=60&lead_days=90$/,
+    );
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer forecast-token");
+    // Decimal strings are passed through untouched.
+    expect(result).toEqual(body);
+  });
+
+  it("omits both months so the server picks its default range", async () => {
+    const fetchMock = mockFetch({});
+    await getForecastAccuracy({ fromMonth: null, toMonth: null, leadDays: [0] });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/api\/v1\/pipeline\/forecast\/accuracy\?lead_days=0$/);
+  });
+
+  it("passes the abort signal to fetch", async () => {
+    const fetchMock = mockFetch({});
+    const controller = new AbortController();
+    await getForecastAccuracy({ fromMonth: null, toMonth: null, leadDays: leads }, { signal: controller.signal });
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
+  it("surfaces backend validation errors", async () => {
+    mockFetch({ detail: "Months before 1971-01-01 are not supported" }, 422);
+    await expect(
+      getForecastAccuracy({ fromMonth: "1970-01-01", toMonth: "1970-02-01", leadDays: leads }),
+    ).rejects.toMatchObject({ status: 422 } satisfies Partial<ApiError>);
   });
 });

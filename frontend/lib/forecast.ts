@@ -76,8 +76,15 @@ export function forecastDealsQueryKey(
   ] as const;
 }
 
-/** Every cached query derived from deals on this page; refreshed after any deal write. */
-export const FORECAST_QUERY_ROOTS = [FORECAST_QUERY_ROOT, "pipeline-forecast-deals"] as const;
+/** Root of the forecast accuracy query key (actual revenue changes with deal writes). */
+export const FORECAST_ACCURACY_QUERY_ROOT = "pipeline-forecast-accuracy";
+
+/** Every cached query derived from deals; refreshed after any deal write. */
+export const FORECAST_QUERY_ROOTS = [
+  FORECAST_QUERY_ROOT,
+  "pipeline-forecast-deals",
+  FORECAST_ACCURACY_QUERY_ROOT,
+] as const;
 
 export function parseForecastSearchParams(searchParams: URLSearchParams): ForecastUrlState {
   const granularity: ForecastGranularity =

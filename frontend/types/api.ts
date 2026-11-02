@@ -1865,3 +1865,126 @@ export type ForecastCategoryDeals = {
   offset: number;
   total: number;
 };
+
+/** Forecast figures compared with actual won revenue (Phase 8 Slice 4E-3). */
+export type ForecastAccuracyBasis = "PROJECTED" | "COMMIT_SCENARIO" | "BEST_CASE_SCENARIO";
+
+/** CLOSED months are scored; the IN_PROGRESS month (containing as_of) is not. */
+export type ForecastAccuracyMonthStatus = "CLOSED" | "IN_PROGRESS";
+
+/** BEFORE: captured_at < cutoff_at (lead 0). ON_OR_BEFORE: captured_at <= cutoff_at. */
+export type ForecastCutoffRule = "BEFORE" | "ON_OR_BEFORE";
+
+/**
+ * AVAILABLE: a snapshot inside the window was selected and compared.
+ * MISSING: the organization has earlier snapshots, but none inside the window holds the month.
+ * BEFORE_FIRST_SNAPSHOT: tracking had not started by the cutoff.
+ * CURRENCY_MISMATCH: the selected snapshot is in another currency; not compared.
+ */
+export type ForecastSnapshotStatus =
+  | "AVAILABLE"
+  | "MISSING"
+  | "BEFORE_FIRST_SNAPSHOT"
+  | "CURRENCY_MISMATCH";
+
+export type ForecastAccuracyStatus = "COMPUTED" | "NO_ACTUAL_REVENUE" | "MONTH_IN_PROGRESS";
+
+export type ForecastAccuracySummaryStatus = "COMPUTED" | "NO_ACTUAL_REVENUE" | "NO_COMPARABLE_MONTHS";
+
+export type ForecastAccuracyAssumptionCode =
+  | "SNAPSHOT_FIGURES"
+  | "LEAD_CUTOFFS"
+  | "SNAPSHOT_TOLERANCE"
+  | "ACTUAL_WON_CURRENT_VALUE"
+  | "UTC_MONTHS"
+  | "SINGLE_CURRENCY"
+  | "IN_PROGRESS_NOT_SCORED";
+
+/**
+ * One stored forecast figure against the month's actual won revenue. Percentages are
+ * strings to one decimal, rounded half away from zero; accuracy is not floored and can
+ * be negative.
+ */
+export type ForecastAccuracyComparison = {
+  basis: ForecastAccuracyBasis;
+  forecast_amount: MoneyString;
+  /** actual − forecast; null while the month is in progress. */
+  variance_amount: MoneyString | null;
+  /** (actual − forecast) / forecast × 100; null when the forecast is 0 or in progress. */
+  variance_percent: string | null;
+  /** (1 − |actual − forecast| / actual) × 100; null when actual is 0 or in progress. */
+  accuracy_percent: string | null;
+  accuracy_status: ForecastAccuracyStatus;
+};
+
+/** The snapshot selected for one lead time. */
+export type ForecastAccuracyLead = {
+  lead_days: number;
+  /** Month start (00:00 UTC) minus lead_days. */
+  cutoff_at: string;
+  cutoff_rule: ForecastCutoffRule;
+  /** cutoff_at minus the tolerance; inclusive. */
+  window_start_at: string;
+  snapshot_status: ForecastSnapshotStatus;
+  /** The selected snapshot; null unless AVAILABLE or CURRENCY_MISMATCH. */
+  snapshot_date: string | null;
+  captured_at: string | null;
+  /** PROJECTED, COMMIT_SCENARIO, BEST_CASE_SCENARIO; empty unless AVAILABLE. */
+  comparisons: ForecastAccuracyComparison[];
+};
+
+export type ForecastAccuracyMonth = {
+  /** "2026-11". */
+  label: string;
+  period_start: string;
+  /** Inclusive. */
+  period_end: string;
+  status: ForecastAccuracyMonthStatus;
+  /** Deals won in the month by closed_at (so far, when in progress). */
+  actual: PipelineTotals;
+  /** One entry per requested lead, ascending. */
+  forecasts: ForecastAccuracyLead[];
+};
+
+/**
+ * Closed months with an AVAILABLE snapshot for this lead, combined by sums (never an
+ * average of monthly percentages). Totals are null when no month is comparable.
+ */
+export type ForecastAccuracySummary = {
+  lead_days: number;
+  basis: ForecastAccuracyBasis;
+  months_compared: number;
+  /** Closed months in the range without an AVAILABLE snapshot for this lead. */
+  months_missing: number;
+  forecast_total: MoneyString | null;
+  actual_total: MoneyString | null;
+  /** Σ(actual − forecast). */
+  variance_amount: MoneyString | null;
+  /** Σ(actual − forecast) / Σforecast × 100; null when Σforecast is 0. */
+  variance_percent: string | null;
+  /** (1 − Σ|actual − forecast| / Σactual) × 100; null when Σactual is 0. */
+  weighted_accuracy_percent: string | null;
+  status: ForecastAccuracySummaryStatus;
+};
+
+/** Monthly forecasts as stored in daily snapshots, compared with actual won revenue. */
+export type ForecastAccuracy = {
+  currency: string;
+  as_of: string;
+  granularity: "month";
+  method: "SNAPSHOT_VS_ACTUAL_WON";
+  rounding: "PER_DEAL_HALF_UP_CENTS";
+  accuracy_formula: "ONE_MINUS_ABS_ERROR_OVER_ACTUAL";
+  percent_rounding: "HALF_AWAY_FROM_ZERO_TENTHS";
+  variance_sign: "ACTUAL_MINUS_FORECAST";
+  from_month: string;
+  to_month: string;
+  lead_days: number[];
+  snapshot_tolerance_days: number;
+  /** Earliest monthly snapshot of the organization; null when it has none. */
+  first_captured_at: string | null;
+  months: ForecastAccuracyMonth[];
+  /** One entry per (lead, basis), leads ascending, bases in PROJECTED, COMMIT, BEST_CASE order. */
+  summary: ForecastAccuracySummary[];
+  assumptions: { code: ForecastAccuracyAssumptionCode; detail: string }[];
+};

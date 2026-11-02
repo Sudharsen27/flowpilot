@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, Plus, RefreshCw } from "lucide-react";
+import { Columns3, Gauge, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
@@ -23,6 +23,7 @@ import { usePipelineForecast } from "@/hooks/use-pipeline-forecast";
 import { ApiError } from "@/lib/api/client";
 import { formatAbsoluteTimestamp } from "@/lib/datetime";
 import { canManageDeals } from "@/lib/deals";
+import { FORECAST_ACCURACY_PATH } from "@/lib/forecast-accuracy";
 import {
   FORECAST_PERIOD_RULES,
   forecastHorizonLabel,
@@ -123,7 +124,7 @@ function ForecastControls({
 }
 
 /** As-of time, a quiet "Refreshing" while cached figures are re-checked, or a failed refresh. */
-function ForecastStatus({
+export function ForecastStatus({
   asOf,
   refreshing,
   refreshFailed,
@@ -203,10 +204,16 @@ export function ForecastWorkspace() {
         title="Forecast"
         description="Won revenue and stage-probability-weighted pipeline from your saved deals. Weighted figures are estimates, not committed revenue."
         secondaryActions={
-          <Link href="/deals/pipeline" className={buttonVariants({ variant: "outline" })}>
-            <Columns3 aria-hidden="true" />
-            Open pipeline
-          </Link>
+          <>
+            <Link href={FORECAST_ACCURACY_PATH} className={buttonVariants({ variant: "outline" })}>
+              <Gauge aria-hidden="true" />
+              Forecast accuracy
+            </Link>
+            <Link href="/deals/pipeline" className={buttonVariants({ variant: "outline" })}>
+              <Columns3 aria-hidden="true" />
+              Open pipeline
+            </Link>
+          </>
         }
       />
 

@@ -290,6 +290,14 @@ describe("Forecast page", () => {
     expect(screen.getByLabelText("Horizon")).toHaveValue("4");
   });
 
+  it("links to forecast accuracy", async () => {
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Forecast accuracy" })).toHaveAttribute(
+      "href",
+      "/forecast/accuracy",
+    );
+  });
+
   it("shows the API's KPI figures exactly", async () => {
     renderPage();
     expect(await screen.findByLabelText("₹1,50,000.00")).toBeInTheDocument();

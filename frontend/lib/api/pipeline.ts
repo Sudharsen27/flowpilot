@@ -1,5 +1,6 @@
 import { apiGet } from "@/lib/api/client";
 import type {
+  ForecastAccuracy,
   ForecastCategory,
   ForecastCategoryDeals,
   ForecastGranularity,
@@ -49,4 +50,23 @@ export function getForecastCategoryDeals(
   });
   if (params.periodStart) query.set("period_start", params.periodStart);
   return apiGet<ForecastCategoryDeals>(`/api/v1/pipeline/forecast/deals?${query.toString()}`, options);
+}
+
+/**
+ * Stored monthly forecasts against actual won revenue. Omitting both months lets the
+ * server pick its default range (the last 6 closed months) from its own clock.
+ */
+export function getForecastAccuracy(
+  params: { fromMonth: string | null; toMonth: string | null; leadDays: readonly number[] },
+  options: { signal?: AbortSignal } = {},
+) {
+  const query = new URLSearchParams();
+  if (params.fromMonth) query.set("from_month", params.fromMonth);
+  if (params.toMonth) query.set("to_month", params.toMonth);
+  for (const lead of params.leadDays) query.append("lead_days", String(lead));
+  const search = query.toString();
+  return apiGet<ForecastAccuracy>(
+    `/api/v1/pipeline/forecast/accuracy${search ? `?${search}` : ""}`,
+    options,
+  );
 }
