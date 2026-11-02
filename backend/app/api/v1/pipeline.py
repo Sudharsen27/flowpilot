@@ -7,12 +7,14 @@ from app.api.deps import get_current_organization
 from app.db.session import get_db
 from app.models.deal import ForecastCategory
 from app.models.organization import Organization
+from app.schemas.forecast_accuracy import ForecastAccuracy
 from app.schemas.pipeline import (
     ForecastCategoryDeals,
     ForecastGranularity,
     PipelineForecast,
     PipelineSummary,
 )
+from app.services.forecast_accuracy_service import ForecastAccuracyService
 from app.services.pipeline_service import PipelineService
 
 router = APIRouter(prefix="/api/v1/pipeline", tags=["pipeline"])
@@ -38,6 +40,23 @@ def get_pipeline_forecast(
     """Stage-probability-weighted forecast. Defaults: 6 months or 4 quarters; at most
     24 months or 8 quarters. Past-due deals are reported separately."""
     return PipelineService(db).forecast(organization.id, granularity=granularity, periods=periods)
+
+
+@router.get("/forecast/accuracy", response_model=ForecastAccuracy)
+def get_forecast_accuracy(
+    from_month: date | None = None,
+    to_month: date | None = None,
+    lead_days: list[int] | None = Query(default=None),
+    organization: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
+) -> ForecastAccuracy:
+    """Monthly forecasts from stored daily snapshots against actual won revenue. Months
+    are first-of-month dates from 1971-01-01; default: the last 6 closed months, at most
+    24. lead_days repeats (0, 30, 60, 90; default 0). The current month is shown but not
+    scored."""
+    return ForecastAccuracyService(db).accuracy(
+        organization.id, from_month=from_month, to_month=to_month, lead_days=lead_days
+    )
 
 
 @router.get("/forecast/deals", response_model=ForecastCategoryDeals)

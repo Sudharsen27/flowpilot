@@ -143,6 +143,21 @@ def _bucket(column: Any, boundaries: Sequence[date | datetime]) -> ColumnElement
     )
 
 
+@dataclass(frozen=True)
+class WonRevenueMonth:
+    month: date
+    count: int
+    cents: int
+
+
+@dataclass(frozen=True)
+class WonRevenue:
+    """Won revenue per calendar month in the organization's currency, whole cents."""
+
+    currency: str
+    months: list[WonRevenueMonth]
+
+
 @dataclass
 class _Totals:
     count: int = 0
@@ -592,6 +607,24 @@ class PipelineService:
             limit=limit,
             offset=offset,
             total=deal_count,
+        )
+
+    def won_revenue_by_month(
+        self, organization_id: str, *, first_month: date, month_count: int
+    ) -> WonRevenue:
+        """Won revenue for month_count consecutive UTC months from first_month, counted by
+        the same query as forecast() and summary(): deals in CLOSED_WON, in the
+        organization's currency, by closed_at, at their current amount."""
+        currency = self._currency(organization_id)
+        starts = [_shift_months(first_month.replace(day=1), i) for i in range(month_count)]
+        end = _shift_months(starts[0], month_count)
+        totals = self._won_by_period(organization_id, currency, starts, end)
+        return WonRevenue(
+            currency=currency,
+            months=[
+                WonRevenueMonth(month=start, count=total.count, cents=total.cents)
+                for start, total in zip(starts, totals, strict=True)
+            ],
         )
 
     def _currency(self, organization_id: str) -> str:
