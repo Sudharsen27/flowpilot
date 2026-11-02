@@ -111,7 +111,7 @@ The Discovery Workspace presents import as unavailable and renders only a disabl
 Two applications in a monorepo:
 
 - `frontend/` — Next.js UI. Components render; they do not own business rules.
-- `backend/` — FastAPI API, services, and the follow-up worker process.
+- `backend/` — FastAPI API, services, and the background worker process (`python -m app.worker`: follow-ups, Sales Agent auto-start, workflows, webhooks, forecast snapshots) plus the one-off forecast snapshot runner.
 
 Request path:
 
@@ -568,7 +568,7 @@ Migration `038_forecast_snapshots` adds both tables and changes nothing existing
 
 ## Forecast snapshot worker (Phase 8, Slice 4E-2)
 
-`ForecastSnapshotWorker` runs only in `python -m app.worker`, behind `FORECAST_SNAPSHOT_WORKER_ENABLED` (off by default), alone or in the combined loop with the other workers. There is no scheduler and no wall-clock trigger: each check asks which organizations have no monthly snapshot for today (UTC) and captures them with `ForecastSnapshotService.capture()`, so it catches up by itself after downtime or a restart. No new dependency, lock or migration is involved.
+`ForecastSnapshotWorker` runs in `python -m app.worker`, behind `FORECAST_SNAPSHOT_WORKER_ENABLED` (off by default), alone or in the combined loop with the other workers, or once per process through the one-off runner below. The API never starts it. There is no scheduler and no wall-clock trigger: each check asks which organizations have no monthly snapshot for today (UTC) and captures them with `ForecastSnapshotService.capture()`, so it catches up by itself after downtime or a restart. No new dependency, lock or migration is involved.
 
 - **One timestamp per batch.** Each batch takes one UTC `capture_at` and uses it for the snapshot day, the lookup and every capture, so a batch that runs past midnight files every snapshot under the day it started.
 - **Lookup.** An anti-join of `organizations` against today's `forecast_snapshots` (`FORECAST_SNAPSHOT_WORKER_BATCH_SIZE`, default 100, in id order). It locks no rows. Organization ids come only from the database, and each capture uses its own session, closed afterwards.
@@ -577,6 +577,8 @@ Migration `038_forecast_snapshots` adds both tables and changes nothing existing
 - **Pacing.** A full batch is followed at once by the next. Otherwise the next database check is the earlier of the next retry time and `FORECAST_SNAPSHOT_WORKER_POLL_INTERVAL_SECONDS` (default 300), which also picks up new organizations; until then `run_once()` returns without touching the database, so the combined loop's shorter sleep costs nothing. A failing lookup still waits a full interval.
 - **Overlap.** Several workers may run at once (a deploy overlap, or more than one instance): the unique constraint and `capture()`'s race handling keep one snapshot per organization and day, so the cost is only a repeated forecast calculation.
 - **Shutdown.** SIGTERM stops the batch before the next organization; a capture in progress commits or rolls back as a whole.
+
+**One-off mode.** `python -m app.worker.forecast_snapshot_once` (`app/worker/forecast_snapshot_once.py`) runs the same `run_once()` and capture for a scheduler that starts one process per run, such as the GitHub Actions workflow `.github/workflows/forecast-snapshots.yml` (00:17, 06:17, 12:17 and 18:17 UTC, plus manual runs). It repeats `run_once()` until a batch is smaller than the batch size, then exits 0, or 1 when the lookup or any capture failed; it does not read `FORECAST_SNAPSHOT_WORKER_ENABLED`, installs no signal handlers and never polls. A failed organization is normally excluded from later batches and left for the next scheduled run, but becomes eligible again within the same run once its five-minute retry delay has passed; idempotent capture makes repeated or overlapping runs harmless. If the lookup or the post-batch retry check raises, the run exits 1 and the summary may omit that batch's counts. Because its output may be public, it uses its own engine with `hide_parameters=True`, silences the worker's per-organization log lines and prints one line of counts; an error inside the runner is reported by class name only. Invalid settings can fail earlier, when `python -m` imports the `app.worker` package, with a short Pydantic traceback; `Settings` sets `hide_input_in_errors=True`, so that message never contains the supplied values.
 
 ## Forecast accuracy API (Phase 8, Slice 4E-3)
 

@@ -142,6 +142,33 @@ def test_production_rejects_localhost_and_wildcard_cors() -> None:
         _production(cors_origins="")
 
 
+def test_invalid_settings_errors_do_not_echo_supplied_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_password = "fake-db-password-7f3a"
+    fake_secret = "fake-short-secret-9c1e"
+    fake_key = "fake-groq-key-4b2d"
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://u:{fake_password}@db.example.com/app")
+    monkeypatch.setenv("SECRET_KEY", fake_secret)
+    monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("GROQ_API_KEY", fake_key)
+
+    # Whole-model check (production rules) and a single-field check.
+    with pytest.raises(ValidationError, match="SECRET_KEY") as model_error:
+        Settings(_env_file=None)
+    monkeypatch.setenv("SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("AI_PROVIDER", f"not-a-provider-{fake_key}")
+    with pytest.raises(ValidationError) as field_error:
+        Settings(_env_file=None)
+
+    for raised in (model_error, field_error):
+        text = f"{raised.value}\n{raised.value!r}"
+        assert "input_value" not in text
+        for fragment in (fake_password, fake_secret, fake_key, "db.example.com", "fake-"):
+            assert fragment not in text
+
+
 def test_development_keeps_local_defaults() -> None:
     configured = Settings(environment="development", _env_file=None)
     assert configured.secret_key == "replace-with-a-long-random-local-secret"

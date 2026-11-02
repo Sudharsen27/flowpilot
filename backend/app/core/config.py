@@ -32,6 +32,9 @@ class Settings(BaseSettings):
         env_file=default_env_files(),
         env_file_encoding="utf-8",
         extra="ignore",
+        # Validation errors are printed at startup and may reach shared logs; never
+        # include the supplied values (database URL, keys) in them.
+        hide_input_in_errors=True,
     )
 
     app_name: str = "FlowPilot"

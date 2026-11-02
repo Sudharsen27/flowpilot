@@ -95,9 +95,44 @@ Enable the loops this process should run:
 
 - `FOLLOW_UP_WORKER_ENABLED=true` for due follow-up email
 - `SALES_AGENT_AUTO_START_WORKER_ENABLED=true` for website-enquiry Sales Agent starts
-- `FORECAST_SNAPSHOT_WORKER_ENABLED=true` for the daily forecast snapshots used by forecast accuracy. Optional: `FORECAST_SNAPSHOT_WORKER_POLL_INTERVAL_SECONDS` (default 300) and `FORECAST_SNAPSHOT_WORKER_BATCH_SIZE` (default 100). Needs migration `038_forecast_snapshots`.
+- `WORKFLOW_WORKER_ENABLED=true` for workflow rules
+- `WEBHOOK_WORKER_ENABLED=true` for outgoing webhook deliveries
+- `FORECAST_SNAPSHOT_WORKER_ENABLED=true` for the daily forecast snapshots used by forecast accuracy. Optional: `FORECAST_SNAPSHOT_WORKER_POLL_INTERVAL_SECONDS` (default 300) and `FORECAST_SNAPSHOT_WORKER_BATCH_SIZE` (default 100). Needs migration `038_forecast_snapshots`. Instead of this flag, snapshots can run on the free GitHub Actions schedule below.
 
-If all of these flags are false, the process exits immediately. Leave both false on the API service. The worker does not use Celery, Redis, or another queue.
+If all of these flags are false, the process exits immediately. Leave all of them false on the API service. The worker does not use Celery, Redis, or another queue.
+
+## Forecast snapshots (GitHub Actions)
+
+`.github/workflows/forecast-snapshots.yml` captures the daily forecast snapshots without a paid background worker. It runs the one-off runner:
+
+```bash
+cd backend && python -m app.worker.forecast_snapshot_once
+```
+
+The runner captures every organization that has no snapshot for today (UTC), in batches of `FORECAST_SNAPSHOT_WORKER_BATCH_SIZE` (default 100), prints one line of counts and exits: 0 when the lookup and every capture succeeded, 1 otherwise. It does not read `FORECAST_SNAPSHOT_WORKER_ENABLED`. Capture is idempotent per organization and UTC day, so repeated, overlapping or manual runs never add a second snapshot. A failed organization is normally left for the next run; in a long run it can be tried again once its five-minute retry delay has passed. If the organization lookup, or the retry check after a batch, fails, the run exits 1 and its summary may not include that batch's counts.
+
+Schedule: four runs a day at 00:17, 06:17, 12:17 and 18:17 UTC, plus manual runs (Actions → Forecast snapshots → Run workflow). The 00:17 run captures the day; the others catch up after a dropped, delayed or failed run, and do nothing once every organization has today's snapshot. The workflow has no push or pull-request trigger, runs only on `main`, has read-only repository permissions, a 10-minute timeout, and never cancels a run in progress.
+
+Setup (repository Settings, once):
+
+1. Settings → Environments → New environment, named `production`.
+2. Deployment branches and tags → Selected branches and tags → add `main` only.
+3. Environment secrets:
+   - `DATABASE_URL` — the Neon production connection string, the same database as the API (`sslmode=require`).
+   - `SECRET_KEY` — a newly generated value of at least 32 characters used only by this job, for example from `python -c "import secrets; print(secrets.token_urlsafe(48))"` run locally. The job signs no tokens; never reuse or paste the API's `SECRET_KEY`.
+4. Environment variable (not a secret): `CORS_ORIGINS` — the production Vercel origin, `https://` only, the same value as the API's. Production settings refuse to start without it.
+
+A preliminary step fails with the names, never the values, of any missing setting. Do not add steps that print environment variables, and do not enable debug logging for this workflow.
+
+The repository is public, so workflow logs are public. The runner's output is counts only: no organization ids, figures, SQL parameters, connection details, exception messages or tracebacks; an error inside the runner names only its class. Invalid settings (for example a short `SECRET_KEY` or a non-HTTPS `CORS_ORIGINS`) can fail before the runner starts, with a short Pydantic validation traceback; its message is redacted and never contains the supplied values. To check a run, open Actions → Forecast snapshots and read the last line of "Capture forecast snapshots":
+
+- `status=complete … failed=0 lookup_failed=false` — every organization has today's snapshot.
+- `status=failed` with `failed=N` — N captures failed; the next run retries them.
+- `status=failed … lookup_failed=true`, `status=error error=<Class>`, or a `ValidationError` for `Settings` — the database or the settings are unreachable or invalid. Check the environment secrets and variable, and that migration `038_forecast_snapshots` is applied.
+
+GitHub emails the workflow's owner about failed scheduled runs. Scheduled runs can start late or, rarely, be skipped; the later runs cover them. GitHub disables scheduled workflows in a public repository after 60 days without repository activity; re-enable it from the Actions tab. The missing-snapshot query below confirms coverage.
+
+The Render background worker may still be needed for follow-up email, Sales Agent auto-start, workflow rules or outgoing webhooks. Before removing that service or turning off `FORECAST_SNAPSHOT_WORKER_ENABLED` on it, check which of its worker flags are `true`, and confirm a successful GitHub Actions run and a zero result from the query below. Both may run at once safely.
 
 Forecast snapshots are captured once per organization per UTC day; the worker logs `forecast snapshots complete date=YYYY-MM-DD` when every organization has one and none is waiting for a retry. To see how many organizations still lack today's snapshot:
 

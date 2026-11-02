@@ -1,0 +1,59 @@
+# Daily forecast snapshots for forecast accuracy, without a paid background worker.
+# Runs the one-off runner, which prints one line of counts only. Capture is idempotent per
+# organization and UTC day, so the later runs catch up on anything the first one missed.
+# Setup: docs/deployment.md, "Forecast snapshots (GitHub Actions)".
+name: Forecast snapshots
+
+on:
+  schedule:
+    - cron: "17 0,6,12,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forecast-snapshots
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install backend
+        run: pip install ./backend
+      - name: Check configuration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+        # Reports missing names only, never values.
+        run: |
+          missing=""
+          [ -n "$DATABASE_URL" ] || missing="$missing DATABASE_URL"
+          [ -n "$SECRET_KEY" ] || missing="$missing SECRET_KEY"
+          [ -n "$CORS_ORIGINS" ] || missing="$missing CORS_ORIGINS"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing production environment settings:$missing"
+            exit 1
+          fi
+      - name: Capture forecast snapshots
+        working-directory: backend
+        env:
+          ENVIRONMENT: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+          PYTHONUNBUFFERED: "1"
+        run: python -m app.worker.forecast_snapshot_once
