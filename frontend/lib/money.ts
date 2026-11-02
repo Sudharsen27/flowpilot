@@ -100,6 +100,8 @@ export function formatMoneyCompact(amount: string | null | undefined, currency: 
       currency,
       notation: "compact",
       maximumFractionDigits: 1,
+      // Older ICU builds (Node 20, older browsers) otherwise print "₹1.0L" and "₹0.0".
+      trailingZeroDisplay: "stripIfInteger",
     }).format(value);
   } catch {
     return formatMoney(amount, currency);

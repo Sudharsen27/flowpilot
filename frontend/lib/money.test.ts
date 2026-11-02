@@ -4,6 +4,7 @@ import {
   decimalEquals,
   formatDateOnly,
   formatMoney,
+  formatMoneyCompact,
   formatMonth,
   parseAmountInput,
 } from "@/lib/money";
@@ -26,6 +27,16 @@ describe("formatMoney", () => {
     expect(formatMoney(null, "INR")).toBe("—");
     expect(formatMoney("abc", "INR")).toBe("INR abc");
     expect(formatMoney("12.3", "ZZZ")).toMatch(/12\.30$/);
+  });
+});
+
+describe("formatMoneyCompact", () => {
+  it("drops a trailing .0 on every runtime and keeps one meaningful decimal", () => {
+    expect(formatMoneyCompact("0", "INR")).toBe("₹0");
+    expect(formatMoneyCompact("100000.00", "INR")).toBe("₹1L");
+    expect(formatMoneyCompact("120000.00", "INR")).toBe("₹1.2L");
+    expect(formatMoneyCompact("1000000", "USD")).toBe("$1M");
+    expect(formatMoneyCompact(null, "INR")).toBe("—");
   });
 });
 
