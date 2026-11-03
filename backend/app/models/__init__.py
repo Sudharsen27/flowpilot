@@ -1,3 +1,4 @@
+from app.core.auth_rate_limit import AuthLoginFailure
 from app.models.activity_event import (
     ActivityActorType,
     ActivityEntityType,
@@ -28,6 +29,7 @@ from app.models.webhook import WebhookDelivery, WebhookEndpoint
 from app.models.workflow import WorkflowRule, WorkflowRun
 
 __all__ = [
+    "AuthLoginFailure",
     "ActivityActorType",
     "ActivityEntityType",
     "ActivityEvent",

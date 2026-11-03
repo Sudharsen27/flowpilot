@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models import (
     Agent,
     AgentExecution,
+    AuthLoginFailure,
     CompanyProspect,
     IdealCustomerProfile,
     InboundEmail,
@@ -27,7 +28,8 @@ from app.models import (
 )
 
 assert (
-    Agent
+    AuthLoginFailure
+    and Agent
     and AgentExecution
     and CompanyProspect
     and InboundEmail

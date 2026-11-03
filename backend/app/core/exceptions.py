@@ -29,6 +29,30 @@ class UnauthorizedError(AppError):
         super().__init__(401, detail)
 
 
+class InvalidCredentialsError(UnauthorizedError):
+    """Unknown email, missing password hash, or incorrect password.
+
+    The HTTP response stays the generic 401. The subclass exists so password
+    login can count this failure without counting a later membership or
+    organization authorization failure.
+    """
+
+    def __init__(self, detail: str = "Invalid email or password") -> None:
+        super().__init__(detail)
+
+
+class GoogleLinkPasswordError(UnauthorizedError):
+    """Incorrect password while linking Google to an existing password account.
+
+    The HTTP response stays the generic 401. The subclass exists so the Google
+    route can count this failure without counting subject collisions, missing
+    passwords, or accounts that have no password hash.
+    """
+
+    def __init__(self, detail: str = "Invalid email or password") -> None:
+        super().__init__(detail)
+
+
 class ForbiddenError(AppError):
     def __init__(self, detail: str = "Not allowed") -> None:
         super().__init__(403, detail)

@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, UnauthorizedError
+from app.core.exceptions import (
+    ConflictError,
+    GoogleLinkPasswordError,
+    InvalidCredentialsError,
+    UnauthorizedError,
+)
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
@@ -89,7 +94,7 @@ class AuthService:
             or user.password_hash is None
             or not verify_password(password, user.password_hash)
         ):
-            raise UnauthorizedError("Invalid email or password")
+            raise InvalidCredentialsError("Invalid email or password")
         return self._session_for_user(user)
 
     def login_with_google(
@@ -105,12 +110,14 @@ class AuthService:
         if user is None:
             return self._register_google_user(profile)
 
-        # A different subject is rejected before any write. google_sub is assigned
-        # only after the existing password matches. The same generic error covers
-        # a missing password, a wrong password, an account with no password, and
-        # a subject already linked elsewhere.
-        if user.google_sub is not None or not self._password_matches(user, password):
+        # A different subject is rejected before the password is read. A missing
+        # password, or an account with no password hash, is the same generic 401
+        # and is not a counted password failure. google_sub is assigned only
+        # after verification succeeds.
+        if user.google_sub is not None or password is None or user.password_hash is None:
             raise UnauthorizedError("Invalid email or password")
+        if not verify_password(password, user.password_hash):
+            raise GoogleLinkPasswordError("Invalid email or password")
 
         user.google_sub = profile.sub
         if not user.name.strip():
@@ -122,11 +129,6 @@ class AuthService:
             raise ConflictError("Google account could not be linked") from exc
         self.session.refresh(user)
         return self._session_for_user(user)
-
-    def _password_matches(self, user: User, password: str | None) -> bool:
-        if password is None or user.password_hash is None:
-            return False
-        return verify_password(password, user.password_hash)
 
     def _register_google_user(self, profile: GoogleProfile) -> AuthResult:
         organization_name = f"{profile.name}'s workspace"[:200]
