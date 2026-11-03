@@ -50,6 +50,8 @@ class GoogleAuthRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     code: str = Field(min_length=1, max_length=2048)
+    # Present only when linking a Google subject to an existing password account.
+    password: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class AuthResponse(BaseModel):

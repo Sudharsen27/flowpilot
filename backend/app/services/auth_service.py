@@ -92,29 +92,41 @@ class AuthService:
             raise UnauthorizedError("Invalid email or password")
         return self._session_for_user(user)
 
-    def login_with_google(self, profile: GoogleProfile) -> AuthResult:
-        user = self.users.get_by_google_sub(profile.sub)
+    def login_with_google(
+        self, profile: GoogleProfile, *, password: str | None = None
+    ) -> AuthResult:
+        linked = self.users.get_by_google_sub(profile.sub)
+        if linked is not None:
+            # Already linked. A Google email change does not retarget the account,
+            # and this login does not require the local password.
+            return self._session_for_user(linked)
+
+        user = self.users.get_by_email(profile.email)
         if user is None:
-            user = self.users.get_by_email(profile.email)
-            if user is None:
-                return self._register_google_user(profile)
-            if user.google_sub and user.google_sub != profile.sub:
-                raise ConflictError("This Google account cannot be linked to that email")
-            user.google_sub = profile.sub
-            if not user.name.strip():
-                user.name = profile.name
-            try:
-                self.session.commit()
-            except IntegrityError as exc:
-                self.session.rollback()
-                raise ConflictError("Google account could not be linked") from exc
-            self.session.refresh(user)
-            return self._session_for_user(user)
-        if user.email != profile.email:
-            # Keep the stored email as the account identity; Google email changes
-            # are ignored after the first link.
-            pass
+            return self._register_google_user(profile)
+
+        # A different subject is rejected before any write. google_sub is assigned
+        # only after the existing password matches. The same generic error covers
+        # a missing password, a wrong password, an account with no password, and
+        # a subject already linked elsewhere.
+        if user.google_sub is not None or not self._password_matches(user, password):
+            raise UnauthorizedError("Invalid email or password")
+
+        user.google_sub = profile.sub
+        if not user.name.strip():
+            user.name = profile.name
+        try:
+            self.session.commit()
+        except IntegrityError as exc:
+            self.session.rollback()
+            raise ConflictError("Google account could not be linked") from exc
+        self.session.refresh(user)
         return self._session_for_user(user)
+
+    def _password_matches(self, user: User, password: str | None) -> bool:
+        if password is None or user.password_hash is None:
+            return False
+        return verify_password(password, user.password_hash)
 
     def _register_google_user(self, profile: GoogleProfile) -> AuthResult:
         organization_name = f"{profile.name}'s workspace"[:200]

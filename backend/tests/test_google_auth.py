@@ -70,6 +70,22 @@ def test_google_sign_in_creates_owner_workspace(
     assert user.google_sub == "google-sub-ada"
 
 
+def test_already_linked_google_login_ignores_password(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure(monkeypatch)
+    _stub_profile(monkeypatch)
+    created = client.post(PATH, json={"code": "auth-code-1", "password": "not-used"})
+    assert created.status_code == 200
+    again = client.post(
+        PATH,
+        json={"code": "auth-code-2", "password": "still-not-the-account-password"},
+    )
+    assert again.status_code == 200
+    assert again.json()["user"]["id"] == created.json()["user"]["id"]
+    assert again.json()["access_token"]
+
+
 def test_google_sign_in_is_idempotent(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -90,14 +106,157 @@ def test_google_links_existing_password_account(
         json=register_payload(email="ada@gmail.com"),
     )
     assert registered.status_code == 200
+    user = db.query(User).filter_by(email="ada@gmail.com").one()
+    password_hash = user.password_hash
     _configure(monkeypatch)
     _stub_profile(monkeypatch, email="ada@gmail.com", sub="google-sub-link")
-    response = client.post(PATH, json={"code": "auth-code-link"})
+    response = client.post(
+        PATH,
+        json={"code": "auth-code-link", "password": "password12"},
+    )
     assert response.status_code == 200
     assert response.json()["user"]["id"] == registered.json()["user"]["id"]
+    db.expire_all()
     user = db.query(User).filter_by(email="ada@gmail.com").one()
     assert user.google_sub == "google-sub-link"
-    assert user.password_hash is not None
+    assert user.password_hash == password_hash
+
+
+def _membership_rows(db: Session, user_id: str) -> list[tuple[str, str, str, str]]:
+    rows = (
+        db.query(Membership)
+        .filter_by(user_id=user_id)
+        .order_by(Membership.id)
+        .all()
+    )
+    return [(row.id, row.organization_id, row.user_id, row.role) for row in rows]
+
+
+def test_existing_password_account_is_not_silently_linked(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
+    """Email match alone must not attach a Google subject or issue a session."""
+    registered = client.post(
+        "/api/v1/auth/register",
+        json=register_payload(email="ada@gmail.com", organization_name="Ada Org"),
+    )
+    assert registered.status_code == 200
+    user_id = registered.json()["user"]["id"]
+    organization_id = registered.json()["organization"]["id"]
+    membership_id = registered.json()["membership"]["id"]
+    user = db.query(User).filter_by(id=user_id).one()
+    password_hash = user.password_hash
+    memberships = _membership_rows(db, user_id)
+    assert user.google_sub is None
+    assert password_hash is not None
+    assert memberships == [(membership_id, organization_id, user_id, "OWNER")]
+
+    _configure(monkeypatch)
+    _stub_profile(monkeypatch, email="ada@gmail.com", sub="google-sub-attacker")
+    response = client.post(PATH, json={"code": "auth-code-silent"})
+
+    assert response.status_code >= 400
+    assert "access_token" not in response.json()
+    db.expire_all()
+    user = db.query(User).filter_by(id=user_id).one()
+    assert user.google_sub is None
+    assert user.password_hash == password_hash
+    assert _membership_rows(db, user_id) == memberships
+
+
+def test_correct_password_links_existing_password_account(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json=register_payload(email="ada@gmail.com", organization_name="Ada Org"),
+    )
+    assert registered.status_code == 200
+    user_id = registered.json()["user"]["id"]
+    user = db.query(User).filter_by(id=user_id).one()
+    password_hash = user.password_hash
+    memberships = _membership_rows(db, user_id)
+
+    _configure(monkeypatch)
+    _stub_profile(monkeypatch, email="ada@gmail.com", sub="google-sub-link")
+    response = client.post(
+        PATH,
+        json={"code": "auth-code-confirm", "password": "password12"},
+    )
+
+    assert response.status_code == 200, (
+        "password confirmation is not accepted by POST /api/v1/auth/google; "
+        "a schema rejection is not a completed link"
+    )
+    body = response.json()
+    assert body["user"]["id"] == user_id
+    assert body["membership"]["id"] == memberships[0][0]
+    assert body["organization"]["id"] == memberships[0][1]
+    assert body["access_token"]
+    db.expire_all()
+    user = db.query(User).filter_by(id=user_id).one()
+    assert user.google_sub == "google-sub-link"
+    assert user.password_hash == password_hash
+    assert _membership_rows(db, user_id) == memberships
+
+
+def test_incorrect_password_does_not_link_google_identity(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json=register_payload(email="ada@gmail.com", organization_name="Ada Org"),
+    )
+    assert registered.status_code == 200
+    user_id = registered.json()["user"]["id"]
+    user = db.query(User).filter_by(id=user_id).one()
+    password_hash = user.password_hash
+    memberships = _membership_rows(db, user_id)
+
+    _configure(monkeypatch)
+    _stub_profile(monkeypatch, email="ada@gmail.com", sub="google-sub-link")
+    response = client.post(
+        PATH,
+        json={"code": "auth-code-wrong", "password": "not-the-password"},
+    )
+
+    assert response.status_code == 401, (
+        "a 422 for an unknown password field does not show the password was checked"
+    )
+    assert "access_token" not in response.json()
+    db.expire_all()
+    user = db.query(User).filter_by(id=user_id).one()
+    assert user.google_sub is None
+    assert user.password_hash == password_hash
+    assert _membership_rows(db, user_id) == memberships
+
+
+def test_email_match_cannot_replace_a_different_google_subject(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json=register_payload(email="ada@gmail.com", organization_name="Ada Org"),
+    )
+    assert registered.status_code == 200
+    user_id = registered.json()["user"]["id"]
+    user = db.query(User).filter_by(id=user_id).one()
+    user.google_sub = "google-sub-original"
+    db.commit()
+    password_hash = user.password_hash
+    memberships = _membership_rows(db, user_id)
+
+    _configure(monkeypatch)
+    _stub_profile(monkeypatch, email="ada@gmail.com", sub="google-sub-other")
+    response = client.post(PATH, json={"code": "auth-code-collision"})
+
+    assert response.status_code >= 400
+    assert "access_token" not in response.json()
+    db.expire_all()
+    user = db.query(User).filter_by(id=user_id).one()
+    assert user.google_sub == "google-sub-original"
+    assert user.password_hash == password_hash
+    assert _membership_rows(db, user_id) == memberships
 
 
 def test_password_login_rejected_for_google_only_user(

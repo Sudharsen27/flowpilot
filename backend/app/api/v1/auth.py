@@ -49,5 +49,5 @@ def login_with_google(
     db: Session = Depends(get_db),
 ) -> AuthResponse:
     profile = GoogleOAuthService().exchange_authorization_code(payload.code)
-    result = AuthService(db).login_with_google(profile)
+    result = AuthService(db).login_with_google(profile, password=payload.password)
     return to_auth_response(result)
