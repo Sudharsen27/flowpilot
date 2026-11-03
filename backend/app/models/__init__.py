@@ -7,6 +7,7 @@ from app.models.activity_event import (
 )
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
+from app.models.auth_token import AuthToken, AuthTokenPurpose
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus, EvidenceQuality
 from app.models.deal import Deal, DealStage, DealStageEvent
 from app.models.forecast_snapshot import ForecastSnapshot, ForecastSnapshotPeriod
@@ -30,6 +31,8 @@ from app.models.workflow import WorkflowRule, WorkflowRun
 
 __all__ = [
     "AuthLoginFailure",
+    "AuthToken",
+    "AuthTokenPurpose",
     "ActivityActorType",
     "ActivityEntityType",
     "ActivityEvent",

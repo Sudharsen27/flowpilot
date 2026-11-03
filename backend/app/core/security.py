@@ -30,6 +30,7 @@ def create_access_token(
     organization_id: str,
     membership_id: str,
     role: str,
+    session_version: int = 0,
 ) -> str:
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
@@ -37,10 +38,25 @@ def create_access_token(
         "org": organization_id,
         "membership": membership_id,
         "role": role,
+        "ver": session_version,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def token_session_version(payload: dict[str, Any]) -> int:
+    """Return the token's session version.
+
+    Tokens issued before session versioning have no ``ver`` claim. Those mean
+    version 0. A boolean is rejected because ``bool`` is a subclass of ``int``.
+    """
+    if "ver" not in payload:
+        return 0
+    value = payload["ver"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise UnauthorizedError("Invalid or expired token")
+    return value
 
 
 def decode_access_token(token: str) -> dict[str, Any]:

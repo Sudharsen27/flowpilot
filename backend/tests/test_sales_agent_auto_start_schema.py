@@ -26,7 +26,7 @@ def test_alembic_revision_chain_is_linear() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "039_auth_login_failures"
+    assert script.get_current_head() == "040_auth_session_tokens"
     chain = {
         "022_lead_human_attention": "021_sales_agent_auto_start",
         "023_inbound_emails": "022_lead_human_attention",
@@ -43,10 +43,11 @@ def test_alembic_revision_chain_is_linear() -> None:
         "034_deal_foundation": "033_company_prospect_activity",
         "035_deal_history_probability": "034_deal_foundation",
         "036_deal_forecast_category": "035_deal_history_probability",
-        # 037 is reserved for the 4C contract step. 038 revises 036, and 039
-        # revises 038. When 037 ships it should revise the current head.
+        # 037 is reserved for the 4C contract step. 038 revises 036, 039 revises
+        # 038, and 040 revises 039. When 037 ships it should revise the current head.
         "038_forecast_snapshots": "036_deal_forecast_category",
         "039_auth_login_failures": "038_forecast_snapshots",
+        "040_auth_session_tokens": "039_auth_login_failures",
     }
     for revision, down_revision in chain.items():
         row = script.get_revision(revision)

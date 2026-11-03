@@ -193,6 +193,7 @@ class AuthService:
             organization_id=organization.id,
             membership_id=membership.id,
             role=membership.role,
+            session_version=user.session_version,
         )
         return AuthResult(
             access_token=token,

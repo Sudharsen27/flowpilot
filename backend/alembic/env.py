@@ -11,6 +11,7 @@ from app.models import (
     Agent,
     AgentExecution,
     AuthLoginFailure,
+    AuthToken,
     CompanyProspect,
     IdealCustomerProfile,
     InboundEmail,
@@ -29,6 +30,7 @@ from app.models import (
 
 assert (
     AuthLoginFailure
+    and AuthToken
     and Agent
     and AgentExecution
     and CompanyProspect

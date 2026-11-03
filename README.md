@@ -84,6 +84,15 @@ Sign in: [http://localhost:3000/login](http://localhost:3000/login)
 
 Browser tokens are stored in local storage for local development. That is not a production session design.
 
+## API Documentation
+
+FlowPilot provides interactive API documentation powered by Swagger UI. Developers can explore available endpoints, inspect request and response schemas, and test API operations directly through the documentation interface. Protected endpoints require valid authentication.
+
+- **Live API Documentation:** https://flowpilot-backend-product.onrender.com/docs
+- **OpenAPI Specification:** https://flowpilot-backend-product.onrender.com/openapi.json
+- **Backend Health Check:** https://flowpilot-backend-product.onrender.com/health
+- **Database Readiness Check:** https://flowpilot-backend-product.onrender.com/health/ready
+
 ## Checks
 
 ```bash

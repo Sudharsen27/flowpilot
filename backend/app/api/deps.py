@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.ai.factory import create_ai_provider
 from app.ai.provider import AIProvider
 from app.core.exceptions import UnauthorizedError
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, token_session_version
 from app.db.session import get_db
 from app.email.provider import EmailProvider
 from app.email.resend_provider import ResendEmailProvider
@@ -53,6 +53,20 @@ def get_current_user(
         )
     user = UserRepository(db).get_by_id(user_id)
     if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        version = token_session_version(payload)
+    except UnauthorizedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=exc.detail,
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    if version != user.session_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
