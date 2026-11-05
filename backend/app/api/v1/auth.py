@@ -6,7 +6,9 @@ from app.core.exceptions import (
     GoogleLinkPasswordError,
     InvalidCredentialsError,
     RateLimitError,
+    ValidationError,
 )
+from app.core.verification_rate_limit import VerificationPurpose, VerificationRateLimiter
 from app.db.session import get_db
 from app.schemas.identity import (
     AuthResponse,
@@ -16,8 +18,13 @@ from app.schemas.identity import (
     OrganizationPublic,
     RegisterRequest,
     UserPublic,
+    VerificationEmailRequest,
+    VerificationEmailResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
 )
 from app.services.auth_service import AuthResult, AuthService
+from app.services.email_verification_service import EmailVerificationService
 from app.services.google_oauth_service import GoogleOAuthService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -32,6 +39,11 @@ def _client_ip(request: Request) -> str:
 def _limiter(db: Session) -> PostgresAuthRateLimiter:
     factory = sessionmaker(bind=db.get_bind(), autoflush=False, expire_on_commit=False)
     return PostgresAuthRateLimiter(factory)
+
+
+def _verification_limiter(db: Session) -> VerificationRateLimiter:
+    factory = sessionmaker(bind=db.get_bind(), autoflush=False, expire_on_commit=False)
+    return VerificationRateLimiter(factory)
 
 
 def to_auth_response(result: AuthResult) -> AuthResponse:
@@ -72,6 +84,40 @@ def login(
             raise RateLimitError(TOO_MANY_ATTEMPTS) from None
         raise
     return to_auth_response(result)
+
+
+@router.post("/verify-email", response_model=VerifyEmailResponse)
+def verify_email(
+    payload: VerifyEmailRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> VerifyEmailResponse:
+    try:
+        EmailVerificationService(db).verify(payload.token)
+    except ValidationError:
+        allowed = _verification_limiter(db).record(
+            purpose=VerificationPurpose.VERIFY_FAILURE,
+            client_ip=_client_ip(request),
+        )
+        if not allowed:
+            raise RateLimitError(TOO_MANY_ATTEMPTS) from None
+        raise
+    return VerifyEmailResponse(status="verified")
+
+
+@router.post("/verification-email", response_model=VerificationEmailResponse)
+def request_verification_email(
+    payload: VerificationEmailRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> VerificationEmailResponse:
+    allowed = _verification_limiter(db).record(
+        purpose=VerificationPurpose.RESEND,
+        client_ip=_client_ip(request),
+    )
+    if allowed:
+        EmailVerificationService(db).request_verification(str(payload.email))
+    return VerificationEmailResponse(status="accepted")
 
 
 @router.post("/google", response_model=AuthResponse)

@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     email_from_address: str | None = None
     email_from_name: str | None = None
+    # Public origin for links in verification email. Scheme and host only.
+    # Empty skips delivery. It is not required for the API process to start.
+    app_base_url: str | None = None
     # Signing secret for Resend inbound webhooks (Svix). Absent means the
     # webhook refuses events. Outbound sending does not require it.
     resend_webhook_secret: SecretStr | None = None

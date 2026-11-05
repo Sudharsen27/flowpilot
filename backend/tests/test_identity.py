@@ -2,8 +2,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.security import decode_access_token
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
+from app.models.user import User
 from tests.conftest import register_payload
 
 
@@ -13,7 +15,7 @@ def test_health_returns_ok(client: TestClient) -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_register_user_creates_org_and_owner(client: TestClient) -> None:
+def test_register_user_creates_org_and_owner(client: TestClient, db: Session) -> None:
     response = client.post("/api/v1/auth/register", json=register_payload())
     assert response.status_code == 200
     body = response.json()
@@ -26,16 +28,24 @@ def test_register_user_creates_org_and_owner(client: TestClient) -> None:
     assert body["membership"]["role"] == "OWNER"
     assert body["membership"]["user_id"] == body["user"]["id"]
     assert body["membership"]["organization_id"] == body["organization"]["id"]
+    user = db.query(User).filter_by(email="owner@example.com").one()
+    assert user.email_verified_at is None
+    assert user.session_version == 0
 
 
-def test_login_user(client: TestClient) -> None:
+def test_login_user(client: TestClient, db: Session) -> None:
     client.post("/api/v1/auth/register", json=register_payload())
     response = client.post(
         "/api/v1/auth/login",
         json={"email": "owner@example.com", "password": "password12"},
     )
     assert response.status_code == 200
-    assert response.json()["user"]["email"] == "owner@example.com"
+    body = response.json()
+    assert body["user"]["email"] == "owner@example.com"
+    assert decode_access_token(body["access_token"])["ver"] == 0
+    user = db.query(User).filter_by(email="owner@example.com").one()
+    assert user.email_verified_at is None
+    assert user.session_version == 0
 
 
 def test_invalid_login_rejected(client: TestClient) -> None:

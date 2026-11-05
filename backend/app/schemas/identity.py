@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -66,3 +68,23 @@ class MeResponse(BaseModel):
     user: UserPublic
     organization: OrganizationPublic
     membership: MembershipPublic
+
+
+class VerifyEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=1, max_length=512)
+
+
+class VerifyEmailResponse(BaseModel):
+    status: Literal["verified"]
+
+
+class VerificationEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+class VerificationEmailResponse(BaseModel):
+    status: Literal["accepted"]

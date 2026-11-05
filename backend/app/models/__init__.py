@@ -1,4 +1,5 @@
 from app.core.auth_rate_limit import AuthLoginFailure
+from app.core.verification_rate_limit import AuthVerificationEvent
 from app.models.activity_event import (
     ActivityActorType,
     ActivityEntityType,
@@ -33,6 +34,7 @@ __all__ = [
     "AuthLoginFailure",
     "AuthToken",
     "AuthTokenPurpose",
+    "AuthVerificationEvent",
     "ActivityActorType",
     "ActivityEntityType",
     "ActivityEvent",

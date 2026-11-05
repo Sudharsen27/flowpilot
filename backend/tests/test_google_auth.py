@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -68,6 +69,8 @@ def test_google_sign_in_creates_owner_workspace(
     user = db.query(User).filter_by(email="ada@gmail.com").one()
     assert user.password_hash is None
     assert user.google_sub == "google-sub-ada"
+    assert user.email_verified_at is not None
+    assert user.session_version == 0
 
 
 def test_already_linked_google_login_ignores_password(
@@ -120,6 +123,36 @@ def test_google_links_existing_password_account(
     user = db.query(User).filter_by(email="ada@gmail.com").one()
     assert user.google_sub == "google-sub-link"
     assert user.password_hash == password_hash
+    assert user.email_verified_at is not None
+    assert user.session_version == 0
+
+
+def test_google_link_does_not_overwrite_an_existing_verification_time(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json=register_payload(email="ada@gmail.com"),
+    )
+    assert registered.status_code == 200
+    user = db.query(User).filter_by(email="ada@gmail.com").one()
+    user.email_verified_at = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
+    db.commit()
+    db.expire_all()
+    original = db.query(User).filter_by(email="ada@gmail.com").one().email_verified_at
+    assert original is not None
+    _configure(monkeypatch)
+    _stub_profile(monkeypatch, email="ada@gmail.com", sub="google-sub-link")
+    response = client.post(
+        PATH,
+        json={"code": "auth-code-link", "password": "password12"},
+    )
+    assert response.status_code == 200
+    db.expire_all()
+    user = db.query(User).filter_by(email="ada@gmail.com").one()
+    assert user.google_sub == "google-sub-link"
+    assert user.email_verified_at == original
+    assert user.session_version == 0
 
 
 def _membership_rows(db: Session, user_id: str) -> list[tuple[str, str, str, str]]:
@@ -228,6 +261,8 @@ def test_incorrect_password_does_not_link_google_identity(
     user = db.query(User).filter_by(id=user_id).one()
     assert user.google_sub is None
     assert user.password_hash == password_hash
+    assert user.email_verified_at is None
+    assert user.session_version == 0
     assert _membership_rows(db, user_id) == memberships
 
 
@@ -370,4 +405,5 @@ def test_alembic_head_includes_google_oauth() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "040_auth_session_tokens"
+    assert script.get_current_head() == "042_auth_verification_events"
+    assert script.get_revision("030_user_google_oauth") is not None

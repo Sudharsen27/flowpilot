@@ -34,6 +34,13 @@ class User(Base):
         default=0,
         server_default="0",
     )
+    # Null means a password registration has not verified the address.
+    # No server default: a new row stays unverified unless the application sets it.
+    # Existing rows are grandfathered by migration 041.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

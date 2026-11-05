@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -61,6 +62,7 @@ class AuthService:
             email=normalized_email,
             name=name.strip(),
             password_hash=hash_password(password),
+            email_verified_at=None,
         )
         organization = Organization(
             name=organization_name.strip(),
@@ -122,6 +124,8 @@ class AuthService:
         user.google_sub = profile.sub
         if not user.name.strip():
             user.name = profile.name
+        if user.email_verified_at is None:
+            user.email_verified_at = datetime.now(UTC)
         try:
             self.session.commit()
         except IntegrityError as exc:
@@ -137,6 +141,7 @@ class AuthService:
             name=profile.name,
             password_hash=None,
             google_sub=profile.sub,
+            email_verified_at=datetime.now(UTC),
         )
         organization = Organization(
             name=organization_name,
