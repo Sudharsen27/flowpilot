@@ -20,7 +20,20 @@ import type {
   RuntimeConfiguration,
 } from "@/types/api";
 
+const DEFAULT_PAGE_SIZE = 20;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+function pageSizeForRequest(
+  storedPageSize: number,
+  options: readonly number[],
+): number | undefined {
+  if (options.includes(storedPageSize)) return storedPageSize;
+  let withinDefault: number | undefined;
+  for (const option of options) {
+    if (option <= DEFAULT_PAGE_SIZE) withinDefault = option;
+  }
+  return withinDefault ?? options[0];
+}
 
 function isPositiveSafeInteger(value: number | undefined): value is number {
   return value !== undefined && Number.isSafeInteger(value) && value > 0;
@@ -252,7 +265,7 @@ export function GovernmentCompanyDiscovery() {
   const [availabilityError, setAvailabilityError] = useState(false);
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(true);
   const [stateCode, setStateCode] = useState("");
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
   const [previousOffsets, setPreviousOffsets] = useState<number[]>([]);
   const [response, setResponse] =
@@ -273,18 +286,6 @@ export function GovernmentCompanyDiscovery() {
         if (!active) return;
         setAvailability(configuration);
         setIsCheckingAvailability(false);
-        if (
-          isPositiveSafeInteger(
-            configuration.government_company_discovery_max_page_size,
-          )
-        ) {
-          setPageSize(
-            Math.min(
-              20,
-              configuration.government_company_discovery_max_page_size,
-            ),
-          );
-        }
       })
       .catch(() => {
         if (!active) return;
@@ -318,16 +319,15 @@ export function GovernmentCompanyDiscovery() {
     pageSizeOptions.push(pageSizeMaximum);
     pageSizeOptions.sort((left, right) => left - right);
   }
-  const selectedPageSize = pageSizeOptions.includes(pageSize)
-    ? pageSize
-    : (pageSizeOptions[0] ?? "");
+  const requestedPageSize = pageSizeForRequest(pageSize, pageSizeOptions);
+  const selectedPageSize = requestedPageSize ?? "";
 
   async function searchAt(nextOffset: number, resetHistory: boolean) {
     if (
       !isAvailable ||
       isSearching ||
       !stateCode.trim() ||
-      !pageSizeOptions.includes(pageSize) ||
+      requestedPageSize === undefined ||
       nextOffset < 0 ||
       nextOffset > offsetMaximum
     ) {
@@ -346,7 +346,7 @@ export function GovernmentCompanyDiscovery() {
       const result = await searchGovernmentCompanies({
         state_code: stateCode.trim(),
         offset: nextOffset,
-        page_size: pageSize,
+        page_size: requestedPageSize,
       });
       if (sequence === requestSequence.current) {
         setResponse(result);

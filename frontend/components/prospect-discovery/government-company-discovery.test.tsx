@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -182,12 +182,17 @@ describe("Government Company Discovery", () => {
     searchMock.mockResolvedValue(governmentResponse());
     render(<GovernmentCompanyDiscovery />);
 
-    await screen.findByRole("button", { name: "Search government records" });
-    await user.type(screen.getByLabelText("CompanyStateCode"), "DL");
+    await waitFor(() => {
+      expect(screen.getByLabelText("CompanyStateCode")).toBeEnabled();
+    });
+    const stateCode = screen.getByLabelText("CompanyStateCode");
+    await user.type(stateCode, "DL");
     expect(screen.getByLabelText("Records per page")).toHaveValue("1");
-    await user.click(
-      screen.getByRole("button", { name: "Search government records" }),
-    );
+    const searchButton = screen.getByRole("button", {
+      name: "Search government records",
+    });
+    expect(searchButton).toBeEnabled();
+    await user.click(searchButton);
 
     expect(searchMock).toHaveBeenCalledWith({
       state_code: "DL",
@@ -220,6 +225,60 @@ describe("Government Company Discovery", () => {
     expect(
       screen.queryByRole("button", { name: /import|save|create lead/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("submits and pages with the displayed size when the stored default exceeds the server maximum", async () => {
+    const user = userEvent.setup();
+    runtimeMock.mockResolvedValue(
+      configuration({
+        government_company_discovery_available: true,
+        government_company_discovery_max_page_size: 1,
+      }),
+    );
+    searchMock
+      .mockResolvedValueOnce(governmentResponse())
+      .mockResolvedValueOnce(
+        governmentResponse({
+          items: [{ CIN: "SECOND", CompanyName: "Second Source Company" }],
+          offset: 1,
+          has_more: true,
+          next_offset: 2,
+        }),
+      )
+      .mockResolvedValueOnce(governmentResponse());
+    render(<GovernmentCompanyDiscovery />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("CompanyStateCode")).toBeEnabled();
+    });
+    const pageSize = screen.getByLabelText("Records per page");
+    expect(pageSize).toHaveValue("1");
+    expect(within(pageSize).getByRole("option", { name: "1" })).toBeVisible();
+    expect(
+      within(pageSize).queryByRole("option", { name: "20" }),
+    ).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("CompanyStateCode"), "DL");
+    await user.click(
+      screen.getByRole("button", { name: "Search government records" }),
+    );
+
+    expect(searchMock).toHaveBeenCalledWith({
+      state_code: "DL",
+      offset: 0,
+      page_size: 1,
+    });
+    await user.click(await screen.findByRole("button", { name: "Next" }));
+    expect(searchMock).toHaveBeenNthCalledWith(2, {
+      state_code: "DL",
+      offset: 1,
+      page_size: 1,
+    });
+    await user.click(screen.getByRole("button", { name: "Previous" }));
+    expect(searchMock).toHaveBeenNthCalledWith(3, {
+      state_code: "DL",
+      offset: 0,
+      page_size: 1,
+    });
   });
 
   it("paginates using backend offsets and supports returning to the previous page", async () => {
