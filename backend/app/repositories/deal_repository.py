@@ -105,7 +105,7 @@ class DealRepository:
                 select(DealStageEvent)
                 .where(*conditions)
                 .options(selectinload(DealStageEvent.changed_by))
-                .order_by(DealStageEvent.created_at.asc(), DealStageEvent.id.asc())
+                .order_by(DealStageEvent.revision.asc())
                 .limit(limit)
                 .offset(offset)
             )

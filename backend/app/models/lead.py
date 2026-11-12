@@ -100,6 +100,9 @@ class Lead(Base):
         default=False,
         server_default=text("false"),
     )
+    # Escalation event for the open episode. Null when attention is clear.
+    # Not a foreign key: the row and the event commit or roll back together.
+    human_attention_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     sales_agent_auto_start_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

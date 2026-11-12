@@ -171,6 +171,14 @@ export type VerificationEmailResponse = {
   status: "accepted";
 };
 
+export type PasswordResetResponse = {
+  status: "accepted";
+};
+
+export type PasswordResetConfirmResponse = {
+  status: "reset";
+};
+
 export type VerifyEmailResponse = {
   status: "verified";
 };

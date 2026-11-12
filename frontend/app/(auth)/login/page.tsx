@@ -13,7 +13,7 @@ import { FormField } from "@/components/forms/form-field";
 import { Input } from "@/components/forms/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
-import { requestVerificationEmail } from "@/lib/api/auth";
+import { requestPasswordReset, requestVerificationEmail } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import type { AuthResponse } from "@/types/api";
 
@@ -21,6 +21,9 @@ const ACCEPTED_MESSAGE =
   "If verification is available for this account, an email will be sent shortly.";
 const RESEND_ERROR_MESSAGE =
   "The verification email could not be requested. Try again.";
+const RESET_ACCEPTED_MESSAGE =
+  "If a password reset is available for this account, instructions will be sent shortly.";
+const RESET_ERROR_MESSAGE = "The password reset could not be requested. Try again.";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,6 +36,10 @@ export default function LoginPage() {
   const [resendPending, setResendPending] = useState(false);
   const [resendAccepted, setResendAccepted] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
+  const resetInFlight = useRef(false);
+  const [resetPending, setResetPending] = useState(false);
+  const [resetAccepted, setResetAccepted] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const handleGoogleSuccess = useCallback(
     (auth: AuthResponse) => {
@@ -88,6 +95,28 @@ export default function LoginPage() {
     }
   }
 
+  async function requestReset() {
+    const address = email.trim();
+    if (resetInFlight.current || !address) return;
+    resetInFlight.current = true;
+    setResetPending(true);
+    setResetAccepted(false);
+    setResetError(null);
+    try {
+      const response = await requestPasswordReset(address);
+      if (response.status !== "accepted") {
+        setResetError(RESET_ERROR_MESSAGE);
+        return;
+      }
+      setResetAccepted(true);
+    } catch {
+      setResetError(RESET_ERROR_MESSAGE);
+    } finally {
+      resetInFlight.current = false;
+      setResetPending(false);
+    }
+  }
+
   return (
     <AuthFrame
       title="Sign in"
@@ -139,6 +168,25 @@ export default function LoginPage() {
           <Button type="submit" className="mt-1 h-10 w-full" disabled={pending}>
             {pending ? "Signing in…" : "Sign in"}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 w-full"
+            disabled={resetPending || !email.trim()}
+            onClick={() => void requestReset()}
+          >
+            {resetPending ? "Sending…" : "Forgot password"}
+          </Button>
+          {resetAccepted ? (
+            <p className="text-sm" role="status">
+              {RESET_ACCEPTED_MESSAGE}
+            </p>
+          ) : null}
+          {resetError ? (
+            <p className="text-danger-text text-sm" role="alert">
+              {resetError}
+            </p>
+          ) : null}
           <Button
             type="button"
             variant="outline"

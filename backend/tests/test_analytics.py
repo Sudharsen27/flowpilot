@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.activity_event import (
@@ -53,6 +54,12 @@ def _lead(
 def _qualification(
     db: Session, lead: Lead, outcome: str, *, at: datetime = NOW, status: str = "COMPLETED"
 ) -> None:
+    current = db.scalar(
+        select(func.max(LeadQualification.sequence)).where(
+            LeadQualification.organization_id == lead.organization_id,
+            LeadQualification.lead_id == lead.id,
+        )
+    )
     db.add(
         LeadQualification(
             organization_id=lead.organization_id,
@@ -62,8 +69,10 @@ def _qualification(
             result={"qualification": outcome},
             started_at=at,
             completed_at=at if status == LeadQualificationRecordStatus.COMPLETED else None,
+            sequence=int(current or 0) + 1,
         )
     )
+    db.flush()
 
 
 def _draft(db: Session, lead: Lead, *, approved: bool, at: datetime = NOW) -> LeadResponseDraft:

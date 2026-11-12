@@ -8,6 +8,7 @@ from app.core.exceptions import (
     RateLimitError,
     ValidationError,
 )
+from app.core.password_reset_rate_limit import PasswordResetRateLimiter
 from app.core.verification_rate_limit import VerificationPurpose, VerificationRateLimiter
 from app.db.session import get_db
 from app.schemas.identity import (
@@ -16,6 +17,10 @@ from app.schemas.identity import (
     LoginRequest,
     MembershipPublic,
     OrganizationPublic,
+    PasswordResetConfirmRequest,
+    PasswordResetConfirmResponse,
+    PasswordResetRequest,
+    PasswordResetResponse,
     RegisterRequest,
     UserPublic,
     VerificationEmailRequest,
@@ -26,6 +31,7 @@ from app.schemas.identity import (
 from app.services.auth_service import AuthResult, AuthService
 from app.services.email_verification_service import EmailVerificationService
 from app.services.google_oauth_service import GoogleOAuthService
+from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -44,6 +50,11 @@ def _limiter(db: Session) -> PostgresAuthRateLimiter:
 def _verification_limiter(db: Session) -> VerificationRateLimiter:
     factory = sessionmaker(bind=db.get_bind(), autoflush=False, expire_on_commit=False)
     return VerificationRateLimiter(factory)
+
+
+def _password_reset_limiter(db: Session) -> PasswordResetRateLimiter:
+    factory = sessionmaker(bind=db.get_bind(), autoflush=False, expire_on_commit=False)
+    return PasswordResetRateLimiter(factory)
 
 
 def to_auth_response(result: AuthResult) -> AuthResponse:
@@ -118,6 +129,27 @@ def request_verification_email(
     if allowed:
         EmailVerificationService(db).request_verification(str(payload.email))
     return VerificationEmailResponse(status="accepted")
+
+
+@router.post("/password-reset", response_model=PasswordResetResponse)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PasswordResetResponse:
+    allowed = _password_reset_limiter(db).record(client_ip=_client_ip(request))
+    if allowed:
+        PasswordResetService(db).request_reset(str(payload.email))
+    return PasswordResetResponse(status="accepted")
+
+
+@router.post("/password-reset/confirm", response_model=PasswordResetConfirmResponse)
+def confirm_password_reset(
+    payload: PasswordResetConfirmRequest,
+    db: Session = Depends(get_db),
+) -> PasswordResetConfirmResponse:
+    PasswordResetService(db).confirm_reset(payload.token, payload.password)
+    return PasswordResetConfirmResponse(status="reset")
 
 
 @router.post("/google", response_model=AuthResponse)

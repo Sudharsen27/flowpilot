@@ -453,6 +453,7 @@ class DealService:
                 changed_by_user_id=changed_by_user_id,
                 change_reason=change_reason,
                 created_at=created_at,
+                revision=deal.revision,
                 is_correction=is_correction,
             )
         )

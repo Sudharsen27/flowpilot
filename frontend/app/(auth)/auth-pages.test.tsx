@@ -23,12 +23,16 @@ const auth: AuthResponse = {
 const ACCEPTED_MESSAGE =
   "If verification is available for this account, an email will be sent shortly.";
 
+const RESET_ACCEPTED_MESSAGE =
+  "If a password reset is available for this account, instructions will be sent shortly.";
+
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
   completeAuth: vi.fn(),
   requestVerificationEmail: vi.fn(),
+  requestPasswordReset: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -37,6 +41,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api/auth", () => ({
   requestVerificationEmail: mocks.requestVerificationEmail,
+  requestPasswordReset: mocks.requestPasswordReset,
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -68,6 +73,7 @@ describe("auth pages", () => {
     mocks.signUp.mockReset();
     mocks.completeAuth.mockReset();
     mocks.requestVerificationEmail.mockReset();
+    mocks.requestPasswordReset.mockReset();
   });
 
   it("frames sign-in as an approval workspace", () => {
@@ -241,5 +247,59 @@ describe("auth pages", () => {
 
     resolveRequest({ status: "accepted" });
     expect(await screen.findByRole("status")).toHaveTextContent(ACCEPTED_MESSAGE);
+  });
+
+  it("requests a password reset for the entered address without signing in", async () => {
+    const user = userEvent.setup();
+    mocks.requestPasswordReset.mockResolvedValue({ status: "accepted" });
+
+    render(<LoginPage />);
+    await user.type(screen.getByLabelText(/^email/i), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: "Forgot password" }));
+
+    expect(mocks.requestPasswordReset).toHaveBeenCalledWith("owner@example.com");
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(await screen.findByRole("status")).toHaveTextContent(RESET_ACCEPTED_MESSAGE);
+  });
+
+  it("shows a retryable error when the password reset request fails", async () => {
+    const user = userEvent.setup();
+    mocks.requestPasswordReset.mockRejectedValue(new Error("network"));
+
+    render(<LoginPage />);
+    await user.type(screen.getByLabelText(/^email/i), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: "Forgot password" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The password reset could not be requested. Try again.",
+    );
+    expect(screen.queryByText(RESET_ACCEPTED_MESSAGE)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Forgot password" })).toBeEnabled();
+  });
+
+  it("does not send a second password reset while the first is running", async () => {
+    let resolveRequest: (value: { status: "accepted" }) => void = () => {};
+    mocks.requestPasswordReset.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+
+    render(<LoginPage />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/^email/i), "owner@example.com");
+    const button = screen.getByRole("button", { name: "Forgot password" });
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+
+    expect(button).toBeDisabled();
+    expect(mocks.requestPasswordReset).toHaveBeenCalledTimes(1);
+
+    resolveRequest({ status: "accepted" });
+    expect(await screen.findByRole("status")).toHaveTextContent(RESET_ACCEPTED_MESSAGE);
   });
 });

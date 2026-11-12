@@ -420,8 +420,9 @@ def test_previous_release_closes_deals_without_clearing_the_category(
     db.execute(
         text(
             "INSERT INTO deal_stage_events (id, organization_id, deal_id, previous_stage, "
-            "new_stage, new_amount, new_expected_close_date, is_correction, created_at) VALUES "
-            "(:event, :org, :id, 'QUALIFICATION', :stage, 1.00, '2026-12-01', 0, "
+            "new_stage, new_amount, new_expected_close_date, is_correction, revision, "
+            "created_at) VALUES "
+            "(:event, :org, :id, 'QUALIFICATION', :stage, 1.00, '2026-12-01', 0, 1, "
             "'2026-10-29 00:00:00')"
         ),
         {"event": f"event-{stage}", "org": organization.id, "id": deal.id, "stage": stage},
@@ -463,9 +464,10 @@ def test_database_rejects_inconsistent_category_history(
         "deal_id": deal.id,
         "previous_stage": "QUALIFICATION",
         "new_stage": "QUALIFICATION",
-        "new_amount": Decimal("1.00"),
-        "new_expected_close_date": date(2026, 12, 1),
-    }
+            "new_amount": Decimal("1.00"),
+            "new_expected_close_date": date(2026, 12, 1),
+            "revision": 1,
+        }
     values.update(overrides)
     db.add(DealStageEvent(**values))
     with pytest.raises(IntegrityError):

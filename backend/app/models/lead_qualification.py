@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     func,
@@ -63,6 +64,13 @@ class LeadQualification(Base):
             "'VALIDATION_ERROR', 'EXECUTION_ERROR', 'CONFIGURATION_ERROR')",
             name="ck_lead_qualifications_failure_category",
         ),
+        CheckConstraint("sequence >= 1", name="ck_lead_qualifications_sequence_positive"),
+        UniqueConstraint(
+            "organization_id",
+            "lead_id",
+            "sequence",
+            name="uq_lead_qualifications_organization_lead_sequence",
+        ),
         Index(
             "ix_lead_qualifications_organization_id_lead_id_created_at_id",
             "organization_id",
@@ -95,6 +103,8 @@ class LeadQualification(Base):
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Per-lead insertion order. created_at is not unique enough to decide which row is latest.
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

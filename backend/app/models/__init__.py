@@ -1,4 +1,5 @@
 from app.core.auth_rate_limit import AuthLoginFailure
+from app.core.password_reset_rate_limit import AuthPasswordResetEvent
 from app.core.verification_rate_limit import AuthVerificationEvent
 from app.models.activity_event import (
     ActivityActorType,
@@ -32,6 +33,7 @@ from app.models.workflow import WorkflowRule, WorkflowRun
 
 __all__ = [
     "AuthLoginFailure",
+    "AuthPasswordResetEvent",
     "AuthToken",
     "AuthTokenPurpose",
     "AuthVerificationEvent",

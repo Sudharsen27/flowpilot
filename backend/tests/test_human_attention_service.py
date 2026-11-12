@@ -38,6 +38,7 @@ def test_new_lead_defaults_to_no_human_attention(db: Session) -> None:
 
     assert loaded is not None
     assert loaded.human_attention_required is False
+    assert loaded.human_attention_event_id is None
 
 
 def test_transition_marks_attention_and_records_safe_activity(db: Session) -> None:
@@ -68,6 +69,7 @@ def test_transition_marks_attention_and_records_safe_activity(db: Session) -> No
     assert event.summary == "The AI decision flagged this lead for human attention."
     assert event.status == "REQUIRED"
     assert event.dedupe_key.endswith("qualification-1")
+    assert lead.human_attention_event_id == event.id
     assert event.actor_user_id is None
     assert "Ada Prospect" not in event.summary
     assert "enquiry" not in event.summary.lower()
@@ -207,6 +209,7 @@ def test_resolve_clears_attention_and_records_safe_human_action(db: Session) -> 
         result={"qualification": "QUALIFIED"},
         started_at=now,
         completed_at=now,
+        sequence=1,
     )
     db.add(qualification)
     lead.status = LeadStatus.QUALIFIED
@@ -361,7 +364,70 @@ def test_stale_resolution_does_not_clear_newer_attention(
 
     db.refresh(lead)
     assert lead.human_attention_required is True
+    assert lead.human_attention_event_id is not None
+    episode = db.get(ActivityEvent, lead.human_attention_event_id)
+    assert episode is not None
+    assert episode.dedupe_key.endswith("qualification-2")
     assert _resolved_events(db, organization.id, lead.id) == []
+
+
+def test_equal_timestamps_do_not_merge_attention_episodes(db: Session) -> None:
+    organization, lead = _lead(db, "equal-timestamps")
+    service = HumanAttentionService(db)
+    frozen = datetime(2026, 11, 12, 15, 57, 12, tzinfo=UTC)
+
+    service.require_attention(
+        organization_id=organization.id,
+        lead_id=lead.id,
+        qualification_id="qualification-1",
+    )
+    _tie_attention_clock(db, organization.id, lead, frozen)
+    assert _resolve(db, organization.id, lead.id) is True
+
+    assert service.require_attention(
+        organization_id=organization.id,
+        lead_id=lead.id,
+        qualification_id="qualification-2",
+    ) is True
+    _tie_attention_clock(db, organization.id, lead, frozen)
+    assert _as_utc(lead.updated_at) == frozen
+    assert _resolve(db, organization.id, lead.id) is True
+    assert _resolve(db, organization.id, lead.id) is False
+
+    escalations = list(
+        db.scalars(
+            select(ActivityEvent).where(
+                ActivityEvent.organization_id == organization.id,
+                ActivityEvent.lead_id == lead.id,
+                ActivityEvent.status == "REQUIRED",
+            )
+        )
+    )
+    assert len(escalations) == 2
+    assert {_as_utc(event.occurred_at) for event in escalations} == {frozen}
+    events = _resolved_events(db, organization.id, lead.id)
+    assert {event.dedupe_key for event in events} == {
+        f"lead:{lead.id}:human_attention:resolved:{escalation.id}" for escalation in escalations
+    }
+    db.refresh(lead)
+    assert lead.human_attention_required is False
+    assert lead.human_attention_event_id is None
+
+
+def _tie_attention_clock(db: Session, organization_id: str, lead: Lead, frozen: datetime) -> None:
+    lead.updated_at = frozen
+    for event in db.scalars(
+        select(ActivityEvent).where(
+            ActivityEvent.organization_id == organization_id,
+            ActivityEvent.lead_id == lead.id,
+        )
+    ):
+        event.occurred_at = frozen
+    db.commit()
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def test_resolve_activity_failure_restores_attention(

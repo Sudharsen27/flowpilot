@@ -824,6 +824,7 @@ def test_correction_flag_is_constrained_to_won_events_with_a_reason(db: Session)
             "new_stage": "QUALIFICATION",
             "new_amount": Decimal("1.00"),
             "new_expected_close_date": date(2026, 12, 1),
+            "revision": 1,
         }
         values.update(overrides)
         db.add(DealStageEvent(**values))
@@ -1008,6 +1009,51 @@ def test_manager_reopen_and_amount_correction_coexist(client: TestClient, db: Se
         (["STAGE", "FORECAST_CATEGORY"], False),
         (["STAGE", "FORECAST_CATEGORY"], False),
         (["AMOUNT"], True),
+    ]
+
+
+def test_history_orders_equal_timestamps_by_revision(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later event can have an earlier UUID when created_at does not advance."""
+    frozen = datetime(2026, 11, 12, 15, 57, 12, tzinfo=UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return frozen
+
+    monkeypatch.setattr("app.services.deal_service.datetime", FrozenDateTime)
+    ids = iter(
+        [
+            "11111111-1111-4111-8111-111111111111",
+            "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            "00000000-0000-4000-8000-000000000001",
+        ]
+    )
+    monkeypatch.setattr("app.models.deal.uuid4", lambda: next(ids))
+    token = _auth(client)["access_token"]
+    deal = _deal(client, token).json()
+    moved = _stage(client, token, deal, stage="DISCOVERY").json()
+    renamed = _patch(client, token, moved, name="Renamed expansion")
+    assert renamed.status_code == 200
+    assert renamed.json()["revision"] == 3
+
+    events = _history(client, token, deal["id"])
+    assert [event["changes"] for event in events] == [["CREATED"], ["STAGE"]]
+    assert events[0]["created_at"] == events[1]["created_at"]
+    assert "revision" not in events[0]
+    stored = list(
+        db.scalars(
+            select(DealStageEvent)
+            .where(DealStageEvent.deal_id == deal["id"])
+            .order_by(DealStageEvent.revision.asc())
+        )
+    )
+    assert [row.revision for row in stored] == [1, 2]
+    assert [row.id for row in stored] == [
+        "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "00000000-0000-4000-8000-000000000001",
     ]
 
 

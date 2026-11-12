@@ -206,7 +206,8 @@ class DealStageEvent(Base):
     """Append-only deal history. Unchanged dimensions repeat their value (previous == new);
     the creation event has no previous values. Probabilities are the override (NULL = stage
     default); rows written before migration 035 have NULL for both. Forecast categories are
-    NULL on closed deals; rows written before migration 036 have NULL for both."""
+    NULL on closed deals; rows written before migration 036 have NULL for both. ``revision``
+    is the deal revision when the row was written and is the chronological order."""
 
     __tablename__ = "deal_stage_events"
     __table_args__ = (
@@ -258,6 +259,13 @@ class DealStageEvent(Base):
             "AND new_stage = 'CLOSED_WON' AND change_reason IS NOT NULL)",
             name="ck_deal_stage_events_correction_won_only",
         ),
+        CheckConstraint("revision >= 1", name="ck_deal_stage_events_revision_positive"),
+        UniqueConstraint(
+            "organization_id",
+            "deal_id",
+            "revision",
+            name="uq_deal_stage_events_organization_deal_revision",
+        ),
         Index(
             "ix_deal_stage_events_organization_deal_created_at",
             "organization_id",
@@ -303,6 +311,9 @@ class DealStageEvent(Base):
         nullable=True,
     )
     change_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Deal.revision at the time this row was written. Name-only and other non-history
+    # updates increment the deal revision without a row, so these values can skip.
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

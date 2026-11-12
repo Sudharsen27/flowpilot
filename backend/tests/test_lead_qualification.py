@@ -1,15 +1,23 @@
 import json
+from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.provider import AIGenerateRequest, AIGenerateResult, TokenUsage
 from app.core.exceptions import ProviderError, ProviderNotConfiguredError
 from app.models.lead import Lead
 from app.models.lead_qualification import LeadQualification, LeadQualificationRecordStatus
 from app.models.membership import MembershipRole
+from app.repositories.lead_qualification_repository import (
+    LeadQualificationRepository,
+    lead_lock_statement,
+)
 from tests.test_agent_api import _add_org_member
 from tests.test_agent_runtime import _headers
 from tests.test_leads import _auth, _create
@@ -351,9 +359,220 @@ def test_repeat_qualification_creates_a_new_record(client: TestClient, db: Sessi
     listed = client.get(f"/api/v1/leads/{lead['id']}", headers=_headers(token)).json()
     assert listed["status"] == "NEW"
     assert listed["latest_qualification"]["id"] == second["id"]
+    assert "sequence" not in second
     count = db.scalar(
         select(func.count()).select_from(LeadQualification).where(
             LeadQualification.lead_id == lead["id"]
         )
     )
     assert count == 2
+
+
+def test_latest_queries_follow_sequence_when_timestamps_match(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    lead = _create(client, created["access_token"]).json()
+    frozen = datetime(2026, 11, 12, 15, 57, 12, tzinfo=UTC)
+    earlier_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    later_id = "00000000-0000-4000-8000-000000000001"
+    db.add_all(
+        [
+            _stored_qualification(
+                created["organization"]["id"],
+                lead["id"],
+                qualification_id=earlier_id,
+                sequence=1,
+                created_at=frozen,
+                status=LeadQualificationRecordStatus.COMPLETED,
+            ),
+            _stored_qualification(
+                created["organization"]["id"],
+                lead["id"],
+                qualification_id=later_id,
+                sequence=2,
+                created_at=frozen,
+                status=LeadQualificationRecordStatus.COMPLETED,
+            ),
+        ]
+    )
+    db.commit()
+    repository = LeadQualificationRepository(db)
+    latest = repository.latest_for_leads(created["organization"]["id"], [lead["id"]])
+    completed = repository.latest_completed_for_leads(
+        created["organization"]["id"], [lead["id"]]
+    )
+    assert latest[lead["id"]].id == later_id
+    assert completed[lead["id"]].id == later_id
+    assert latest[lead["id"]].created_at == completed[lead["id"]].created_at
+
+
+def test_latest_completed_skips_a_newer_failure_with_the_same_timestamp(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    lead = _create(client, created["access_token"]).json()
+    frozen = datetime(2026, 11, 12, 15, 57, 12, tzinfo=UTC)
+    completed_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    failed_id = "00000000-0000-4000-8000-000000000001"
+    organization_id = created["organization"]["id"]
+    db.add_all(
+        [
+            _stored_qualification(
+                organization_id,
+                lead["id"],
+                qualification_id=completed_id,
+                sequence=1,
+                created_at=frozen,
+                status=LeadQualificationRecordStatus.COMPLETED,
+            ),
+            _stored_qualification(
+                organization_id,
+                lead["id"],
+                qualification_id=failed_id,
+                sequence=2,
+                created_at=frozen,
+                status=LeadQualificationRecordStatus.FAILED,
+            ),
+        ]
+    )
+    db.commit()
+    repository = LeadQualificationRepository(db)
+    latest = repository.latest_for_leads(organization_id, [lead["id"]])
+    completed = repository.latest_completed_for_leads(organization_id, [lead["id"]])
+    assert latest[lead["id"]].id == failed_id
+    assert completed[lead["id"]].id == completed_id
+
+
+def test_sqlite_sequence_conflict_is_retried_once(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    lead = _create(client, created["access_token"]).json()
+    organization_id = created["organization"]["id"]
+    repository = LeadQualificationRepository(db)
+    repository.add(
+        _stored_qualification(
+            organization_id,
+            lead["id"],
+            qualification_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            sequence=0,
+            created_at=datetime(2026, 11, 12, tzinfo=UTC),
+        )
+    )
+    db.commit()
+    calls = {"count": 0}
+    real_next = repository._next_sequence
+
+    def collide_once(organization_id: str, lead_id: str) -> int:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return 1
+        return real_next(organization_id, lead_id)
+
+    monkeypatch.setattr(repository, "_next_sequence", collide_once)
+    second = repository.add(
+        _stored_qualification(
+            organization_id,
+            lead["id"],
+            qualification_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            sequence=0,
+            created_at=datetime(2026, 11, 12, tzinfo=UTC),
+        )
+    )
+    db.commit()
+    assert calls["count"] == 2
+    assert second.sequence == 2
+
+
+def test_rollback_discards_a_qualification_after_a_shared_connection_commit(
+    client: TestClient, db: Session
+) -> None:
+    """A released savepoint would already be committed on the shared SQLite connection."""
+    created = _auth(client)
+    lead = _create(client, created["access_token"]).json()
+    organization_id = created["organization"]["id"]
+    db.scalar(select(Lead).where(Lead.id == lead["id"]))
+    other = sessionmaker(bind=db.get_bind())()
+    try:
+        other.scalar(select(Lead).where(Lead.id == lead["id"]))
+        other.commit()
+    finally:
+        other.close()
+
+    LeadQualificationRepository(db).add(
+        _stored_qualification(
+            organization_id,
+            lead["id"],
+            qualification_id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            sequence=0,
+            created_at=datetime(2026, 11, 12, tzinfo=UTC),
+        )
+    )
+    db.rollback()
+    remaining = db.scalar(
+        select(func.count())
+        .select_from(LeadQualification)
+        .where(LeadQualification.organization_id == organization_id)
+    )
+    assert remaining == 0
+
+
+def test_non_sequence_integrity_error_is_not_retried(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    lead = _create(client, created["access_token"]).json()
+    repository = LeadQualificationRepository(db)
+    calls = {"count": 0}
+    real_next = repository._next_sequence
+
+    def count_calls(organization_id: str, lead_id: str) -> int:
+        calls["count"] += 1
+        return real_next(organization_id, lead_id)
+
+    monkeypatch.setattr(repository, "_next_sequence", count_calls)
+    row = _stored_qualification(
+        created["organization"]["id"],
+        lead["id"],
+        qualification_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        sequence=0,
+        created_at=datetime(2026, 11, 12, tzinfo=UTC),
+    )
+    row.status = "NOT_A_STATUS"
+    with pytest.raises(IntegrityError):
+        repository.add(row)
+    assert calls["count"] == 1
+    db.rollback()
+
+
+def test_lead_lock_is_emitted_for_postgresql_and_omitted_for_sqlite() -> None:
+    statement = lead_lock_statement("org-1", "lead-1")
+    postgres = str(statement.compile(dialect=postgresql.dialect()))
+    sqlite_sql = str(statement.compile(dialect=sqlite.dialect()))
+    assert "FOR UPDATE" in postgres
+    assert "FOR UPDATE" not in sqlite_sql
+
+
+def _stored_qualification(
+    organization_id: str,
+    lead_id: str,
+    *,
+    qualification_id: str,
+    sequence: int,
+    created_at: datetime,
+    status: str = LeadQualificationRecordStatus.COMPLETED,
+) -> LeadQualification:
+    completed = status == LeadQualificationRecordStatus.COMPLETED
+    return LeadQualification(
+        id=qualification_id,
+        organization_id=organization_id,
+        lead_id=lead_id,
+        status=status,
+        enquiry=ENQUIRY,
+        result={"qualification": "QUALIFIED"} if completed else None,
+        started_at=created_at,
+        completed_at=created_at if completed else None,
+        created_at=created_at,
+        sequence=sequence,
+    )

@@ -519,6 +519,7 @@ def test_stale_running_recovers_without_ai_and_preserves_qualification(
         enquiry=ENQUIRY,
         started_at=datetime.now(UTC),
         completed_at=datetime.now(UTC),
+        sequence=1,
     )
     db.add(qualification)
     db.flush()

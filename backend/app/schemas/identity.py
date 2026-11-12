@@ -88,3 +88,24 @@ class VerificationEmailRequest(BaseModel):
 
 class VerificationEmailResponse(BaseModel):
     status: Literal["accepted"]
+
+
+class PasswordResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+class PasswordResetResponse(BaseModel):
+    status: Literal["accepted"]
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=1, max_length=512)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordResetConfirmResponse(BaseModel):
+    status: Literal["reset"]

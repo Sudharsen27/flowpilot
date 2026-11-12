@@ -26,7 +26,7 @@ def test_alembic_revision_chain_is_linear() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "042_auth_verification_events"
+    assert script.get_current_head() == "044_chronological_order"
     chain = {
         "022_lead_human_attention": "021_sales_agent_auto_start",
         "023_inbound_emails": "022_lead_human_attention",
@@ -51,6 +51,8 @@ def test_alembic_revision_chain_is_linear() -> None:
         "040_auth_session_tokens": "039_auth_login_failures",
         "041_user_email_verified": "040_auth_session_tokens",
         "042_auth_verification_events": "041_user_email_verified",
+        "043_auth_password_reset_events": "042_auth_verification_events",
+        "044_chronological_order": "043_auth_password_reset_events",
     }
     for revision, down_revision in chain.items():
         row = script.get_revision(revision)

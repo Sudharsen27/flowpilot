@@ -232,6 +232,7 @@ def test_same_organization_foreign_keys_are_enforced(pg_session: Session) -> Non
             new_stage="QUALIFICATION",
             new_amount=Decimal("1.00"),
             new_expected_close_date=date(2026, 12, 1),
+            revision=1,
         )
     )
     with pytest.raises(IntegrityError):
@@ -947,7 +948,7 @@ def test_forecast_category_lifecycle_on_postgres(pg_engine: Any) -> None:
             (row.previous_forecast_category, row.new_forecast_category)
             for row in session.query(DealStageEvent)
             .filter_by(deal_id=deal.id)
-            .order_by(DealStageEvent.created_at, DealStageEvent.id)
+            .order_by(DealStageEvent.revision)
         ]
         assert history == [(None, "PIPELINE"), ("PIPELINE", "COMMIT"), ("COMMIT", None)]
     finally:

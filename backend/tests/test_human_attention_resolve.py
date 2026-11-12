@@ -290,6 +290,7 @@ def test_resolve_preserves_status_sales_run_and_approval(
         result={"qualification": "QUALIFIED"},
         started_at=now,
         completed_at=now,
+        sequence=1,
     )
     db.add(sales_run)
     db.add(qualification)
