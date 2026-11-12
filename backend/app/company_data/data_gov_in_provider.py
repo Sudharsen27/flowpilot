@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import logging
 import math
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
 from types import TracebackType
-from typing import Any, Protocol, cast
+from typing import Any, NoReturn, Protocol, cast
 
 import certifi
 
@@ -20,6 +21,8 @@ from app.company_data.provider import (
     CompanyDataRecord,
 )
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 ROC_RESOURCE_UUID = "4dbe5667-7b6b-41d7-82af-211562424d9a"
 ROC_DATASET_NAME = "Registrars of Companies (RoC)-wise Company Master Data"
@@ -40,6 +43,38 @@ _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _MAX_RECORD_FIELDS = 100
 _MAX_FIELD_NAME_LENGTH = 200
 _MAX_STRING_VALUE_LENGTH = 10_000
+
+
+def _log_provider_failure(category: str, status_code: int | None = None) -> None:
+    """Log a fixed failure category. The message must not include caller data."""
+    if (
+        isinstance(status_code, int)
+        and not isinstance(status_code, bool)
+        and 100 <= status_code <= 599
+    ):
+        logger.warning(
+            "government company discovery provider failure category=%s status_code=%s",
+            category,
+            status_code,
+        )
+        return
+    logger.warning(
+        "government company discovery provider failure category=%s",
+        category,
+    )
+
+
+def _provider_failure(
+    category: str,
+    message: str,
+    *,
+    status_code: int | None = None,
+    cause: BaseException | None = None,
+) -> NoReturn:
+    _log_provider_failure(category, status_code)
+    if cause is None:
+        raise CompanyDataProviderError(message) from None
+    raise CompanyDataProviderError(message) from cause
 
 
 class _HTTPResponse(Protocol):
@@ -140,25 +175,42 @@ class DataGovInRocCompanyDataProvider:
             with self._request(request, timeout=self._timeout_seconds) as response:
                 status_code = response.status
                 if status_code < 200 or status_code >= 300:
-                    raise CompanyDataProviderError("Company-data provider request failed")
+                    _provider_failure(
+                        "upstream_http_error",
+                        "Company-data provider request failed",
+                        status_code=status_code if isinstance(status_code, int) else None,
+                    )
                 raw_body = response.read(_MAX_RESPONSE_BYTES + 1)
         except CompanyDataProviderError:
             raise
         except TimeoutError:
-            raise CompanyDataProviderError("Company-data provider request timed out") from None
+            _provider_failure("timeout", "Company-data provider request timed out")
+        except urllib.error.HTTPError as exc:
+            _provider_failure(
+                "upstream_http_error",
+                "Company-data provider request failed",
+                status_code=exc.code if isinstance(exc.code, int) else None,
+            )
         except urllib.error.URLError as exc:
             if isinstance(exc.reason, TimeoutError):
-                raise CompanyDataProviderError("Company-data provider request timed out") from None
-            raise CompanyDataProviderError("Company-data provider request failed") from None
+                _provider_failure("timeout", "Company-data provider request timed out")
+            _provider_failure("connection_error", "Company-data provider request failed")
         except (http.client.HTTPException, OSError):
-            raise CompanyDataProviderError("Company-data provider request failed") from None
+            _provider_failure("connection_error", "Company-data provider request failed")
 
         if len(raw_body) > _MAX_RESPONSE_BYTES:
-            raise CompanyDataProviderError("Company-data provider response exceeded the size limit")
+            _provider_failure(
+                "oversized_response",
+                "Company-data provider response exceeded the size limit",
+            )
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise CompanyDataProviderError("Company-data provider returned invalid JSON") from exc
+            _provider_failure(
+                "invalid_json",
+                "Company-data provider returned invalid JSON",
+                cause=exc,
+            )
         records, total = self._validate_payload(payload, limit)
         return CompanyDataPage(
             records=records,
@@ -191,15 +243,24 @@ class DataGovInRocCompanyDataProvider:
         payload: object, requested_limit: int
     ) -> tuple[tuple[CompanyDataRecord, ...], int | None]:
         if not isinstance(payload, dict):
-            raise CompanyDataProviderError("Company-data provider returned invalid output")
+            _provider_failure(
+                "invalid_provider_response",
+                "Company-data provider returned invalid output",
+            )
         raw_records = payload.get("records")
         if not isinstance(raw_records, list) or len(raw_records) > requested_limit:
-            raise CompanyDataProviderError("Company-data provider returned invalid records")
+            _provider_failure(
+                "invalid_provider_response",
+                "Company-data provider returned invalid records",
+            )
 
         records: list[CompanyDataRecord] = []
         for raw_record in raw_records:
             if not isinstance(raw_record, dict) or len(raw_record) > _MAX_RECORD_FIELDS:
-                raise CompanyDataProviderError("Company-data provider returned invalid records")
+                _provider_failure(
+                    "invalid_provider_response",
+                    "Company-data provider returned invalid records",
+                )
             record: CompanyDataRecord = {}
             for key, value in raw_record.items():
                 if (
@@ -212,7 +273,10 @@ class DataGovInRocCompanyDataProvider:
                     or isinstance(value, str)
                     and len(value) > _MAX_STRING_VALUE_LENGTH
                 ):
-                    raise CompanyDataProviderError("Company-data provider returned invalid records")
+                    _provider_failure(
+                        "invalid_provider_response",
+                        "Company-data provider returned invalid records",
+                    )
                 record[key] = value
             records.append(record)
 
@@ -220,7 +284,10 @@ class DataGovInRocCompanyDataProvider:
         if raw_total is not None and (
             isinstance(raw_total, bool) or not isinstance(raw_total, int) or raw_total < 0
         ):
-            raise CompanyDataProviderError("Company-data provider returned invalid pagination data")
+            _provider_failure(
+                "invalid_provider_response",
+                "Company-data provider returned invalid pagination data",
+            )
         return tuple(records), raw_total
 
 
