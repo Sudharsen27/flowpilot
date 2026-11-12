@@ -44,7 +44,7 @@ export default function RegisterPage() {
     setPending(true);
     try {
       await signUp({ email, password, name, organizationName });
-      router.push("/dashboard");
+      router.push("/verify-email/pending");
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 409

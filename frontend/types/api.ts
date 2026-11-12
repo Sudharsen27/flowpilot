@@ -167,6 +167,14 @@ export type MeResponse = {
   membership: MembershipPublic;
 };
 
+export type VerificationEmailResponse = {
+  status: "accepted";
+};
+
+export type VerifyEmailResponse = {
+  status: "verified";
+};
+
 export type HealthResponse = {
   status: string;
   service: string;
