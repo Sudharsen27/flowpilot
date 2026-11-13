@@ -824,6 +824,7 @@ def test_run_api_cross_tenant_and_unauthenticated(
         headers=_headers(second["access_token"]),
     )
     assert cross.status_code == 404
+    api_client.cookies.clear()
     unauth = api_client.post(
         f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/run"
     )
@@ -956,6 +957,7 @@ def test_cancel_missing_wrong_agent_and_cross_tenant(
         headers=_headers(second["access_token"]),
     )
     assert cross.status_code == 404
+    api_client.cookies.clear()
     unauth = api_client.post(
         f"/api/v1/agents/{agent.id}/executions/{started['execution_id']}/cancel"
     )

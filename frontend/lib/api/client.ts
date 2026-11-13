@@ -33,6 +33,7 @@ type RequestOptions = {
   contentType?: string;
   headers?: Record<string, string>;
   token?: string | null;
+  credentials?: RequestCredentials;
   /** Aborts the fetch, e.g. when a query is cancelled. */
   signal?: AbortSignal;
 };
@@ -71,6 +72,7 @@ async function request<T>(
     headers,
     body,
     signal: options.signal,
+    ...(options.credentials ? { credentials: options.credentials } : {}),
   });
 
   if (response.status === 401) {
@@ -107,7 +109,11 @@ export function apiGet<T>(
 export function apiPost<T>(
   path: string,
   body?: unknown,
-  options: { token?: string | null } = {},
+  options: {
+    token?: string | null;
+    headers?: Record<string, string>;
+    credentials?: RequestCredentials;
+  } = {},
 ): Promise<T> {
   return request<T>(path, { method: "POST", body, ...options });
 }

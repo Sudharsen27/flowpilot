@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   confirmPasswordReset,
+  logoutSession,
   requestPasswordReset,
   requestVerificationEmail,
   verifyEmail,
@@ -54,6 +55,16 @@ describe("requestVerificationEmail", () => {
       { token: "raw-token", password: "new-password-34" },
       { token: null },
     );
+  });
+
+  it("posts logout with the session cookie and request header", async () => {
+    mocks.apiPost.mockResolvedValue(undefined);
+
+    await expect(logoutSession()).resolves.toBeUndefined();
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/auth/logout", undefined, {
+      credentials: "include",
+      headers: { "X-FlowPilot-Request": "1" },
+    });
   });
 
   it("posts the verification token without a session", async () => {

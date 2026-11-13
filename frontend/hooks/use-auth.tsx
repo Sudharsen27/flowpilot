@@ -7,10 +7,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 
+import { logoutSession } from "@/lib/api/auth";
 import { apiGet, apiPost } from "@/lib/api/client";
 import {
   AUTH_SESSION_INVALIDATED_EVENT,
@@ -43,7 +45,7 @@ type AuthContextValue = {
     organizationName: string;
   }) => Promise<void>;
   completeAuth: (auth: AuthResponse) => void;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -52,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const signingOut = useRef(false);
 
   const applyAuth = useCallback(
     (auth: AuthResponse | MeResponse, token?: string) => {
@@ -143,11 +146,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyAuth],
   );
 
-  const signOut = useCallback(() => {
-    setSession(null);
-    clearAccessToken();
-    router.replace("/login");
-    router.refresh();
+  const signOut = useCallback(async () => {
+    if (signingOut.current) {
+      return;
+    }
+    signingOut.current = true;
+    try {
+      await logoutSession();
+    } catch {
+      // Local sign-out still completes when logout is unreachable or rejected.
+    } finally {
+      setSession(null);
+      clearAccessToken();
+      router.replace("/login");
+      router.refresh();
+      signingOut.current = false;
+    }
   }, [router]);
 
   const value = useMemo(

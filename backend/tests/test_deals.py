@@ -793,6 +793,7 @@ def test_amount_corrections_apply_only_to_won_deals_in_the_same_organization(
     won = _stage(client, token, _deal(client, token).json(), stage="CLOSED_WON").json()
     other = _auth(client, email="b@example.com", organization_name="Org B")["access_token"]
     assert _correct(client, other, won, amount="1.00", reason="Fix").status_code == 404
+    client.cookies.clear()
     assert client.post(f"/api/v1/deals/{won['id']}/amount-correction", json={}).status_code == 401
 
 

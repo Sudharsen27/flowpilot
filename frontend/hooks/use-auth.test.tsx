@@ -130,6 +130,7 @@ describe("AuthProvider", () => {
     const user = userEvent.setup();
     window.localStorage.setItem("flowpilot.access_token", "stored-token");
     mocks.apiGet.mockResolvedValue(me);
+    mocks.apiPost.mockResolvedValue(undefined);
 
     render(
       <AuthProvider>
@@ -140,9 +141,84 @@ describe("AuthProvider", () => {
 
     await user.click(screen.getByRole("button", { name: "Sign out" }));
 
-    expect(screen.getByText("GUEST")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("GUEST")).toBeInTheDocument());
+    expect(mocks.apiPost).toHaveBeenCalledOnce();
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/auth/logout", undefined, {
+      credentials: "include",
+      headers: { "X-FlowPilot-Request": "1" },
+    });
     expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
     expect(mocks.replace).toHaveBeenCalledWith("/login");
     expect(mocks.refresh).toHaveBeenCalled();
+  });
+
+  it("clears the local session when logout cannot reach the API", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("flowpilot.access_token", "stored-token");
+    mocks.apiGet.mockResolvedValue(me);
+    mocks.apiPost.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    render(
+      <AuthProvider>
+        <AuthConsumer />
+      </AuthProvider>,
+    );
+    await screen.findByText("OWNER");
+
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(screen.getByText("GUEST")).toBeInTheDocument());
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+    expect(mocks.replace).toHaveBeenCalledWith("/login");
+    expect(mocks.refresh).toHaveBeenCalled();
+  });
+
+  it("clears the local session when logout returns an error", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("flowpilot.access_token", "stored-token");
+    mocks.apiGet.mockResolvedValue(me);
+    mocks.apiPost.mockRejectedValue(new Error("Request failed: 500"));
+
+    render(
+      <AuthProvider>
+        <AuthConsumer />
+      </AuthProvider>,
+    );
+    await screen.findByText("OWNER");
+
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(screen.getByText("GUEST")).toBeInTheDocument());
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+    expect(mocks.replace).toHaveBeenCalledWith("/login");
+  });
+
+  it("sends one logout request when sign-out is triggered twice", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("flowpilot.access_token", "stored-token");
+    mocks.apiGet.mockResolvedValue(me);
+    let finishLogout: (() => void) | undefined;
+    mocks.apiPost.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishLogout = resolve;
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <AuthConsumer />
+      </AuthProvider>,
+    );
+    await screen.findByText("OWNER");
+
+    const signOut = screen.getByRole("button", { name: "Sign out" });
+    await user.click(signOut);
+    await user.click(signOut);
+    expect(mocks.apiPost).toHaveBeenCalledOnce();
+
+    finishLogout?.();
+    await waitFor(() => expect(screen.getByText("GUEST")).toBeInTheDocument());
+    expect(mocks.apiPost).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
 });

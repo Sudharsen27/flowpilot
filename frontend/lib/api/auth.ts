@@ -6,6 +6,13 @@ import type {
   VerifyEmailResponse,
 } from "@/types/api";
 
+export function logoutSession() {
+  return apiPost<void>("/api/v1/auth/logout", undefined, {
+    credentials: "include",
+    headers: { "X-FlowPilot-Request": "1" },
+  });
+}
+
 export function requestVerificationEmail(email: string) {
   return apiPost<VerificationEmailResponse>("/api/v1/auth/verification-email", {
     email,

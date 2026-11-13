@@ -112,6 +112,7 @@ def test_anonymous_resolve_is_unauthorized(client: TestClient, db: Session) -> N
     created = _auth(client)
     lead = _create(client, created["access_token"])
     _flag(db, lead["id"])
+    client.cookies.clear()
 
     response = _resolve(client, None, lead["id"])
 

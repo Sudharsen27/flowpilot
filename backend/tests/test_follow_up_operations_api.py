@@ -219,6 +219,7 @@ def test_follow_up_execution_history_endpoint(
     path = (
         f"/api/v1/leads/{lead['id']}/follow-ups/{follow_up['id']}/executions"
     )
+    client.cookies.clear()
     assert client.get(path).status_code == 401
     empty = client.get(path, headers=_headers(token)).json()
     assert empty["items"] == []

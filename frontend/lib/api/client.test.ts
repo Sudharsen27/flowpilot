@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { logoutSession } from "@/lib/api/auth";
 import { apiGet, apiPost, apiPostFile, resolveApiBaseUrl } from "@/lib/api/client";
 import { importProspectCsv, searchGovernmentCompanies, searchProspects } from "@/lib/api/prospect-discovery";
 
 describe("API client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.clear();
   });
 
   it("adds the stored bearer token and returns typed JSON", async () => {
@@ -26,6 +28,27 @@ describe("API client", () => {
         method: "GET",
         headers: expect.objectContaining({
           Authorization: "Bearer stored-token",
+        }),
+      }),
+    );
+  });
+
+  it("sends logout with the bearer token, cookie credentials, and request header", async () => {
+    window.localStorage.setItem("flowpilot.access_token", "stored-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    await expect(logoutSession()).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/auth/logout",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.objectContaining({
+          Authorization: "Bearer stored-token",
+          "X-FlowPilot-Request": "1",
         }),
       }),
     );

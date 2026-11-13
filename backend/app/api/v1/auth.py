@@ -1,6 +1,12 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.deps import (
+    CSRF_HEADER_NAME,
+    CSRF_HEADER_VALUE,
+    clear_session_cookie,
+    set_session_cookie,
+)
 from app.core.auth_rate_limit import TOO_MANY_ATTEMPTS, PostgresAuthRateLimiter
 from app.core.exceptions import (
     GoogleLinkPasswordError,
@@ -67,20 +73,27 @@ def to_auth_response(result: AuthResult) -> AuthResponse:
 
 
 @router.post("/register", response_model=AuthResponse)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
+def register(
+    payload: RegisterRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> AuthResponse:
     result = AuthService(db).register(
         email=str(payload.email),
         password=payload.password,
         name=payload.name,
         organization_name=payload.organization_name,
     )
-    return to_auth_response(result)
+    body = to_auth_response(result)
+    set_session_cookie(response, body.access_token)
+    return body
 
 
 @router.post("/login", response_model=AuthResponse)
 def login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
     limiter = _limiter(db)
@@ -94,7 +107,9 @@ def login(
         if not limiter.record_failure(email=email, client_ip=client_ip):
             raise RateLimitError(TOO_MANY_ATTEMPTS) from None
         raise
-    return to_auth_response(result)
+    body = to_auth_response(result)
+    set_session_cookie(response, body.access_token)
+    return body
 
 
 @router.post("/verify-email", response_model=VerifyEmailResponse)
@@ -152,10 +167,19 @@ def confirm_password_reset(
     return PasswordResetConfirmResponse(status="reset")
 
 
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request, response: Response) -> None:
+    """Clear the session cookie. The JWT is not inspected or revoked."""
+    if request.headers.get(CSRF_HEADER_NAME) != CSRF_HEADER_VALUE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    clear_session_cookie(response)
+
+
 @router.post("/google", response_model=AuthResponse)
 def login_with_google(
     payload: GoogleAuthRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
     limiter = _limiter(db)
@@ -169,4 +193,6 @@ def login_with_google(
         if not limiter.record_failure(email=profile.email, client_ip=client_ip):
             raise RateLimitError(TOO_MANY_ATTEMPTS) from None
         raise
-    return to_auth_response(result)
+    body = to_auth_response(result)
+    set_session_cookie(response, body.access_token)
+    return body

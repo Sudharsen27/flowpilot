@@ -712,6 +712,7 @@ def test_api_single_prospect_duplicate_assessment_errors(client: TestClient) -> 
     token = auth["access_token"]
 
     # Unauthenticated
+    client.cookies.clear()
     assert client.get("/api/v1/company-prospects/some-id/duplicate-assessment").status_code == 401
 
     # Not Found

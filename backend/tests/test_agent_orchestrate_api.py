@@ -135,6 +135,7 @@ def test_orchestrate_anonymous_401(db: Session, client: TestClient) -> None:
     fake = MagicMock()
     _override_orchestration(fake)
     try:
+        client.cookies.clear()
         response = client.post(
             f"/api/v1/agents/{agent.id}/orchestrate",
             json={"instruction": "hello"},
