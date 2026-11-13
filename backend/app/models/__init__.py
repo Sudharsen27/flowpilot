@@ -1,6 +1,7 @@
 from app.core.auth_rate_limit import AuthLoginFailure
 from app.core.password_reset_rate_limit import AuthPasswordResetEvent
 from app.core.verification_rate_limit import AuthVerificationEvent
+from app.core.website_capture_rate_limit import WebsiteCaptureAttempt
 from app.models.activity_event import (
     ActivityActorType,
     ActivityEntityType,
@@ -77,6 +78,7 @@ __all__ = [
     "User",
     "WebhookDelivery",
     "WebhookEndpoint",
+    "WebsiteCaptureAttempt",
     "WorkflowRule",
     "WorkflowRun",
 ]

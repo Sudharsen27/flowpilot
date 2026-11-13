@@ -18,13 +18,13 @@ def test_alembic_discovers_a_single_head() -> None:
 def test_forecast_snapshots_revise_036_while_037_is_reserved() -> None:
     """038 follows 036 directly: 037 (the 4C contract step) is held until the 4C release
     is serving in production. 041 follows 040, 042 follows 041, 043 follows 042,
-    and 044 follows 043. When 037 ships it should revise the current head so the
-    chain stays single-headed."""
+    044 follows 043, and 045 follows 044. When 037 ships it should revise the current
+    head so the chain stays single-headed."""
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     script = ScriptDirectory.from_config(config)
     snapshots = script.get_revision("038_forecast_snapshots")
     assert snapshots is not None
     assert snapshots.down_revision == "036_deal_forecast_category"
-    assert script.get_heads() == ["044_chronological_order"]
+    assert script.get_heads() == ["045_website_capture_attempts"]
     assert not any(rev.revision.startswith("037") for rev in script.walk_revisions())

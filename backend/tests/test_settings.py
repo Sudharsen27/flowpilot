@@ -169,6 +169,30 @@ def test_invalid_settings_errors_do_not_echo_supplied_values(
             assert fragment not in text
 
 
+def test_website_capture_daily_cap_defaults_to_100() -> None:
+    configured = _settings()
+    assert configured.website_capture_daily_enquiry_cap == 100
+    assert configured.website_capture_rate_limit_max == 5
+    assert configured.website_capture_rate_limit_window_seconds == 60
+
+
+def test_website_capture_daily_cap_accepts_an_override() -> None:
+    configured = _settings(website_capture_daily_enquiry_cap=25)
+    assert configured.website_capture_daily_enquiry_cap == 25
+
+
+def test_website_capture_daily_cap_rejects_zero_and_negative() -> None:
+    with pytest.raises(ValidationError):
+        _settings(website_capture_daily_enquiry_cap=0)
+    with pytest.raises(ValidationError):
+        _settings(website_capture_daily_enquiry_cap=-1)
+
+
+def test_production_keeps_the_daily_cap_default_without_the_variable() -> None:
+    configured = _production()
+    assert configured.website_capture_daily_enquiry_cap == 100
+
+
 def test_development_keeps_local_defaults() -> None:
     configured = Settings(environment="development", _env_file=None)
     assert configured.secret_key == "replace-with-a-long-random-local-secret"

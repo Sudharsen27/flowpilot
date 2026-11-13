@@ -53,6 +53,7 @@ Required environment:
 - `SECRET_KEY` — unique, at least 32 characters, not the example value
 - `DATABASE_URL` — Neon PostgreSQL connection string, including `sslmode=require`. A `postgresql://` or `postgres://` URL is switched to the `postgresql+psycopg://` driver automatically
 - `CORS_ORIGINS` — the Vercel origin, `https://` only, no localhost and no `*`
+- Public website capture limits are stored in PostgreSQL (migration `045_website_capture_attempts`) and shared across API processes. `WEBSITE_CAPTURE_RATE_LIMIT_MAX` and `WEBSITE_CAPTURE_RATE_LIMIT_WINDOW_SECONDS` keep their defaults of 5 and 60. `WEBSITE_CAPTURE_DAILY_ENQUIRY_CAP` defaults to 100 enquiries per organization per UTC day and is optional.
 - `AI_PROVIDER` — `openai` or `groq`
 - The matching provider key and model when that provider should be used
 - `TYPESAFE_API_KEY` when human decision calls should run

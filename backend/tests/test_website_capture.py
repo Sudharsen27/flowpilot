@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.ai.openai_provider import OpenAIProvider
 from app.api.deps import get_ai_provider, get_email_provider
 from app.core.config import settings
-from app.core.rate_limit import website_capture_limiter
+from app.core.exceptions import RateLimitError
+from app.core.website_capture_rate_limit import WebsiteCaptureAttempt
 from app.main import app
 from app.models.agent import AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution
@@ -19,6 +20,9 @@ from app.models.lead_follow_up import LeadFollowUp
 from app.models.membership import MembershipRole
 from app.models.sales_run import SalesRun
 from app.schemas.website_capture import UNAVAILABLE_DETAIL
+from app.services.lead_service import LeadService
+from app.services.website_capture_service import WebsiteCaptureService
+from tests.conftest import TestingSessionLocal
 from tests.test_agent_api import _add_org_member
 from tests.test_agent_runtime import FakeAIProvider, _create_agent, _headers
 from tests.test_lead_email_send import FakeEmailProvider
@@ -32,9 +36,7 @@ ENQUIRY = "We need a demo for our operations team next month."
 
 @pytest.fixture(autouse=True)
 def _reset_website_capture() -> Generator[None, None, None]:
-    website_capture_limiter.reset()
     yield
-    website_capture_limiter.reset()
     app.dependency_overrides.pop(get_ai_provider, None)
     app.dependency_overrides.pop(get_email_provider, None)
 
@@ -272,7 +274,6 @@ def test_rate_limit_returns_429(client: TestClient, monkeypatch: object) -> None
     slug = created["organization"]["slug"]
     _enable(client, created["access_token"])
     monkeypatch.setattr(settings, "website_capture_rate_limit_max", 1)
-    website_capture_limiter.reset()
     first = client.post(PATH.format(slug=slug), json=_payload())
     second = client.post(PATH.format(slug=slug), json=_payload(email="two@example.com"))
     assert first.status_code == 204
@@ -617,3 +618,221 @@ def test_honeypot_with_auto_start_enabled_does_not_queue_pending(
         )
         == 0
     )
+
+
+def _attempt_count(
+    db: Session, *, organization_id: str | None = None, daily: bool | None = None
+) -> int:
+    query = select(func.count()).select_from(WebsiteCaptureAttempt)
+    if organization_id is not None:
+        query = query.where(WebsiteCaptureAttempt.organization_id == organization_id)
+    if daily is not None:
+        query = query.where(WebsiteCaptureAttempt.consumes_daily.is_(daily))
+    return int(db.scalar(query) or 0)
+
+
+def test_sliding_window_stores_one_attempt_and_creates_one_lead(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    org_id = created["organization"]["id"]
+    _enable(client, created["access_token"])
+    monkeypatch.setattr(settings, "website_capture_rate_limit_max", 1)
+    first = client.post(PATH.format(slug=slug), json=_payload())
+    second = client.post(PATH.format(slug=slug), json=_payload(email="two@example.com"))
+    assert first.status_code == 204
+    assert second.status_code == 429
+    assert second.json() == {"detail": "Please wait before sending another enquiry."}
+    assert db.scalar(select(func.count()).select_from(Lead)) == 1
+    assert _attempt_count(db, organization_id=org_id, daily=True) == 1
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING)
+        )
+        == 0
+    )
+
+
+def test_daily_cap_blocks_the_second_enquiry_without_a_lead(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    org_id = created["organization"]["id"]
+    agent = _ready_sales_agent(db, org_id)
+    assert (
+        client.patch(
+            SETTINGS,
+            json=_settings_payload(
+                website_capture_enabled=True,
+                sales_agent_auto_start_enabled=True,
+                default_sales_agent_id=agent.id,
+            ),
+            headers=_headers(created["access_token"]),
+        ).status_code
+        == 200
+    )
+    monkeypatch.setattr(settings, "website_capture_daily_enquiry_cap", 1)
+    monkeypatch.setattr(settings, "website_capture_rate_limit_max", 10)
+    first = client.post(PATH.format(slug=slug), json=_payload())
+    second = client.post(PATH.format(slug=slug), json=_payload(email="two@example.com"))
+    assert first.status_code == 204
+    assert second.status_code == 429
+    assert db.scalar(select(func.count()).select_from(Lead)) == 1
+    pending = db.scalar(
+        select(func.count())
+        .select_from(Lead)
+        .where(Lead.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING)
+    )
+    assert pending == 1
+    assert _attempt_count(db, organization_id=org_id, daily=True) == 1
+
+
+def test_honeypot_consumes_the_burst_window_but_not_the_daily_cap(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    org_id = created["organization"]["id"]
+    _enable(client, created["access_token"])
+    monkeypatch.setattr(settings, "website_capture_rate_limit_max", 1)
+    monkeypatch.setattr(settings, "website_capture_daily_enquiry_cap", 1)
+    honeypot = client.post(PATH.format(slug=slug), json=_payload(website="http://spam.test"))
+    blocked = client.post(PATH.format(slug=slug), json=_payload(email="real@example.com"))
+    assert honeypot.status_code == 204
+    assert blocked.status_code == 429
+    assert db.scalar(select(func.count()).select_from(Lead)) == 0
+    assert _attempt_count(db, organization_id=org_id, daily=False) == 1
+    assert _attempt_count(db, organization_id=org_id, daily=True) == 0
+
+    monkeypatch.setattr(settings, "website_capture_rate_limit_max", 5)
+    allowed = client.post(PATH.format(slug=slug), json=_payload(email="after@example.com"))
+    assert allowed.status_code == 204
+    assert db.scalar(select(func.count()).select_from(Lead)) == 1
+    assert _attempt_count(db, organization_id=org_id, daily=True) == 1
+
+
+def test_unknown_and_disabled_slugs_store_no_attempts(client: TestClient, db: Session) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    disabled = client.post(PATH.format(slug=slug), json=_payload())
+    unknown = client.post(PATH.format(slug="no-such-org"), json=_payload())
+    disabled_honeypot = client.post(
+        PATH.format(slug=slug), json=_payload(website="http://spam.test")
+    )
+    unknown_honeypot = client.post(
+        PATH.format(slug="no-such-org"), json=_payload(website="http://spam.test")
+    )
+    assert disabled.status_code == unknown.status_code == 404
+    assert disabled.json() == unknown.json() == {"detail": UNAVAILABLE_DETAIL}
+    assert disabled_honeypot.status_code == unknown_honeypot.status_code == 204
+    assert db.scalar(select(func.count()).select_from(Lead)) == 0
+    assert db.scalar(select(func.count()).select_from(WebsiteCaptureAttempt)) == 0
+
+
+def test_attempts_stay_inside_the_organization(client: TestClient, db: Session) -> None:
+    first = _auth(client, email="a@example.com", organization_name="Alpha")
+    second = _auth(client, email="b@example.com", organization_name="Beta")
+    _enable(client, first["access_token"])
+    _enable(client, second["access_token"])
+    posted = client.post(
+        PATH.format(slug=first["organization"]["slug"]),
+        json=_payload(email="visitor@example.com"),
+    )
+    assert posted.status_code == 204
+    assert _attempt_count(db, organization_id=first["organization"]["id"]) == 1
+    assert _attempt_count(db, organization_id=second["organization"]["id"]) == 0
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.organization_id == second["organization"]["id"])
+        )
+        == 0
+    )
+
+
+def test_another_service_instance_shares_the_database_limit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    _enable(client, created["access_token"])
+    monkeypatch.setattr(settings, "website_capture_rate_limit_max", 1)
+    assert client.post(PATH.format(slug=slug), json=_payload()).status_code == 204
+    other = TestingSessionLocal()
+    try:
+        with pytest.raises(RateLimitError):
+            WebsiteCaptureService(other).submit_public_enquiry(
+                slug=slug,
+                client_key="testclient",
+                name="Ada Prospect",
+                email="other@example.com",
+                company="Acme",
+                enquiry=ENQUIRY,
+                honeypot=None,
+            )
+        assert other.scalar(select(func.count()).select_from(Lead)) == 1
+    finally:
+        other.close()
+
+
+def test_lead_creation_failure_rolls_back_the_attempt_and_auto_start(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    org_id = created["organization"]["id"]
+    agent = _ready_sales_agent(db, org_id)
+    assert (
+        client.patch(
+            SETTINGS,
+            json=_settings_payload(
+                website_capture_enabled=True,
+                sales_agent_auto_start_enabled=True,
+                default_sales_agent_id=agent.id,
+            ),
+            headers=_headers(created["access_token"]),
+        ).status_code
+        == 200
+    )
+
+    def fail_create(self: LeadService, **kwargs: object) -> Lead:
+        raise RuntimeError("lead failed")
+
+    monkeypatch.setattr(LeadService, "create", fail_create)
+    response = client.post(PATH.format(slug=slug), json=_payload())
+    assert response.status_code == 500
+    db.rollback()
+    assert db.scalar(select(func.count()).select_from(Lead)) == 0
+    assert db.scalar(select(func.count()).select_from(WebsiteCaptureAttempt)) == 0
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING)
+        )
+        == 0
+    )
+
+
+def test_lock_failure_does_not_create_a_lead(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    slug = created["organization"]["slug"]
+    _enable(client, created["access_token"])
+
+    def fail_lock(session: object, organization_id: str) -> None:
+        raise RuntimeError("lock failed")
+
+    monkeypatch.setattr("app.core.website_capture_rate_limit._lock", fail_lock)
+    response = client.post(PATH.format(slug=slug), json=_payload())
+    assert response.status_code == 500
+    db.rollback()
+    assert db.scalar(select(func.count()).select_from(Lead)) == 0
+    assert db.scalar(select(func.count()).select_from(WebsiteCaptureAttempt)) == 0
+
