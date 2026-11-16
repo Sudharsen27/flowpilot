@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import (
     CSRF_HEADER_NAME,
     CSRF_HEADER_VALUE,
     clear_session_cookie,
+    presented_access_token,
     set_session_cookie,
 )
 from app.core.auth_rate_limit import TOO_MANY_ATTEMPTS, PostgresAuthRateLimiter
@@ -12,9 +14,11 @@ from app.core.exceptions import (
     GoogleLinkPasswordError,
     InvalidCredentialsError,
     RateLimitError,
+    UnauthorizedError,
     ValidationError,
 )
 from app.core.password_reset_rate_limit import PasswordResetRateLimiter
+from app.core.security import decode_access_token, token_session_version
 from app.core.verification_rate_limit import VerificationPurpose, VerificationRateLimiter
 from app.db.session import get_db
 from app.schemas.identity import (
@@ -40,6 +44,7 @@ from app.services.google_oauth_service import GoogleOAuthService
 from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+_logout_bearer = HTTPBearer(auto_error=False)
 
 
 def _client_ip(request: Request) -> str:
@@ -167,11 +172,50 @@ def confirm_password_reset(
     return PasswordResetConfirmResponse(status="reset")
 
 
+def _logout_claims(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> tuple[str, int] | None:
+    """Return user id and token ver for a structurally valid credential.
+
+    Bearer wins over the cookie, matching ``presented_access_token``. Expired
+    and malformed credentials return None. A decoded token whose ``ver`` is
+    already behind the user row is left for ``revoke_session`` to ignore.
+    """
+    try:
+        token = presented_access_token(request, credentials)
+    except HTTPException:
+        return None
+    try:
+        payload = decode_access_token(token)
+        version = token_session_version(payload)
+    except UnauthorizedError:
+        return None
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str):
+        return None
+    return user_id, version
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(request: Request, response: Response) -> None:
-    """Clear the session cookie. The JWT is not inspected or revoked."""
+def logout(
+    request: Request,
+    response: Response,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_logout_bearer),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke a current session and clear the cookie.
+
+    A valid bearer token or session cookie increments ``session_version``,
+    which rejects every JWT issued before this logout. Missing, expired, and
+    already-revoked credentials still clear the cookie and return 204. The
+    CSRF header is required before either outcome.
+    """
     if request.headers.get(CSRF_HEADER_NAME) != CSRF_HEADER_VALUE:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    claims = _logout_claims(request, credentials)
+    if claims is not None:
+        AuthService(db).revoke_session(claims[0], claims[1])
     clear_session_cookie(response)
 
 

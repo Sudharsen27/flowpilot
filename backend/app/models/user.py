@@ -27,7 +27,8 @@ class User(Base):
         unique=True,
         index=True,
     )
-    # Starts at 0 for every existing account. This slice never increments it.
+    # JWTs carry this value as ``ver``. Logout and password-reset confirm
+    # increment it so previously issued tokens are rejected.
     session_version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

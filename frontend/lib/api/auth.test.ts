@@ -53,7 +53,6 @@ describe("requestVerificationEmail", () => {
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/api/v1/auth/password-reset/confirm",
       { token: "raw-token", password: "new-password-34" },
-      { token: null },
     );
   });
 
@@ -71,10 +70,8 @@ describe("requestVerificationEmail", () => {
     mocks.apiPost.mockResolvedValue({ status: "verified" });
 
     await expect(verifyEmail("raw-token")).resolves.toEqual({ status: "verified" });
-    expect(mocks.apiPost).toHaveBeenCalledWith(
-      "/api/v1/auth/verify-email",
-      { token: "raw-token" },
-      { token: null },
-    );
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/auth/verify-email", {
+      token: "raw-token",
+    });
   });
 });

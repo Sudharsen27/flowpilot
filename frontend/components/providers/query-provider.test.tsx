@@ -4,7 +4,7 @@ import { act } from "react";
 import { describe, expect, it } from "vitest";
 
 import { QueryProvider } from "@/components/providers/query-provider";
-import { clearAccessToken } from "@/lib/auth/storage";
+import { invalidateAuthSession } from "@/lib/auth/storage";
 import { notifyDealsChanged, notifySalesTargetsChanged } from "@/lib/deal-events";
 import { createQueryClient } from "@/lib/query-client";
 
@@ -34,7 +34,7 @@ describe("QueryProvider", () => {
       </QueryProvider>,
     );
     expect(client.getQueryCache().getAll()).toHaveLength(1);
-    act(() => clearAccessToken());
+    act(() => invalidateAuthSession());
     expect(client.getQueryCache().getAll()).toHaveLength(0);
   });
 

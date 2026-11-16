@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { logoutSession } from "@/lib/api/auth";
 import { apiGet, apiPost, apiPostFile, resolveApiBaseUrl } from "@/lib/api/client";
+import { AUTH_SESSION_INVALIDATED_EVENT } from "@/lib/auth/storage";
 import { importProspectCsv, searchGovernmentCompanies, searchProspects } from "@/lib/api/prospect-discovery";
 
 describe("API client", () => {
@@ -10,7 +11,7 @@ describe("API client", () => {
     window.localStorage.clear();
   });
 
-  it("adds the stored bearer token and returns typed JSON", async () => {
+  it("sends the session cookie and ignores a leftover access token", async () => {
     window.localStorage.setItem("flowpilot.access_token", "stored-token");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ status: "ok" }), {
@@ -26,14 +27,16 @@ describe("API client", () => {
       "http://localhost:8000/health",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer stored-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBe("stored-token");
   });
 
-  it("sends logout with the bearer token, cookie credentials, and request header", async () => {
+  it("sends logout with cookie credentials and the request header", async () => {
     window.localStorage.setItem("flowpilot.access_token", "stored-token");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(null, { status: 204 }),
@@ -47,11 +50,12 @@ describe("API client", () => {
         method: "POST",
         credentials: "include",
         headers: expect.objectContaining({
-          Authorization: "Bearer stored-token",
           "X-FlowPilot-Request": "1",
         }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
   });
 
   it("keeps JSON POST behavior working", async () => {
@@ -71,15 +75,22 @@ describe("API client", () => {
       "http://localhost:8000/api/v1/auth/login",
       expect.objectContaining({
         method: "POST",
+        credentials: "include",
         body: JSON.stringify({
           email: "owner@example.com",
           password: "password12",
         }),
+        headers: expect.objectContaining({
+          "X-FlowPilot-Request": "1",
+        }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
 
-  it("sends CSV blobs with their content type and bearer token", async () => {
+  it("sends CSV blobs with their content type and the session cookie", async () => {
     window.localStorage.setItem("flowpilot.access_token", "upload-token");
     const file = new File(["Name,Email\nAda,ada@example.com"], "prospects.csv", {
       type: "text/csv",
@@ -97,13 +108,16 @@ describe("API client", () => {
       "http://localhost:8000/api/v1/prospect-discovery/preview",
       expect.objectContaining({
         method: "POST",
+        credentials: "include",
         body: file,
         headers: expect.objectContaining({
-          Authorization: "Bearer upload-token",
           "Content-Type": "text/csv",
+          "X-FlowPilot-Request": "1",
         }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
   });
 
   it("sends the explicit confirmation header for prospect imports", async () => {
@@ -160,12 +174,15 @@ describe("API client", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify(input),
+        credentials: "include",
         headers: expect.objectContaining({
-          Authorization: expect.stringMatching(/^Bearer /),
           "Content-Type": "application/json",
+          "X-FlowPilot-Request": "1",
         }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
   });
 
   it("posts government discovery through the authenticated client without credentials in its body", async () => {
@@ -206,19 +223,24 @@ describe("API client", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify(input),
+        credentials: "include",
         headers: expect.objectContaining({
-          Authorization: expect.stringMatching(/^Bearer /),
           "Content-Type": "application/json",
+          "X-FlowPilot-Request": "1",
         }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
     expect(JSON.stringify(fetchMock.mock.calls[0][1]?.body)).not.toContain(
       "api-key",
     );
   });
 
-  it("clears an invalid token on a 401 response", async () => {
+  it("invalidates the session on a 401 response without touching localStorage", async () => {
     window.localStorage.setItem("flowpilot.access_token", "expired-token");
+    const onInvalidate = vi.fn();
+    window.addEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ detail: "Invalid token" }), {
         status: 401,
@@ -229,7 +251,9 @@ describe("API client", () => {
     await expect(apiGet("/api/v1/users/me")).rejects.toMatchObject({
       status: 401,
     });
-    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBe("expired-token");
+    expect(onInvalidate).toHaveBeenCalledOnce();
+    window.removeEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
   });
 
   it("treats an empty 204 body as success", async () => {

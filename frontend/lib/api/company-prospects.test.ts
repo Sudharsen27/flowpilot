@@ -29,8 +29,9 @@ describe("Company prospects API client", () => {
       "http://localhost:8000/api/v1/company-prospects/company%201%2Fx/duplicate-assessment",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer prospects-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );

@@ -16,9 +16,7 @@ import { logoutSession } from "@/lib/api/auth";
 import { apiGet, apiPost } from "@/lib/api/client";
 import {
   AUTH_SESSION_INVALIDATED_EVENT,
-  clearAccessToken,
-  getAccessToken,
-  setAccessToken,
+  invalidateAuthSession,
 } from "@/lib/auth/storage";
 import type {
   AuthResponse,
@@ -56,36 +54,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const signingOut = useRef(false);
 
-  const applyAuth = useCallback(
-    (auth: AuthResponse | MeResponse, token?: string) => {
-      if (token) {
-        setAccessToken(token);
-      }
-      setSession({
-        user: auth.user,
-        organization: auth.organization,
-        membership: auth.membership,
-      });
-    },
-    [],
-  );
+  const applyAuth = useCallback((auth: AuthResponse | MeResponse) => {
+    setSession({
+      user: auth.user,
+      organization: auth.organization,
+      membership: auth.membership,
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restoreSession() {
-      const token = getAccessToken();
-      if (token) {
-        try {
-          const me = await apiGet<MeResponse>("/api/v1/users/me");
-          if (!cancelled) {
-            applyAuth(me);
-          }
-        } catch {
-          if (!cancelled) {
-            clearAccessToken();
-            setSession(null);
-          }
+      try {
+        const me = await apiGet<MeResponse>("/api/v1/users/me");
+        if (!cancelled && me?.user && me.organization && me.membership) {
+          applyAuth(me);
+        } else if (!cancelled) {
+          setSession(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setSession(null);
         }
       }
       if (!cancelled) {
@@ -116,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
       });
-      applyAuth(auth, auth.access_token);
+      applyAuth(auth);
     },
     [applyAuth],
   );
@@ -134,14 +124,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: input.name,
         organization_name: input.organizationName,
       });
-      applyAuth(auth, auth.access_token);
+      applyAuth(auth);
     },
     [applyAuth],
   );
 
   const completeAuth = useCallback(
     (auth: AuthResponse) => {
-      applyAuth(auth, auth.access_token);
+      applyAuth(auth);
     },
     [applyAuth],
   );
@@ -157,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Local sign-out still completes when logout is unreachable or rejected.
     } finally {
       setSession(null);
-      clearAccessToken();
+      invalidateAuthSession();
       router.replace("/login");
       router.refresh();
       signingOut.current = false;

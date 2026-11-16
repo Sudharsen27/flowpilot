@@ -34,8 +34,9 @@ describe("Inbox API client", () => {
       "http://localhost:8000/api/v1/inbox?q=ada+%2F+lead&needs_approval=true&conversation_state=NEEDS_APPROVAL&source=WEBSITE&limit=20&offset=20",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer inbox-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );

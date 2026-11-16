@@ -32,8 +32,9 @@ describe("Activity API client", () => {
       "http://localhost:8000/api/v1/activity?type=AI_ACTION&entity_type=LEAD&q=qualified+%2F+lead&limit=20&offset=20",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer activity-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );

@@ -110,7 +110,6 @@ describe("GoogleContinueButton", () => {
     expect(apiPostMock).toHaveBeenCalledWith(
       "/api/v1/auth/google",
       { code: "fresh-code" },
-      { token: null },
     );
     expect(screen.queryByLabelText(/Existing FlowPilot password/)).not.toBeInTheDocument();
   });
@@ -177,13 +176,11 @@ describe("GoogleContinueButton", () => {
       1,
       "/api/v1/auth/google",
       { code: "first-code" },
-      { token: null },
     );
     expect(apiPostMock).toHaveBeenNthCalledWith(
       2,
       "/api/v1/auth/google",
       { code: "second-code", password: "password12" },
-      { token: null },
     );
     expect(apiPostMock.mock.calls[1]?.[1]).not.toMatchObject({ code: "first-code" });
     expect(screen.queryByLabelText(/Existing FlowPilot password/)).not.toBeInTheDocument();
@@ -195,7 +192,6 @@ describe("GoogleContinueButton", () => {
     expect(apiPostMock).toHaveBeenLastCalledWith(
       "/api/v1/auth/google",
       { code: "third-code" },
-      { token: null },
     );
   });
 
@@ -221,7 +217,6 @@ describe("GoogleContinueButton", () => {
     expect(apiPostMock).toHaveBeenLastCalledWith(
       "/api/v1/auth/google",
       { code: "second-code", password: "not-the-password" },
-      { token: null },
     );
   });
 
@@ -297,7 +292,6 @@ describe("GoogleContinueButton", () => {
     expect(apiPostMock).toHaveBeenCalledWith(
       "/api/v1/auth/google",
       { code: "spent-code" },
-      { token: null },
     );
     expect(JSON.stringify(apiPostMock.mock.calls)).not.toContain("password12");
     expect(view.onSuccess).not.toHaveBeenCalled();
@@ -321,7 +315,6 @@ describe("GoogleContinueButton", () => {
     expect(apiPostMock).toHaveBeenCalledWith(
       "/api/v1/auth/google",
       { code: "spent-code" },
-      { token: null },
     );
     expect(view.onSuccess).not.toHaveBeenCalled();
   });
@@ -339,7 +332,6 @@ describe("GoogleContinueButton", () => {
     expect(apiPostMock).toHaveBeenCalledWith(
       "/api/v1/auth/google",
       { code: "only-once" },
-      { token: null },
     );
   });
 
@@ -366,7 +358,6 @@ describe("GoogleContinueButton", () => {
       2,
       "/api/v1/auth/google",
       { code: "fresh-code" },
-      { token: null },
     );
   });
 });

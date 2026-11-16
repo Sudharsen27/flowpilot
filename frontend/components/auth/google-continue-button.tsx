@@ -110,11 +110,7 @@ export function GoogleContinueButton({
               const includePassword = entered.trim().length > 0;
               const body = includePassword ? { code, password: entered } : { code };
               try {
-                const auth = await apiPost<AuthResponse>(
-                  "/api/v1/auth/google",
-                  body,
-                  { token: null },
-                );
+                const auth = await apiPost<AuthResponse>("/api/v1/auth/google", body);
                 if (cancelled) return;
                 needsPasswordRef.current = false;
                 setNeedsPassword(false);

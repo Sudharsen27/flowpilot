@@ -51,6 +51,5 @@ export function submitContact(values: ContactSubmission) {
       message: values.message.trim(),
       company_website: values.companyWebsite.trim() || null,
     },
-    { token: null },
   );
 }

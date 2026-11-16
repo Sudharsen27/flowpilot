@@ -76,8 +76,9 @@ describe("Website capture API client", () => {
       1,
       "http://localhost:8000/api/v1/organizations/current/website-capture",
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer stored-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );

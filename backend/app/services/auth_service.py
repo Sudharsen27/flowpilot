@@ -206,3 +206,16 @@ class AuthService:
             organization=organization,
             membership=membership,
         )
+
+    def revoke_session(self, user_id: str, token_version: int) -> None:
+        """Increment session_version when the presented token is still current.
+
+        A stale ``ver`` is left unchanged so a revoked token cannot sign out
+        a newer login. The row lock keeps two logouts from writing an older
+        version over a newer one on PostgreSQL.
+        """
+        user = self.users.lock_by_id(user_id)
+        if user is None or user.session_version != token_version:
+            return
+        user.session_version += 1
+        self.session.commit()

@@ -54,8 +54,9 @@ describe("Lead API client", () => {
       "http://localhost:8000/api/v1/leads?status=NEW&source=WEBSITE&q=Ada+%2F+Co&limit=20&offset=20",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer lead-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -118,8 +119,9 @@ describe("Lead API client", () => {
       expect.objectContaining({
         method: "POST",
         body: "{}",
-        headers: expect.objectContaining({
-          Authorization: "Bearer lead-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -153,8 +155,12 @@ describe("Lead API client", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
+    const onInvalidate = vi.fn();
+    window.addEventListener("flowpilot:session-invalidated", onInvalidate);
     await expect(getLeads()).rejects.toMatchObject({ status: 401 });
-    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBe("lead-token");
+    expect(onInvalidate).toHaveBeenCalledOnce();
+    window.removeEventListener("flowpilot:session-invalidated", onInvalidate);
   });
 
   it("posts qualification to an encoded lead id without organization_id", async () => {

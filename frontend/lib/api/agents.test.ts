@@ -43,8 +43,9 @@ describe("Agent API client", () => {
       "http://localhost:8000/api/v1/agents",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -85,8 +86,12 @@ describe("Agent API client", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
+    const onInvalidate = vi.fn();
+    window.addEventListener("flowpilot:session-invalidated", onInvalidate);
     await expect(getAgents()).rejects.toMatchObject({ status: 401 });
-    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBe("agent-token");
+    expect(onInvalidate).toHaveBeenCalledOnce();
+    window.removeEventListener("flowpilot:session-invalidated", onInvalidate);
   });
 
   it("posts only the supported create payload", async () => {
@@ -125,8 +130,9 @@ describe("Agent API client", () => {
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ name: "Renamed" }),
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -148,8 +154,9 @@ describe("Agent API client", () => {
       `http://localhost:8000/api/v1/agents/agent%2F1/${action}`,
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -177,8 +184,9 @@ describe("Agent API client", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ input: "Qualify this lead" }),
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -232,8 +240,9 @@ describe("Agent API client", () => {
       "http://localhost:8000/api/v1/agents/agent%2F1/executions/exec%2F1/run",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -259,8 +268,9 @@ describe("Agent API client", () => {
       "http://localhost:8000/api/v1/agents/agent%2F1/executions/exec%2F1/cancel",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -432,8 +442,9 @@ describe("Agent API client", () => {
       "http://localhost:8000/api/v1/agents/agent%2F1/executions?limit=10&offset=20",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer agent-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );
@@ -676,8 +687,9 @@ describe("Agent API client", () => {
         "http://localhost:8000/api/v1/agent-executions",
         expect.objectContaining({
           method: "GET",
-          headers: expect.objectContaining({
-            Authorization: "Bearer agent-token",
+          credentials: "include",
+          headers: expect.not.objectContaining({
+            Authorization: expect.anything(),
           }),
         }),
       );

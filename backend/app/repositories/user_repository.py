@@ -11,6 +11,13 @@ class UserRepository:
     def get_by_id(self, user_id: str) -> User | None:
         return self.session.get(User, user_id)
 
+    def lock_by_id(self, user_id: str) -> User | None:
+        """Load one user, locking the row on PostgreSQL."""
+        statement = select(User).where(User.id == user_id)
+        if self.session.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
     def get_by_email(self, email: str) -> User | None:
         return self.session.scalar(select(User).where(User.email == email))
 

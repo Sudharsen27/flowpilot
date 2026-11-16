@@ -25,8 +25,9 @@ describe("Approvals API client", () => {
       "http://localhost:8000/api/v1/approvals?q=Acme+%2F+co&status=pending&limit=20&offset=40",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          Authorization: "Bearer approvals-token",
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
         }),
       }),
     );

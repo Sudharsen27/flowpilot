@@ -1,4 +1,4 @@
-import { clearAccessToken, getAccessToken } from "@/lib/auth/storage";
+import { invalidateAuthSession } from "@/lib/auth/storage";
 
 export function resolveApiBaseUrl(
   url = process.env.NEXT_PUBLIC_API_URL,
@@ -15,6 +15,9 @@ export function resolveApiBaseUrl(
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
+const CSRF_HEADER_NAME = "X-FlowPilot-Request";
+const CSRF_HEADER_VALUE = "1";
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export class ApiError extends Error {
   constructor(
@@ -32,17 +35,20 @@ type RequestOptions = {
   body?: unknown;
   contentType?: string;
   headers?: Record<string, string>;
-  token?: string | null;
   credentials?: RequestCredentials;
   /** Aborts the fetch, e.g. when a query is cancelled. */
   signal?: AbortSignal;
 };
 
+function hasCsrfHeader(headers: Record<string, string>): boolean {
+  return Object.keys(headers).some((key) => key.toLowerCase() === CSRF_HEADER_NAME.toLowerCase());
+}
+
 async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const token = options.token === undefined ? getAccessToken() : options.token;
+  const method = options.method ?? "GET";
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
@@ -57,8 +63,8 @@ async function request<T>(
   if (options.headers) {
     Object.assign(headers, options.headers);
   }
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  if (UNSAFE_METHODS.has(method) && !hasCsrfHeader(headers)) {
+    headers[CSRF_HEADER_NAME] = CSRF_HEADER_VALUE;
   }
 
   const body: BodyInit | undefined =
@@ -68,15 +74,15 @@ async function request<T>(
         ? (options.body as Blob)
         : JSON.stringify(options.body);
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? "GET",
+    method,
     headers,
     body,
     signal: options.signal,
-    ...(options.credentials ? { credentials: options.credentials } : {}),
+    credentials: options.credentials ?? "include",
   });
 
   if (response.status === 401) {
-    clearAccessToken();
+    invalidateAuthSession();
   }
 
   if (!response.ok) {
@@ -101,7 +107,7 @@ async function request<T>(
 
 export function apiGet<T>(
   path: string,
-  options: { token?: string | null; signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<T> {
   return request<T>(path, options);
 }
@@ -110,7 +116,6 @@ export function apiPost<T>(
   path: string,
   body?: unknown,
   options: {
-    token?: string | null;
     headers?: Record<string, string>;
     credentials?: RequestCredentials;
   } = {},
@@ -132,22 +137,20 @@ export function apiPostFile<T>(
   });
 }
 
-export function apiDelete(path: string, options: { token?: string | null } = {}) {
-  return request<void>(path, { method: "DELETE", ...options });
+export function apiDelete(path: string) {
+  return request<void>(path, { method: "DELETE" });
 }
 
 export function apiPatch<T>(
   path: string,
   body: unknown,
-  options: { token?: string | null } = {},
 ): Promise<T> {
-  return request<T>(path, { method: "PATCH", body, ...options });
+  return request<T>(path, { method: "PATCH", body });
 }
 
 export function apiPut<T>(
   path: string,
   body: unknown,
-  options: { token?: string | null } = {},
 ): Promise<T> {
-  return request<T>(path, { method: "PUT", body, ...options });
+  return request<T>(path, { method: "PUT", body });
 }

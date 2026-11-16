@@ -82,8 +82,7 @@ describe("AuthProvider", () => {
     mocks.refresh.mockReset();
   });
 
-  it("restores and preserves membership information", async () => {
-    window.localStorage.setItem("flowpilot.access_token", "stored-token");
+  it("restores the session from the cookie without a stored access token", async () => {
     mocks.apiGet.mockResolvedValue(me);
 
     render(
@@ -94,6 +93,7 @@ describe("AuthProvider", () => {
 
     expect(await screen.findByText("OWNER")).toBeInTheDocument();
     expect(mocks.apiGet).toHaveBeenCalledWith("/api/v1/users/me");
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
 
   it("keeps login and registration connected to their existing API endpoints", async () => {
@@ -124,11 +124,11 @@ describe("AuthProvider", () => {
         organization_name: "Acme",
       }),
     );
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
 
   it("clears session and token and redirects on logout", async () => {
     const user = userEvent.setup();
-    window.localStorage.setItem("flowpilot.access_token", "stored-token");
     mocks.apiGet.mockResolvedValue(me);
     mocks.apiPost.mockResolvedValue(undefined);
 
@@ -154,7 +154,6 @@ describe("AuthProvider", () => {
 
   it("clears the local session when logout cannot reach the API", async () => {
     const user = userEvent.setup();
-    window.localStorage.setItem("flowpilot.access_token", "stored-token");
     mocks.apiGet.mockResolvedValue(me);
     mocks.apiPost.mockRejectedValue(new TypeError("Failed to fetch"));
 
@@ -175,7 +174,6 @@ describe("AuthProvider", () => {
 
   it("clears the local session when logout returns an error", async () => {
     const user = userEvent.setup();
-    window.localStorage.setItem("flowpilot.access_token", "stored-token");
     mocks.apiGet.mockResolvedValue(me);
     mocks.apiPost.mockRejectedValue(new Error("Request failed: 500"));
 
@@ -195,7 +193,6 @@ describe("AuthProvider", () => {
 
   it("sends one logout request when sign-out is triggered twice", async () => {
     const user = userEvent.setup();
-    window.localStorage.setItem("flowpilot.access_token", "stored-token");
     mocks.apiGet.mockResolvedValue(me);
     let finishLogout: (() => void) | undefined;
     mocks.apiPost.mockReturnValue(

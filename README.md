@@ -82,7 +82,7 @@ App: [http://localhost:3000](http://localhost:3000) (or the port Next.js prints 
 
 Sign in: [http://localhost:3000/login](http://localhost:3000/login)
 
-Browser tokens are stored in local storage for local development. That is not a production session design.
+The browser keeps its session in the HttpOnly `flowpilot_session` cookie. Login responses still include `access_token` for non-browser clients. Production requires the app and API to share a registrable domain so this `SameSite=Lax` cookie is sent. See [docs/deployment.md](docs/deployment.md).
 
 ## API Documentation
 

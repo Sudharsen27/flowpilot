@@ -10,7 +10,7 @@ import { createQueryClient } from "@/lib/query-client";
 
 /**
  * Query cache for the signed-in workspace. Cached data never outlives the session:
- * the cache is cleared whenever the token is cleared (sign-out or a 401). Figures
+ * the cache is cleared when the session is invalidated (sign-out or a 401). Figures
  * derived from deals are invalidated after every deal write: on-screen queries refetch
  * at once, and cached ones refetch the next time they are shown. A sales target save
  * invalidates only the forecast itself; drill-down deal lists do not use targets.

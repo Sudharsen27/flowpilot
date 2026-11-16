@@ -25,7 +25,8 @@ describe("pipeline forecast API client", () => {
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(String(url)).toMatch(/\/api\/v1\/pipeline\/forecast\?granularity=month&periods=12$/);
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer forecast-token");
+    expect(init?.credentials).toBe("include");
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
     // Decimal strings are passed through untouched.
     expect(result).toEqual({ currency: "INR", total: "10.50" });
   });
@@ -69,7 +70,8 @@ describe("forecast category deals API client", () => {
     expect(String(url)).toMatch(
       /\/api\/v1\/pipeline\/forecast\/deals\?category=COMMIT&granularity=quarter&periods=4&limit=20&offset=0$/,
     );
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer forecast-token");
+    expect(init?.credentials).toBe("include");
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it("adds period_start for one period and clamps the page to backend limits", async () => {
@@ -105,7 +107,8 @@ describe("forecast accuracy API client", () => {
     expect(String(url)).toMatch(
       /\/api\/v1\/pipeline\/forecast\/accuracy\?from_month=2026-01-01&to_month=2026-06-01&lead_days=0&lead_days=30&lead_days=60&lead_days=90$/,
     );
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer forecast-token");
+    expect(init?.credentials).toBe("include");
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
     // Decimal strings are passed through untouched.
     expect(result).toEqual(body);
   });

@@ -21,7 +21,6 @@ export type PublicEnquiryCreateRequest = {
 export function getPublicEnquiryForm(slug: string) {
   return apiGet<PublicCaptureForm>(
     `/api/v1/public/organizations/${encodeURIComponent(slug)}/enquiries`,
-    { token: null },
   );
 }
 
@@ -29,7 +28,6 @@ export function submitPublicEnquiry(slug: string, input: PublicEnquiryCreateRequ
   return apiPost<void>(
     `/api/v1/public/organizations/${encodeURIComponent(slug)}/enquiries`,
     input,
-    { token: null },
   );
 }
 

@@ -47,7 +47,10 @@ describe("deals API client", () => {
       "http://localhost:8000/api/v1/deals?stage=PROPOSAL&forecast_category=COMMIT&owner_user_id=user%2F1&close_date_from=2026-11-01&close_date_to=2026-12-31&q=acme&limit=100&offset=0",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({ Authorization: "Bearer deal-token" }),
+        credentials: "include",
+        headers: expect.not.objectContaining({
+          Authorization: expect.anything(),
+        }),
       }),
     );
   });
