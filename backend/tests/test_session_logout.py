@@ -32,7 +32,7 @@ def _login(client: TestClient) -> str:
     return str(logged_in.json()["access_token"])
 
 
-def _cleared(response, *, secure: bool) -> None:
+def _cleared(response, *, secure: bool, samesite: str = "lax") -> None:
     header = response.headers.get("set-cookie")
     assert header is not None
     parsed = SimpleCookie()
@@ -41,7 +41,7 @@ def _cleared(response, *, secure: bool) -> None:
     assert morsel.value == ""
     assert morsel["httponly"]
     assert morsel["path"] == "/"
-    assert morsel["samesite"].lower() == "lax"
+    assert morsel["samesite"].lower() == samesite
     assert morsel["max-age"] == "0"
     assert bool(morsel["secure"]) is secure
 
@@ -60,9 +60,10 @@ def test_production_logout_cookie_is_secure(
 ) -> None:
     _login(client)
     monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "session_cookie_samesite", None)
     response = client.post(LOGOUT, headers=CSRF)
     assert response.status_code == 204
-    _cleared(response, secure=True)
+    _cleared(response, secure=True, samesite="none")
 
 
 def test_logout_without_a_cookie_still_clears_it(client: TestClient) -> None:

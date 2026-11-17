@@ -84,7 +84,7 @@ def clear_session_cookie(response: Response) -> None:
         path="/",
         secure=settings.is_production,
         httponly=True,
-        samesite="lax",
+        samesite=settings.effective_session_cookie_samesite,
     )
 
 
@@ -92,7 +92,9 @@ def set_session_cookie(response: Response, token: str) -> None:
     """Attach the access token as an HttpOnly cookie. Does not log the token.
 
     Secure is required in production. Local and test HTTP can store the cookie
-    without it. The lifetime matches the JWT expiration setting.
+    without it. Production defaults to SameSite=None so cross-site frontend
+    origins (for example vercel.app calling onrender.com) still send the
+    cookie on credentialed fetches. The lifetime matches the JWT expiration.
     """
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -101,7 +103,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         path="/",
         secure=settings.is_production,
         httponly=True,
-        samesite="lax",
+        samesite=settings.effective_session_cookie_samesite,
     )
 
 

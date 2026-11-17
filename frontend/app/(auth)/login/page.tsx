@@ -68,8 +68,12 @@ export default function LoginPage() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 429) {
         setError("Too many attempts. Try again later.");
+      } else if (cause instanceof ApiError && cause.status === 401) {
+        setError(
+          "Invalid email or password. If this account already exists, use Forgot password.",
+        );
       } else if (cause instanceof ApiError) {
-        setError("Invalid email or password.");
+        setError("Unable to sign in.");
       } else {
         setError("Unable to sign in.");
       }

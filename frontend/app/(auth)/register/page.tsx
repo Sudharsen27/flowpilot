@@ -52,7 +52,7 @@ export default function RegisterPage() {
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 409
-          ? "That email is already registered."
+          ? "That email is already registered. Sign in, or use Forgot password on the sign-in page."
           : "Unable to create the account.",
       );
     } finally {

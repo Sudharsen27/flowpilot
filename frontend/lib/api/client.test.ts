@@ -8,7 +8,7 @@ import { importProspectCsv, searchGovernmentCompanies, searchProspects } from "@
 describe("API client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    window.localStorage.clear();
+    window.localStorage?.clear();
   });
 
   it("sends the session cookie and ignores a leftover access token", async () => {
@@ -253,6 +253,26 @@ describe("API client", () => {
     });
     expect(window.localStorage.getItem("flowpilot.access_token")).toBe("expired-token");
     expect(onInvalidate).toHaveBeenCalledOnce();
+    window.removeEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
+  });
+
+  it("does not invalidate the session on a failed login 401", async () => {
+    const onInvalidate = vi.fn();
+    window.addEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Invalid email or password" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(
+      apiPost("/api/v1/auth/login", {
+        email: "owner@example.com",
+        password: "wrong-password",
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onInvalidate).not.toHaveBeenCalled();
     window.removeEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
   });
 

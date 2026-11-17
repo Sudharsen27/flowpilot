@@ -154,7 +154,7 @@ describe("auth pages", () => {
     await user.click(screen.getByRole("button", { name: "Create account" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "That email is already registered.",
+      "That email is already registered. Sign in, or use Forgot password on the sign-in page.",
     );
     expect(mocks.push).not.toHaveBeenCalled();
   });
@@ -260,7 +260,7 @@ describe("auth pages", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Invalid email or password.",
+      "Invalid email or password. If this account already exists, use Forgot password.",
     );
     expect(mocks.push).not.toHaveBeenCalled();
 

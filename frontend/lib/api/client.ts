@@ -44,6 +44,17 @@ function hasCsrfHeader(headers: Record<string, string>): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === CSRF_HEADER_NAME.toLowerCase());
 }
 
+const CREDENTIAL_CHALLENGE_PATHS = new Set([
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/google",
+]);
+
+function _isCredentialChallengePath(path: string): boolean {
+  const pathname = path.split("?", 1)[0] ?? path;
+  return CREDENTIAL_CHALLENGE_PATHS.has(pathname);
+}
+
 async function request<T>(
   path: string,
   options: RequestOptions = {},
@@ -81,7 +92,9 @@ async function request<T>(
     credentials: options.credentials ?? "include",
   });
 
-  if (response.status === 401) {
+  // Failed login/register credentials are 401s. Do not treat them as a live
+  // session expiry or the sign-in form can clear an in-progress auth state.
+  if (response.status === 401 && !_isCredentialChallengePath(path)) {
     invalidateAuthSession();
   }
 

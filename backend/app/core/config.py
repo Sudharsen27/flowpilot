@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     secret_key: str = INSECURE_DEFAULT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    # Browser session cookie SameSite. Empty uses production→none, else→lax.
+    # Production defaults to none so a Vercel frontend can call a Render API
+    # with credentials. Cookie-authenticated unsafe methods still require the
+    # CSRF request header. Set lax when frontend and API share one site
+    # (for example app.example.com + api.example.com).
+    session_cookie_samesite: Literal["lax", "strict", "none"] | None = None
     # Selects which AIProvider implementation the factory will construct (Step 3).
     # Default keeps existing OpenAI-only deployments working without new env vars.
     ai_provider: AiProviderName = "openai"
@@ -179,6 +185,15 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
 
+    @property
+    def effective_session_cookie_samesite(self) -> Literal["lax", "strict", "none"]:
+        if self.session_cookie_samesite is not None:
+            return self.session_cookie_samesite
+        # Cross-site credentialed fetches (vercel.app → onrender.com) omit Lax
+        # cookies. None + Secure is required for that topology; CSRF header
+        # remains the mutation guard for cookie sessions.
+        return "none" if self.is_production else "lax"
+
     @field_validator("database_url")
     @classmethod
     def use_psycopg_driver(cls, value: str) -> str:
@@ -191,6 +206,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_production_configuration(self) -> Self:
+        if self.session_cookie_samesite == "none" and not self.is_production:
+            raise ValueError(
+                "SESSION_COOKIE_SAMESITE=none requires ENVIRONMENT=production "
+                "(Secure cookies are required for SameSite=None)"
+            )
         if self.environment.lower() in {"development", "test"}:
             return self
         if (

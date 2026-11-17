@@ -47,12 +47,14 @@ def _morsel(response):
     return parsed[SESSION_COOKIE_NAME]
 
 
-def _assert_session_cookie(response, token: str, *, secure: bool) -> None:
+def _assert_session_cookie(
+    response, token: str, *, secure: bool, samesite: str = "lax"
+) -> None:
     morsel = _morsel(response)
     assert morsel.value == token
     assert morsel["httponly"]
     assert morsel["path"] == "/"
-    assert morsel["samesite"].lower() == "lax"
+    assert morsel["samesite"].lower() == samesite
     assert morsel["max-age"] == str(settings.access_token_expire_minutes * 60)
     assert bool(morsel["secure"]) is secure
     assert response.json()["access_token"] == token
@@ -97,13 +99,34 @@ def test_google_login_sets_the_session_cookie(
     _assert_session_cookie(response, response.json()["access_token"], secure=False)
 
 
-def test_production_session_cookie_is_secure(
+def test_production_session_cookie_is_secure_and_cross_site(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "session_cookie_samesite", None)
     response = client.post("/api/v1/auth/register", json=register_payload())
     assert response.status_code == 200
-    _assert_session_cookie(response, response.json()["access_token"], secure=True)
+    _assert_session_cookie(
+        response,
+        response.json()["access_token"],
+        secure=True,
+        samesite="none",
+    )
+
+
+def test_production_can_opt_into_lax_session_cookie(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "session_cookie_samesite", "lax")
+    response = client.post("/api/v1/auth/register", json=register_payload())
+    assert response.status_code == 200
+    _assert_session_cookie(
+        response,
+        response.json()["access_token"],
+        secure=True,
+        samesite="lax",
+    )
 
 
 def test_failed_login_does_not_set_a_cookie(client: TestClient) -> None:
