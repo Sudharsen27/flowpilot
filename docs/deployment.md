@@ -11,7 +11,14 @@ The API process does not start the worker. Redis is present in local Compose and
 
 ## Frontend (Vercel)
 
-Set `NEXT_PUBLIC_API_URL` to the public Render API origin, including the scheme and without a trailing path. A production build fails when this variable is missing. Do not put backend secrets in frontend environment variables.
+Production browser calls must be **same-origin** so the session cookie is first-party. Chrome blocks cross-site `vercel.app` → `onrender.com` cookies even when the API sets `SameSite=None`.
+
+Set these on the Vercel project:
+
+- `API_PROXY_TARGET` — Render API origin, scheme + host, no path (for example `https://flowpilot-backend-product.onrender.com`). Used only by Next.js rewrites; not exposed to the browser.
+- `NEXT_PUBLIC_API_URL` — leave **empty**, or set to `same-origin`, so the browser calls `/api/...` on the Vercel host. Do **not** point this at `onrender.com` for the production web app.
+
+Local `next dev` can keep `NEXT_PUBLIC_API_URL=http://localhost:8000` and leave `API_PROXY_TARGET` unset.
 
 Optional: set `NEXT_PUBLIC_SITE_URL` to the public marketing origin (scheme + host, no path) after the production hostname is known. The frontend uses it for canonical URLs, Open Graph page URLs, `robots.txt` sitemap, and `sitemap.xml`. Localhost and common preview hosts are rejected. Leave it unset rather than inventing a hostname.
 
@@ -52,7 +59,7 @@ Required environment:
 - `ENVIRONMENT=production`
 - `SECRET_KEY` — unique, at least 32 characters, not the example value
 - `DATABASE_URL` — Neon PostgreSQL connection string, including `sslmode=require`. A `postgresql://` or `postgres://` URL is switched to the `postgresql+psycopg://` driver automatically
-- `CORS_ORIGINS` — the frontend origin, `https://` only, no localhost and no `*`. The browser session cookie is host-only. In production it defaults to `SameSite=None; Secure` so a `vercel.app` frontend can call an `onrender.com` API with credentials. Cookie-authenticated unsafe methods still require the `X-FlowPilot-Request` CSRF header. When frontend and API are sibling hosts of one registrable domain (for example `https://app.example.com` and `https://api.example.com`), you may set `SESSION_COOKIE_SAMESITE=lax`. Do not set a cookie `Domain`. Set `NEXT_PUBLIC_API_URL` to the API origin.
+- `CORS_ORIGINS` — the frontend origin, `https://` only, no localhost and no `*`. Keep this even when the Vercel app proxies `/api` to Render, because non-browser clients and misconfigured frontends may still call Render directly. The browser session cookie is host-only. In production it defaults to `SameSite=None; Secure` for direct cross-site API use; the recommended Vercel setup uses a same-origin rewrite so the cookie is first-party on the frontend host (Lax is enough there). Cookie-authenticated unsafe methods still require the `X-FlowPilot-Request` CSRF header. Do not set a cookie `Domain`.
 - Public website capture limits are stored in PostgreSQL (migration `045_website_capture_attempts`) and shared across API processes. `WEBSITE_CAPTURE_RATE_LIMIT_MAX` and `WEBSITE_CAPTURE_RATE_LIMIT_WINDOW_SECONDS` keep their defaults of 5 and 60. `WEBSITE_CAPTURE_DAILY_ENQUIRY_CAP` defaults to 100 enquiries per organization per UTC day and is optional.
 - `AI_PROVIDER` — `openai` or `groq`
 - The matching provider key and model when that provider should be used

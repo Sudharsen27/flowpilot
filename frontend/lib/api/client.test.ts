@@ -237,7 +237,7 @@ describe("API client", () => {
     );
   });
 
-  it("invalidates the session on a 401 response without touching localStorage", async () => {
+  it("invalidates the session on an authenticated API 401 without touching localStorage", async () => {
     window.localStorage.setItem("flowpilot.access_token", "expired-token");
     const onInvalidate = vi.fn();
     window.addEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
@@ -248,7 +248,7 @@ describe("API client", () => {
       }),
     );
 
-    await expect(apiGet("/api/v1/users/me")).rejects.toMatchObject({
+    await expect(apiGet("/api/v1/leads")).rejects.toMatchObject({
       status: 401,
     });
     expect(window.localStorage.getItem("flowpilot.access_token")).toBe("expired-token");
@@ -276,6 +276,21 @@ describe("API client", () => {
     window.removeEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
   });
 
+  it("does not invalidate the session on a /users/me 401", async () => {
+    const onInvalidate = vi.fn();
+    window.addEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Not authenticated" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(apiGet("/api/v1/users/me")).rejects.toMatchObject({ status: 401 });
+    expect(onInvalidate).not.toHaveBeenCalled();
+    window.removeEventListener(AUTH_SESSION_INVALIDATED_EVENT, onInvalidate);
+  });
+
   it("treats an empty 204 body as success", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(null, { status: 204 }),
@@ -283,13 +298,12 @@ describe("API client", () => {
     await expect(apiPost("/api/v1/public/organizations/acme/enquiries")).resolves.toBeUndefined();
   });
 
-  it("requires an explicit API URL in production and omits secrets", () => {
+  it("uses same-origin relative URLs in production when unset", () => {
     expect(resolveApiBaseUrl("https://api.example.com/", "production")).toBe(
       "https://api.example.com",
     );
-    expect(() => resolveApiBaseUrl("", "production")).toThrow(
-      "NEXT_PUBLIC_API_URL is required",
-    );
+    expect(resolveApiBaseUrl("", "production")).toBe("");
+    expect(resolveApiBaseUrl("same-origin", "production")).toBe("");
     expect(resolveApiBaseUrl(undefined, "test")).toBe("http://localhost:8000");
   });
 

@@ -5,13 +5,14 @@ export function resolveApiBaseUrl(
   nodeEnv = process.env.NODE_ENV,
 ) {
   const configured = url?.trim();
-  if (configured) {
-    return configured.replace(/\/$/, "");
+  // Empty or "same-origin" → relative `/api/...` (Vercel rewrite to Render).
+  if (!configured || configured === "same-origin") {
+    if (nodeEnv === "production") {
+      return "";
+    }
+    return "http://localhost:8000";
   }
-  if (nodeEnv === "production") {
-    throw new Error("NEXT_PUBLIC_API_URL is required");
-  }
-  return "http://localhost:8000";
+  return configured.replace(/\/$/, "");
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -55,6 +56,16 @@ function _isCredentialChallengePath(path: string): boolean {
   return CREDENTIAL_CHALLENGE_PATHS.has(pathname);
 }
 
+function _shouldInvalidateSessionOn401(path: string): boolean {
+  const pathname = path.split("?", 1)[0] ?? path;
+  // Session restore uses /users/me. A 401 there means "logged out", not
+  // "expire an in-memory session we just applied from login/register".
+  if (pathname === "/api/v1/users/me") {
+    return false;
+  }
+  return !_isCredentialChallengePath(pathname);
+}
+
 async function request<T>(
   path: string,
   options: RequestOptions = {},
@@ -92,9 +103,9 @@ async function request<T>(
     credentials: options.credentials ?? "include",
   });
 
-  // Failed login/register credentials are 401s. Do not treat them as a live
-  // session expiry or the sign-in form can clear an in-progress auth state.
-  if (response.status === 401 && !_isCredentialChallengePath(path)) {
+  // Failed login/register credentials and anonymous /users/me checks are 401s.
+  // Do not treat them as a live session expiry.
+  if (response.status === 401 && _shouldInvalidateSessionOn401(path)) {
     invalidateAuthSession();
   }
 
