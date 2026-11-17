@@ -11,6 +11,17 @@ router = APIRouter(tags=["health"])
 logger = logging.getLogger(__name__)
 
 
+@router.get("/")
+def root() -> dict[str, str]:
+    """Public API landing. Browsers hitting the Render host no longer see 404."""
+    return {
+        "service": "FlowPilot API",
+        "status": "ok",
+        "health": "/health",
+        "ready": "/health/ready",
+    }
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "api"}
