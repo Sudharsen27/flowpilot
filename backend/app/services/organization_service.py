@@ -16,6 +16,9 @@ OWNER_CANNOT_LEAVE = "Owners cannot leave without transferring ownership."
 CANNOT_REMOVE_SELF = "Leave the organization instead of removing yourself."
 CANNOT_CHANGE_OWNER = "Owner membership cannot be changed."
 CANNOT_REMOVE_OWNER = "Owner membership cannot be removed."
+ONLY_OWNER_CAN_TRANSFER = "Only the owner can transfer ownership."
+CANNOT_TRANSFER_TO_SELF = "Choose another member to become the owner."
+CANNOT_TRANSFER_TO_OWNER = "That member is already the owner."
 
 
 class OrganizationService:
@@ -95,6 +98,39 @@ class OrganizationService:
             raise ForbiddenError("Not allowed to remove members")
         self.memberships.delete(target)
         self.session.commit()
+
+    def transfer_ownership(
+        self,
+        *,
+        organization_id: str,
+        actor: Membership,
+        membership_id: str,
+    ) -> Membership:
+        if actor.role != MembershipRole.OWNER.value:
+            raise ForbiddenError(ONLY_OWNER_CAN_TRANSFER)
+        if actor.id == membership_id:
+            raise UnprocessableError(CANNOT_TRANSFER_TO_SELF)
+        target = self.memberships.get_by_id(
+            organization_id,
+            membership_id,
+            with_user=True,
+        )
+        if target is None:
+            raise NotFoundError("Membership not found")
+        if target.role == MembershipRole.OWNER.value:
+            raise UnprocessableError(CANNOT_TRANSFER_TO_OWNER)
+        if target.role not in _ASSIGNABLE_ROLES:
+            raise ForbiddenError("Not allowed to transfer ownership to this membership")
+        target.role = MembershipRole.OWNER.value
+        actor.role = MembershipRole.ADMIN.value
+        self.session.commit()
+        membership = self.memberships.get_by_id(
+            organization_id,
+            membership_id,
+            with_user=True,
+        )
+        assert membership is not None
+        return membership
 
     def leave_organization(
         self,

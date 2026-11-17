@@ -12,6 +12,8 @@ from app.services.organization_service import (
     CANNOT_CHANGE_OWNER,
     CANNOT_REMOVE_OWNER,
     CANNOT_REMOVE_SELF,
+    CANNOT_TRANSFER_TO_SELF,
+    ONLY_OWNER_CAN_TRANSFER,
     OWNER_CANNOT_LEAVE,
 )
 from tests.conftest import register_verified
@@ -19,6 +21,7 @@ from tests.test_agent_api import _add_org_member
 
 MEMBERS = "/api/v1/organizations/current/members"
 LEAVE = "/api/v1/organizations/current/leave"
+TRANSFER = "/api/v1/organizations/current/transfer-ownership"
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -316,3 +319,57 @@ def test_reject_owner_role_in_patch_body(client: TestClient, db: Session) -> Non
         headers=_headers(owner["access_token"]),
     )
     assert response.status_code == 422
+
+
+def test_owner_can_transfer_ownership_then_leave(
+    client: TestClient, db: Session
+) -> None:
+    owner = register_verified(client)
+    org_id = owner["organization"]["id"]
+    owner_token = owner["access_token"]
+    admin_token = _add_org_member(
+        db, org_id, email="admin@example.com", role=MembershipRole.ADMIN
+    )
+    admin_id = _member_id(client, owner_token, "admin@example.com")
+
+    forbidden = client.post(
+        TRANSFER,
+        json={"membership_id": admin_id},
+        headers=_headers(admin_token),
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"] == ONLY_OWNER_CAN_TRANSFER
+
+    self_transfer = client.post(
+        TRANSFER,
+        json={"membership_id": owner["membership"]["id"]},
+        headers=_headers(owner_token),
+    )
+    assert self_transfer.status_code == 422
+    assert self_transfer.json()["detail"] == CANNOT_TRANSFER_TO_SELF
+
+    transferred = client.post(
+        TRANSFER,
+        json={"membership_id": admin_id},
+        headers=_headers(owner_token),
+    )
+    assert transferred.status_code == 200
+    assert transferred.json()["role"] == "OWNER"
+    assert transferred.json()["user"]["email"] == "admin@example.com"
+
+    roles = {
+        row["user"]["email"]: row["role"]
+        for row in client.get(MEMBERS, headers=_headers(admin_token)).json()
+    }
+    assert roles["admin@example.com"] == "OWNER"
+    assert roles[owner["user"]["email"]] == "ADMIN"
+
+    left = client.post(LEAVE, headers=_headers(owner_token))
+    assert left.status_code == 204
+
+    remaining = {
+        row["user"]["email"]
+        for row in client.get(MEMBERS, headers=_headers(admin_token)).json()
+    }
+    assert owner["user"]["email"] not in remaining
+    assert client.post(LEAVE, headers=_headers(admin_token)).status_code == 422

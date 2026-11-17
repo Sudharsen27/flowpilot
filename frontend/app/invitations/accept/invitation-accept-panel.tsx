@@ -8,49 +8,56 @@ import { AuthFrame } from "@/components/auth/auth-frame";
 import { FormField } from "@/components/forms/form-field";
 import { Input } from "@/components/forms/input";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 import { apiErrorDetail } from "@/lib/api/error-detail";
 import { logoutSession } from "@/lib/api/auth";
 import { acceptInvitation } from "@/lib/api/invitations";
 import { loginPathForInvitation } from "@/lib/invitations/return-path";
-import type { InvitationAcceptResponse } from "@/types/api";
+import type { AuthResponse, InvitationAcceptResponse } from "@/types/api";
 
 type Phase =
   | { kind: "ready" }
   | { kind: "missing" }
   | { kind: "new-user" }
   | { kind: "sign-in" }
-  | { kind: "joined" }
+  | { kind: "joined"; organizationId: string }
   | { kind: "mismatch" }
   | { kind: "invalid"; message: string };
 
-function isSessionResponse(response: InvitationAcceptResponse): response is InvitationAcceptResponse & {
-  access_token: string;
-  user: { email: string };
-} {
-  return "access_token" in response && "user" in response;
+function isSessionResponse(
+  response: InvitationAcceptResponse,
+): response is AuthResponse {
+  return "access_token" in response && "user" in response && "organization" in response;
 }
 
 export function InvitationAcceptPanel() {
   const router = useRouter();
+  const { completeAuth, switchOrganization } = useAuth();
   const searchParams = useSearchParams();
   const token = searchParams.get("token")?.trim() ?? "";
   const [phase, setPhase] = useState<Phase>(token ? { kind: "ready" } : { kind: "missing" });
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submitting = useRef(false);
 
+  function enterInvitedSession(response: AuthResponse) {
+    completeAuth(response);
+    router.replace("/dashboard");
+  }
+
   function applyProbe(response: InvitationAcceptResponse) {
     if (isSessionResponse(response)) {
-      router.replace("/dashboard");
+      enterInvitedSession(response);
       return;
     }
     if (response.status === "sign_in_required") {
       setPhase({ kind: "sign-in" });
       return;
     }
-    setPhase({ kind: "joined" });
+    setPhase({ kind: "joined", organizationId: response.organization_id });
   }
 
   function applyProbeError(cause: unknown) {
@@ -104,12 +111,27 @@ export function InvitationAcceptPanel() {
         setError("The invitation could not be accepted. Try again.");
         return;
       }
-      router.replace("/dashboard");
+      enterInvitedSession(response);
     } catch (cause) {
       setError(apiErrorDetail(cause, "The invitation could not be accepted. Try again."));
     } finally {
       submitting.current = false;
       setPending(false);
+    }
+  }
+
+  async function switchToInvitedOrganization(organizationId: string) {
+    setSwitching(true);
+    setError(null);
+    try {
+      await switchOrganization(organizationId);
+      router.replace("/dashboard");
+    } catch (cause) {
+      setError(
+        apiErrorDetail(cause, "The organization could not be switched. Try again."),
+      );
+    } finally {
+      setSwitching(false);
     }
   }
 
@@ -172,10 +194,25 @@ export function InvitationAcceptPanel() {
     body = (
       <div className="grid gap-4">
         <p className="text-sm" role="status">
-          You joined the organization. This browser stays in the current workspace until you
-          switch organizations from the account menu.
+          You joined the organization. Switch now to open that workspace, or stay in your
+          current one.
         </p>
-        <Button render={<Link href="/dashboard" />}>Go to workspace</Button>
+        {error ? (
+          <p className="text-danger-text text-sm" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <Button
+          type="button"
+          className="h-10 w-full"
+          disabled={switching}
+          onClick={() => void switchToInvitedOrganization(phase.organizationId)}
+        >
+          {switching ? "Switching…" : "Switch to this organization"}
+        </Button>
+        <Button render={<Link href="/dashboard" />} variant="outline">
+          Stay in current workspace
+        </Button>
       </div>
     );
   } else if (phase.kind === "new-user") {

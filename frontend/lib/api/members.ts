@@ -21,3 +21,9 @@ export function removeMember(membershipId: string) {
 export function leaveOrganization() {
   return apiPost<AuthResponse | undefined>("/api/v1/organizations/current/leave");
 }
+
+export function transferOwnership(membershipId: string) {
+  return apiPost<MemberPublic>("/api/v1/organizations/current/transfer-ownership", {
+    membership_id: membershipId,
+  });
+}

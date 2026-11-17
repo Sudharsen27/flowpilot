@@ -65,12 +65,16 @@ describe("organization switching", () => {
     await actor.click(
       screen.getByRole("button", { name: "Open user menu for Alex Morgan" }),
     );
-    expect(await screen.findByRole("menuitem", { name: "Ada Org" })).toBeVisible();
     expect(
-      screen.getByRole("menuitem", { name: "Northstar Operations (current)" }),
+      await screen.findByRole("menuitem", { name: "Ada Org · Member" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", {
+        name: "Northstar Operations (current) · Owner",
+      }),
     ).toHaveAttribute("aria-disabled", "true");
 
-    await actor.click(screen.getByRole("menuitem", { name: "Ada Org" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Ada Org · Member" }));
     await waitFor(() => expect(mocks.onSwitchOrganization).toHaveBeenCalledWith("org-2"));
     expect(mocks.onSwitchOrganization).not.toHaveBeenCalledWith("org-1");
   });
@@ -94,7 +98,9 @@ describe("organization switching", () => {
     await actor.click(
       screen.getByRole("button", { name: "Open user menu for Alex Morgan" }),
     );
-    await actor.click(await screen.findByRole("menuitem", { name: "Ada Org" }));
+    await actor.click(
+      await screen.findByRole("menuitem", { name: "Ada Org · Member" }),
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Organization not found");
   });

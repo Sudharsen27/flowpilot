@@ -44,3 +44,14 @@ export function canRemoveMember(
 export function canLeaveOrganization(actor: MembershipRole): boolean {
   return actor !== "OWNER";
 }
+
+export function canTransferOwnership(
+  actor: MembershipRole,
+  targetRole: MembershipRole,
+  isSelf: boolean,
+): boolean {
+  if (actor !== "OWNER" || isSelf || targetRole === "OWNER") {
+    return false;
+  }
+  return targetRole === "ADMIN" || targetRole === "MEMBER";
+}

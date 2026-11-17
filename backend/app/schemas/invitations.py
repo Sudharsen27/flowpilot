@@ -23,6 +23,15 @@ class InvitationPublic(BaseModel):
     created_at: datetime
 
 
+class InvitationHistoryPublic(BaseModel):
+    id: str
+    email: str
+    role: str
+    status: Literal["accepted", "revoked"]
+    created_at: datetime
+    resolved_at: datetime
+
+
 class InvitationAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

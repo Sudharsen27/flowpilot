@@ -25,10 +25,12 @@ from app.schemas.identity import (
     MemberPublic,
     MemberRoleUpdate,
     OrganizationPublic,
+    TransferOwnershipRequest,
     UserPublic,
 )
 from app.schemas.invitations import (
     InvitationCreateRequest,
+    InvitationHistoryPublic,
     InvitationPublic,
     InvitationStatusResponse,
 )
@@ -101,6 +103,28 @@ def remove_current_member(
         organization_id=organization.id,
         actor=membership,
         membership_id=membership_id,
+    )
+
+
+@router.post(
+    "/current/transfer-ownership",
+    response_model=MemberPublic,
+)
+def transfer_current_ownership(
+    payload: TransferOwnershipRequest,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> MemberPublic:
+    updated = OrganizationService(db).transfer_ownership(
+        organization_id=organization.id,
+        actor=membership,
+        membership_id=payload.membership_id,
+    )
+    return MemberPublic(
+        membership_id=updated.id,
+        role=updated.role,
+        user=UserPublic.model_validate(updated.user),
     )
 
 
@@ -240,6 +264,67 @@ def list_invitations(
         )
         for invitation in invitations
     ]
+
+
+@router.get("/current/invitations/history", response_model=list[InvitationHistoryPublic])
+def list_invitation_history(
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> list[InvitationHistoryPublic]:
+    invitations = InvitationService(db).list_history(
+        organization_id=organization.id,
+        actor_role=membership.role,
+    )
+    history: list[InvitationHistoryPublic] = []
+    for invitation in invitations:
+        if invitation.accepted_at is not None:
+            history.append(
+                InvitationHistoryPublic(
+                    id=invitation.id,
+                    email=invitation.email,
+                    role=invitation.role,
+                    status="accepted",
+                    created_at=invitation.created_at,
+                    resolved_at=invitation.accepted_at,
+                )
+            )
+        elif invitation.revoked_at is not None:
+            history.append(
+                InvitationHistoryPublic(
+                    id=invitation.id,
+                    email=invitation.email,
+                    role=invitation.role,
+                    status="revoked",
+                    created_at=invitation.created_at,
+                    resolved_at=invitation.revoked_at,
+                )
+            )
+    return history
+
+
+@router.post(
+    "/current/invitations/{invitation_id}/resend",
+    response_model=InvitationPublic,
+)
+def resend_invitation(
+    invitation_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> InvitationPublic:
+    invitation = InvitationService(db).resend(
+        organization_id=organization.id,
+        invitation_id=invitation_id,
+        actor_role=membership.role,
+    )
+    return InvitationPublic(
+        id=invitation.id,
+        email=invitation.email,
+        role=invitation.role,
+        expires_at=invitation.expires_at,
+        created_at=invitation.created_at,
+    )
 
 
 @router.post("/current/invitations/{invitation_id}/revoke", status_code=204)

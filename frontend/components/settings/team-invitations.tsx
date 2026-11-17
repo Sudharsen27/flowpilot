@@ -10,15 +10,22 @@ import { Button } from "@/components/ui/button";
 import { apiErrorDetail } from "@/lib/api/error-detail";
 import {
   createInvitation,
+  listInvitationHistory,
   listInvitations,
+  resendInvitation,
   revokeInvitation,
 } from "@/lib/api/invitations";
-import type { InvitationPublic, InvitationRole, MembershipRole } from "@/types/api";
+import type {
+  InvitationHistoryPublic,
+  InvitationPublic,
+  InvitationRole,
+  MembershipRole,
+} from "@/types/api";
 
 const SENT_MESSAGE =
   "If this address can join the organization and the email can be delivered, the invitation appears in the pending list.";
 
-function canRevokeInvitation(actor: MembershipRole, invitationRole: string) {
+function canManageInvitation(actor: MembershipRole, invitationRole: string) {
   if (actor === "OWNER") {
     return true;
   }
@@ -28,6 +35,11 @@ function canRevokeInvitation(actor: MembershipRole, invitationRole: string) {
 const roleLabels: Record<string, string> = {
   ADMIN: "Admin",
   MEMBER: "Member",
+};
+
+const historyStatusLabels: Record<InvitationHistoryPublic["status"], string> = {
+  accepted: "Accepted",
+  revoked: "Revoked",
 };
 
 function formatWhen(value: string) {
@@ -49,19 +61,22 @@ export function TeamInvitations({ role }: { role: MembershipRole }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [invitations, setInvitations] = useState<InvitationPublic[] | null>(null);
+  const [history, setHistory] = useState<InvitationHistoryPublic[] | null>(null);
   const [listError, setListError] = useState(false);
   const [requestVersion, setRequestVersion] = useState(0);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canInvite) {
       return;
     }
     let cancelled = false;
-    void listInvitations()
-      .then((rows) => {
+    void Promise.all([listInvitations(), listInvitationHistory()])
+      .then(([rows, historyRows]) => {
         if (!cancelled) {
           setInvitations(rows);
+          setHistory(historyRows);
+          setListError(false);
         }
       })
       .catch(() => {
@@ -80,6 +95,13 @@ export function TeamInvitations({ role }: { role: MembershipRole }) {
         Only owners and admins can invite people to this organization.
       </p>
     );
+  }
+
+  function refreshLists() {
+    setInvitations(null);
+    setHistory(null);
+    setListError(false);
+    setRequestVersion((version) => version + 1);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -101,9 +123,7 @@ export function TeamInvitations({ role }: { role: MembershipRole }) {
       setEmail("");
       setInviteRole("MEMBER");
       setNotice(SENT_MESSAGE);
-      setInvitations(null);
-      setListError(false);
-      setRequestVersion((version) => version + 1);
+      refreshLists();
     } catch (cause) {
       setFormError(apiErrorDetail(cause, "The invitation could not be sent. Try again."));
     } finally {
@@ -112,15 +132,37 @@ export function TeamInvitations({ role }: { role: MembershipRole }) {
   }
 
   async function revoke(invitationId: string) {
-    setRevokingId(invitationId);
+    setBusyId(invitationId);
     setFormError(null);
+    setNotice(null);
     try {
       await revokeInvitation(invitationId);
       setInvitations((current) => current?.filter((item) => item.id !== invitationId) ?? current);
+      const historyRows = await listInvitationHistory();
+      setHistory(historyRows);
     } catch (cause) {
       setFormError(apiErrorDetail(cause, "The invitation could not be revoked."));
     } finally {
-      setRevokingId(null);
+      setBusyId(null);
+    }
+  }
+
+  async function resend(invitationId: string) {
+    setBusyId(invitationId);
+    setFormError(null);
+    setNotice(null);
+    try {
+      const updated = await resendInvitation(invitationId);
+      setInvitations(
+        (current) =>
+          current?.map((item) => (item.id === updated.id ? updated : item)) ?? current,
+      );
+      setNotice("Invitation email resent.");
+    } catch (cause) {
+      setFormError(apiErrorDetail(cause, "The invitation could not be resent."));
+      refreshLists();
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -172,17 +214,7 @@ export function TeamInvitations({ role }: { role: MembershipRole }) {
           kind="error"
           title="Invitations could not be loaded"
           description="Try again to retrieve pending invitations."
-          action={
-            <Button
-              onClick={() => {
-                setInvitations(null);
-                setListError(false);
-                setRequestVersion((version) => version + 1);
-              }}
-            >
-              Try again
-            </Button>
-          }
+          action={<Button onClick={refreshLists}>Try again</Button>}
         />
       ) : invitations === null ? (
         <p className="text-muted-foreground text-sm" role="status">
@@ -204,20 +236,57 @@ export function TeamInvitations({ role }: { role: MembershipRole }) {
                   {formatWhen(invitation.expires_at)}
                 </p>
               </div>
-              {canRevokeInvitation(role, invitation.role) ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={revokingId === invitation.id}
-                  onClick={() => void revoke(invitation.id)}
-                >
-                  {revokingId === invitation.id ? "Revoking…" : "Revoke"}
-                </Button>
+              {canManageInvitation(role, invitation.role) ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busyId === invitation.id}
+                    onClick={() => void resend(invitation.id)}
+                  >
+                    {busyId === invitation.id ? "Working…" : "Resend"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busyId === invitation.id}
+                    onClick={() => void revoke(invitation.id)}
+                  >
+                    {busyId === invitation.id ? "Working…" : "Revoke"}
+                  </Button>
+                </div>
               ) : null}
             </li>
           ))}
         </ul>
       )}
+      <div className="grid gap-2">
+        <h4 className="text-sm font-medium">Recent invitations</h4>
+        {history === null && !listError ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            Loading history
+          </p>
+        ) : history && history.length > 0 ? (
+          <ul className="divide-border border-border divide-y rounded-lg border">
+            {history.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{item.email}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {roleLabels[item.role] ?? item.role} ·{" "}
+                    {historyStatusLabels[item.status]} · {formatWhen(item.resolved_at)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground text-sm">No recent accepted or revoked invitations.</p>
+        )}
+      </div>
     </div>
   );
 }

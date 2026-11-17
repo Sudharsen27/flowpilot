@@ -42,6 +42,12 @@ class MemberRoleUpdate(BaseModel):
     role: Literal["ADMIN", "MEMBER"]
 
 
+class TransferOwnershipRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    membership_id: str = Field(min_length=1, max_length=36)
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)

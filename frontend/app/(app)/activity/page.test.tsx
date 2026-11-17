@@ -6,6 +6,42 @@ import ActivityPage from "@/app/(app)/activity/page";
 import { getActivity, listActivity } from "@/lib/api/activity";
 import type { ActivityEvent, ActivityListResponse } from "@/types/api";
 
+const mockReplace = vi.fn();
+let currentSearch = "";
+const searchListeners = new Set<() => void>();
+
+function notifySearchListeners() {
+  searchListeners.forEach((listener) => listener());
+}
+
+vi.mock("next/navigation", async () => {
+  const React = await import("react");
+  return {
+    useRouter: () => ({
+      replace: (href: string, options?: { scroll?: boolean }) => {
+        mockReplace(href, options);
+        currentSearch = href.includes("?") ? (href.split("?")[1] ?? "") : "";
+        notifySearchListeners();
+      },
+      push: vi.fn(),
+    }),
+    usePathname: () => "/activity",
+    useSearchParams: () => {
+      React.useSyncExternalStore(
+        (onStoreChange) => {
+          searchListeners.add(onStoreChange);
+          return () => {
+            searchListeners.delete(onStoreChange);
+          };
+        },
+        () => currentSearch,
+        () => currentSearch,
+      );
+      return new URLSearchParams(currentSearch);
+    },
+  };
+});
+
 vi.mock("@/lib/api/activity", () => ({
   listActivity: vi.fn(),
   getActivity: vi.fn(),
@@ -53,6 +89,8 @@ function pageOf(items: ActivityEvent[], total = items.length): ActivityListRespo
 
 describe("Activity page", () => {
   beforeEach(() => {
+    currentSearch = "";
+    mockReplace.mockReset();
     listActivityMock.mockReset();
     getActivityMock.mockReset();
     listActivityMock.mockResolvedValue(pageOf([]));
@@ -114,6 +152,24 @@ describe("Activity page", () => {
     );
     expect(screen.queryByRole("link", { name: "Open lead" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "No matching activity" })).toBeVisible();
+    expect(
+      screen.getAllByRole("button", { name: "Clear filters" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps filters and selection in the URL", async () => {
+    const user = userEvent.setup();
+    listActivityMock.mockResolvedValue(pageOf([event]));
+    render(<ActivityPage />);
+
+    await user.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("event=event-1"),
+        expect.objectContaining({ scroll: false }),
+      ),
+    );
+    await waitFor(() => expect(getActivityMock).toHaveBeenCalledWith("event-1"));
   });
 
   it("clears selected detail when moving to another page", async () => {

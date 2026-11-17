@@ -155,7 +155,9 @@ export function UserMenu({
                     setSwitchError(null);
                     setSwitchingId(organization.organization_id);
                     void Promise.resolve(onSwitchOrganization(organization.organization_id))
-                      .then(() => undefined)
+                      .then(() => {
+                        setOrganizations(null);
+                      })
                       .catch((cause: unknown) => {
                         setSwitchError(
                           apiErrorDetail(
@@ -169,9 +171,10 @@ export function UserMenu({
                 >
                   {switchingId === organization.organization_id
                     ? "Switching…"
-                    : current
-                      ? `${organization.name} (current)`
-                      : organization.name}
+                    : `${organization.name}${current ? " (current)" : ""} · ${
+                        roleLabels[organization.role as MembershipRole] ??
+                        organization.role
+                      }`}
                 </DropdownMenuItem>
               );
             })}

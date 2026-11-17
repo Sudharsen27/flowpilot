@@ -10,6 +10,7 @@ import {
   canChangeMemberRole,
   canLeaveOrganization,
   canRemoveMember,
+  canTransferOwnership,
 } from "@/components/settings/team-member-permissions";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -26,6 +27,7 @@ import {
   leaveOrganization,
   listMembers,
   removeMember,
+  transferOwnership,
   updateMemberRole,
 } from "@/lib/api/members";
 import type {
@@ -56,7 +58,8 @@ function getInitials(name: string): string {
 type PendingAction =
   | { type: "remove"; member: MemberPublic }
   | { type: "leave" }
-  | { type: "role"; member: MemberPublic; role: InvitationRole };
+  | { type: "role"; member: MemberPublic; role: InvitationRole }
+  | { type: "transfer"; member: MemberPublic };
 
 type TeamPeopleSettingsProps = {
   role: MembershipRole;
@@ -70,12 +73,17 @@ export function TeamPeopleSettings({
   currentMembershipId,
 }: TeamPeopleSettingsProps) {
   const { completeAuth, signOut } = useAuth();
+  const [actorRole, setActorRole] = useState<MembershipRole>(role);
   const [members, setMembers] = useState<MemberPublic[] | null>(null);
   const [membersError, setMembersError] = useState(false);
   const [requestVersion, setRequestVersion] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+
+  useEffect(() => {
+    setActorRole(role);
+  }, [role]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +136,11 @@ export function TeamPeopleSettings({
               (row) => row.membership_id !== pending.member.membership_id,
             ) ?? current,
         );
+      } else if (pending.type === "transfer") {
+        await transferOwnership(pending.member.membership_id);
+        setActorRole("ADMIN");
+        setMembers(null);
+        setRequestVersion((version) => version + 1);
       } else {
         const next = await leaveOrganization();
         if (next && typeof next === "object" && "access_token" in next) {
@@ -156,7 +169,9 @@ export function TeamPeopleSettings({
         ? "Leave this organization?"
         : pending?.type === "role"
           ? `Change role to ${roleLabels[pending.role]}?`
-          : "";
+          : pending?.type === "transfer"
+            ? `Transfer ownership to ${pending.member.user.name}?`
+            : "";
   const confirmDescription =
     pending?.type === "remove"
       ? `${pending.member.user.name} will lose access to this organization immediately.`
@@ -164,15 +179,21 @@ export function TeamPeopleSettings({
         ? "You will lose access to this organization. If you belong to another organization, you will switch to it."
         : pending?.type === "role"
           ? `${pending.member.user.name} will become ${roleLabels[pending.role]}.`
-          : "";
+          : pending?.type === "transfer"
+            ? `${pending.member.user.name} will become the owner. You will become an admin and can leave afterward.`
+            : "";
   const confirmLabel =
     pending?.type === "remove"
       ? "Remove"
       : pending?.type === "leave"
         ? "Leave organization"
-        : "Change role";
+        : pending?.type === "transfer"
+          ? "Transfer ownership"
+          : "Change role";
   const confirmVariant =
-    pending?.type === "remove" || pending?.type === "leave"
+    pending?.type === "remove" ||
+    pending?.type === "leave" ||
+    pending?.type === "transfer"
       ? "destructive"
       : "default";
 
@@ -208,13 +229,21 @@ export function TeamPeopleSettings({
               member.user.id === currentUserId ||
               member.membership_id === currentMembershipId;
             const targetRole = member.role;
-            const showRoleChange = canChangeMemberRole(role, targetRole);
-            const showRemove = canRemoveMember(role, targetRole, isSelf);
-            const showLeave = isSelf && canLeaveOrganization(role);
-            const hasActions = showRoleChange || showRemove || showLeave;
-            const nextRoles = assignableRolesFor(role, targetRole).filter(
+            const showRoleChange = canChangeMemberRole(actorRole, targetRole);
+            const showRemove = canRemoveMember(actorRole, targetRole, isSelf);
+            const showTransfer = canTransferOwnership(
+              actorRole,
+              targetRole,
+              isSelf,
+            );
+            const showLeave = isSelf && canLeaveOrganization(actorRole);
+            const hasActions =
+              showRoleChange || showRemove || showTransfer || showLeave;
+            const nextRoles = assignableRolesFor(actorRole, targetRole).filter(
               (next) => next !== targetRole,
             );
+            const showDestructiveSeparator =
+              (showRoleChange || showTransfer) && (showRemove || showLeave);
 
             return (
               <li
@@ -274,9 +303,16 @@ export function TeamPeopleSettings({
                           Make {roleLabels[nextRole]}
                         </DropdownMenuItem>
                       ))}
-                      {showRoleChange && (showRemove || showLeave) ? (
-                        <DropdownMenuSeparator />
+                      {showTransfer ? (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            setPending({ type: "transfer", member })
+                          }
+                        >
+                          Transfer ownership
+                        </DropdownMenuItem>
                       ) : null}
+                      {showDestructiveSeparator ? <DropdownMenuSeparator /> : null}
                       {showRemove ? (
                         <DropdownMenuItem
                           className="text-danger-text"
@@ -312,7 +348,7 @@ export function TeamPeopleSettings({
             or revoked.
           </p>
         </div>
-        <TeamInvitations role={role} />
+        <TeamInvitations role={actorRole} />
       </div>
 
       <ConfirmDialog

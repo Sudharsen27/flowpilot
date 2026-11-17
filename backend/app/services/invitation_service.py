@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from urllib.parse import quote
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -45,9 +45,11 @@ from app.services.email_verification_service import _application_origin, _sender
 INVITE_TTL = timedelta(days=7)
 INVALID_INVITATION = "This invitation link is invalid or has expired."
 INVITATION_MISMATCH = "This invitation does not match the signed-in account."
+INVITATION_DELIVERY_FAILED = "The invitation email could not be delivered."
 _ASSIGNABLE = frozenset({MembershipRole.ADMIN.value, MembershipRole.MEMBER.value})
 _LIVE_EMAIL_CONSTRAINT = "uq_organization_invitations_live_email"
 _SUBJECT = "Join a FlowPilot organization"
+_HISTORY_LIMIT = 50
 logger = logging.getLogger(__name__)
 
 
@@ -161,6 +163,62 @@ class InvitationService:
             raise ForbiddenError("Not allowed to revoke this invitation")
         invitation.revoked_at = datetime.now(UTC)
         self.session.commit()
+
+    def resend(
+        self,
+        *,
+        organization_id: str,
+        invitation_id: str,
+        actor_role: str,
+    ) -> OrganizationInvitation:
+        self._require_manager(actor_role)
+        invitation = self._lock(invitation_id, organization_id)
+        if invitation is None or not self._is_live(invitation):
+            raise NotFoundError("Invitation not found")
+        if (
+            actor_role == MembershipRole.ADMIN.value
+            and invitation.role != MembershipRole.MEMBER.value
+        ):
+            raise ForbiddenError("Not allowed to resend this invitation")
+        assert_can_invite(actor_role, invitation.role)
+        raw_token = secrets.token_urlsafe(32)
+        now = datetime.now(UTC)
+        invitation.token_hash = hash_token(raw_token)
+        invitation.expires_at = now + INVITE_TTL
+        self.session.commit()
+        organization = self.organizations.get_by_id(organization_id)
+        organization_name = (
+            organization.name if organization is not None else "a FlowPilot organization"
+        )
+        delivery = self._deliver(invitation.email, organization_name, raw_token)
+        if delivery is _Delivery.FAILED:
+            self._revoke_undelivered(invitation.id)
+            raise UnprocessableError(INVITATION_DELIVERY_FAILED)
+        refreshed = self.session.get(OrganizationInvitation, invitation_id)
+        assert refreshed is not None
+        return refreshed
+
+    def list_history(
+        self, *, organization_id: str, actor_role: str
+    ) -> list[OrganizationInvitation]:
+        self._require_manager(actor_role)
+        resolved_at = func.coalesce(
+            OrganizationInvitation.accepted_at,
+            OrganizationInvitation.revoked_at,
+        )
+        statement = (
+            select(OrganizationInvitation)
+            .where(
+                OrganizationInvitation.organization_id == organization_id,
+                (
+                    OrganizationInvitation.accepted_at.is_not(None)
+                    | OrganizationInvitation.revoked_at.is_not(None)
+                ),
+            )
+            .order_by(resolved_at.desc(), OrganizationInvitation.created_at.desc())
+            .limit(_HISTORY_LIMIT)
+        )
+        return list(self.session.scalars(statement))
 
     def accept(
         self,

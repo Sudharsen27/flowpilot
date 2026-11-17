@@ -9,11 +9,14 @@ const mocks = vi.hoisted(() => ({
   updateMemberRole: vi.fn(),
   removeMember: vi.fn(),
   leaveOrganization: vi.fn(),
+  transferOwnership: vi.fn(),
   completeAuth: vi.fn(),
   signOut: vi.fn(),
   listInvitations: vi.fn(),
+  listInvitationHistory: vi.fn(),
   createInvitation: vi.fn(),
   revokeInvitation: vi.fn(),
+  resendInvitation: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -28,12 +31,15 @@ vi.mock("@/lib/api/members", () => ({
   updateMemberRole: mocks.updateMemberRole,
   removeMember: mocks.removeMember,
   leaveOrganization: mocks.leaveOrganization,
+  transferOwnership: mocks.transferOwnership,
 }));
 
 vi.mock("@/lib/api/invitations", () => ({
   listInvitations: mocks.listInvitations,
+  listInvitationHistory: mocks.listInvitationHistory,
   createInvitation: mocks.createInvitation,
   revokeInvitation: mocks.revokeInvitation,
+  resendInvitation: mocks.resendInvitation,
 }));
 
 const owner = {
@@ -69,13 +75,71 @@ describe("TeamPeopleSettings", () => {
     mocks.updateMemberRole.mockReset();
     mocks.removeMember.mockReset();
     mocks.leaveOrganization.mockReset();
+    mocks.transferOwnership.mockReset();
     mocks.completeAuth.mockReset();
     mocks.signOut.mockReset();
     mocks.listInvitations.mockReset();
+    mocks.listInvitationHistory.mockReset();
     mocks.createInvitation.mockReset();
     mocks.revokeInvitation.mockReset();
+    mocks.resendInvitation.mockReset();
     mocks.listMembers.mockResolvedValue([owner, member]);
     mocks.listInvitations.mockResolvedValue([]);
+    mocks.listInvitationHistory.mockResolvedValue([]);
+  });
+
+  it("lets an owner transfer ownership and then leave", async () => {
+    const user = userEvent.setup();
+    const admin = {
+      membership_id: "membership-3",
+      role: "ADMIN" as const,
+      user: {
+        id: "user-3",
+        name: "Casey Admin",
+        email: "casey@example.com",
+      },
+    };
+    mocks.listMembers
+      .mockResolvedValueOnce([owner, admin])
+      .mockResolvedValueOnce([
+        { ...owner, role: "ADMIN" },
+        { ...admin, role: "OWNER" },
+      ]);
+    mocks.transferOwnership.mockResolvedValue({ ...admin, role: "OWNER" });
+    mocks.leaveOrganization.mockResolvedValue(undefined);
+
+    render(
+      <TeamPeopleSettings
+        role="OWNER"
+        currentUserId="user-1"
+        currentMembershipId="membership-1"
+      />,
+    );
+
+    await screen.findByText("Casey Admin");
+    await openMemberActions(user, "Casey Admin");
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Transfer ownership" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Transfer ownership" }),
+    );
+    await waitFor(() =>
+      expect(mocks.transferOwnership).toHaveBeenCalledWith("membership-3"),
+    );
+
+    await screen.findByText("Casey Admin");
+    await openMemberActions(user, "Alex Morgan");
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Leave organization" }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Leave organization",
+      }),
+    );
+    await waitFor(() => expect(mocks.leaveOrganization).toHaveBeenCalledOnce());
+    expect(mocks.signOut).toHaveBeenCalledOnce();
   });
 
   it("shows people and lets an owner change a member role after confirm", async () => {

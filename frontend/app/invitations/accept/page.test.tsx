@@ -11,11 +11,20 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   acceptInvitation: vi.fn(),
   logoutSession: vi.fn(),
+  completeAuth: vi.fn(),
+  switchOrganization: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => mocks,
   useSearchParams: () => new URLSearchParams(state.search),
+}));
+
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({
+    completeAuth: mocks.completeAuth,
+    switchOrganization: mocks.switchOrganization,
+  }),
 }));
 
 vi.mock("@/lib/api/invitations", () => ({
@@ -32,6 +41,9 @@ describe("invitation acceptance", () => {
     mocks.replace.mockReset();
     mocks.acceptInvitation.mockReset();
     mocks.logoutSession.mockReset();
+    mocks.completeAuth.mockReset();
+    mocks.switchOrganization.mockReset();
+    mocks.switchOrganization.mockResolvedValue(undefined);
     window.localStorage.clear();
   });
 
@@ -78,6 +90,7 @@ describe("invitation acceptance", () => {
         password: "password12",
       }),
     );
+    expect(mocks.completeAuth).toHaveBeenCalledWith(created);
     expect(mocks.replace).toHaveBeenCalledWith("/dashboard");
     expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
     expect(document.body.textContent).not.toContain("invite-token");
@@ -102,21 +115,28 @@ describe("invitation acceptance", () => {
     expect(screen.queryByLabelText(/^password/i)).not.toBeInTheDocument();
   });
 
-  it("accepts a signed-in account without switching the current workspace", async () => {
+  it("offers switching into the invited organization after accept", async () => {
+    const user = userEvent.setup();
     mocks.acceptInvitation.mockResolvedValue({
       status: "accepted",
       organization_id: "org-2",
     });
 
     render(<InvitationAcceptPanel />);
-    await userEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+    await user.click(screen.getByRole("button", { name: "Accept invitation" }));
 
-    expect(await screen.findByText(/This browser stays in the current workspace/)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Go to workspace" })).toHaveAttribute(
+    expect(await screen.findByText(/You joined the organization/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Stay in current workspace" })).toHaveAttribute(
       "href",
       "/dashboard",
     );
-    expect(mocks.replace).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: "Switch to this organization" }),
+    );
+    await waitFor(() =>
+      expect(mocks.switchOrganization).toHaveBeenCalledWith("org-2"),
+    );
+    expect(mocks.replace).toHaveBeenCalledWith("/dashboard");
   });
 
   it("shows one invalid-link message and a signed-in mismatch", async () => {
@@ -170,7 +190,7 @@ describe("invitation acceptance", () => {
 
     await waitFor(() => expect(mocks.acceptInvitation).toHaveBeenCalledTimes(1));
     expect(mocks.acceptInvitation).toHaveBeenCalledWith({ token: "invite-token" });
-    expect(await screen.findByText(/This browser stays in the current workspace/)).toBeVisible();
+    expect(await screen.findByText(/You joined the organization/)).toBeVisible();
   });
 
   it("ignores a second accept while the first request is in progress", async () => {
@@ -190,6 +210,6 @@ describe("invitation acceptance", () => {
 
     expect(mocks.acceptInvitation).toHaveBeenCalledTimes(1);
     release({ status: "accepted", organization_id: "org-2" });
-    expect(await screen.findByText(/This browser stays in the current workspace/)).toBeVisible();
+    expect(await screen.findByText(/You joined the organization/)).toBeVisible();
   });
 });

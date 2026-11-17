@@ -28,6 +28,7 @@ from tests.test_agent_api import _add_org_member
 from tests.test_google_auth import _configure, _stub_profile
 
 CREATE = "/api/v1/organizations/current/invitations"
+HISTORY = "/api/v1/organizations/current/invitations/history"
 ACCEPT = "/api/v1/invitations/accept"
 LEADS = "/api/v1/leads"
 ME = "/api/v1/users/me"
@@ -669,3 +670,64 @@ def test_second_acceptance_rejects_after_first_success(
     assert memberships == 1
     assert user.password_hash is not None
     assert user.email_verified_at is not None
+
+
+def test_owner_can_resend_and_list_invitation_history(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent = _configure_mail(monkeypatch)
+    owner = register_verified(client)
+    token = owner["access_token"]
+    assert _invite(client, token, "ada@example.com", role="ADMIN").status_code == 200
+    invitation_id = client.get(CREATE, headers=_headers(token)).json()[0]["id"]
+    first_token = _token_from(sent[0])
+
+    resent = client.post(f"{CREATE}/{invitation_id}/resend", headers=_headers(token))
+    assert resent.status_code == 200
+    assert resent.json()["email"] == "ada@example.com"
+    assert len(sent) == 2
+    second_token = _token_from(sent[1])
+    assert second_token != first_token
+
+    client.cookies.clear()
+    stale = client.post(
+        ACCEPT,
+        json={"token": first_token, "name": "Ada", "password": "password12"},
+    )
+    assert stale.status_code == 400
+    fresh = client.post(
+        ACCEPT,
+        json={"token": second_token, "name": "Ada", "password": "password12"},
+    )
+    assert fresh.status_code == 200
+
+    history = client.get(HISTORY, headers=_headers(token))
+    assert history.status_code == 200
+    assert history.json()[0]["email"] == "ada@example.com"
+    assert history.json()[0]["status"] == "accepted"
+
+
+def test_resend_delivery_failure_revokes_and_surfaces_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.invitation_service import INVITATION_DELIVERY_FAILED, InvitationService
+
+    sent = _configure_mail(monkeypatch)
+    owner = register_verified(client)
+    token = owner["access_token"]
+    assert _invite(client, token, "fail@example.com").status_code == 200
+    invitation_id = client.get(CREATE, headers=_headers(token)).json()[0]["id"]
+    assert len(sent) == 1
+
+    def boom(self: object, message: object) -> object:
+        raise ProviderError("resend rejected")
+
+    monkeypatch.setattr(ResendEmailProvider, "send", boom)
+    failed = client.post(f"{CREATE}/{invitation_id}/resend", headers=_headers(token))
+    assert failed.status_code == 422
+    assert failed.json()["detail"] == INVITATION_DELIVERY_FAILED
+    assert client.get(CREATE, headers=_headers(token)).json() == []
+    history = client.get(HISTORY, headers=_headers(token)).json()
+    assert history[0]["email"] == "fail@example.com"
+    assert history[0]["status"] == "revoked"
+    del InvitationService

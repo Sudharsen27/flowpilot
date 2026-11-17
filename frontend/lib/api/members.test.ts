@@ -4,6 +4,7 @@ import {
   leaveOrganization,
   listMembers,
   removeMember,
+  transferOwnership,
   updateMemberRole,
 } from "@/lib/api/members";
 
@@ -60,5 +61,18 @@ describe("members api", () => {
     mocks.apiPost.mockResolvedValue(undefined);
     await expect(leaveOrganization()).resolves.toBeUndefined();
     expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/organizations/current/leave");
+  });
+
+  it("transfers ownership", async () => {
+    mocks.apiPost.mockResolvedValue({
+      membership_id: "m-3",
+      role: "OWNER",
+      user: { id: "u-3", name: "Bea", email: "bea@example.com" },
+    });
+    await transferOwnership("m-3");
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      "/api/v1/organizations/current/transfer-ownership",
+      { membership_id: "m-3" },
+    );
   });
 });

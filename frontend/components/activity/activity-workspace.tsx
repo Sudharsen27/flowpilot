@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActivityDetail } from "@/components/activity/activity-detail";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
@@ -9,17 +10,22 @@ import { StatePanel } from "@/components/data-display/state-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api/client";
 import { getActivity, listActivity } from "@/lib/api/activity";
+import {
+  ACTIVITY_PAGE_SIZE,
+  hasActivityFilters,
+  parseActivitySearchParams,
+  serializeActivitySearchParams,
+  type ActivityUrlState,
+} from "@/lib/activity-url";
+import { cn } from "@/lib/utils";
 import type {
   ActivityEntityType,
   ActivityEvent,
   ActivityEventType,
   ActivityListResponse,
 } from "@/types/api";
-
-const PAGE_SIZE = 20;
 
 type MobileActivityView = "timeline" | "detail";
 
@@ -28,36 +34,87 @@ type ActivityWorkspaceProps = {
 };
 
 export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
-  const [mobileView, setMobileView] = useState<MobileActivityView>("timeline");
-  const [query, setQuery] = useState("");
-  const [eventType, setEventType] = useState<ActivityEventType | "">("");
-  const [entityType, setEntityType] = useState<ActivityEntityType | "">("");
-  const [offset, setOffset] = useState(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlState = useMemo(
+    () => parseActivitySearchParams(searchParams),
+    [searchParams],
+  );
+  const filtersActive = hasActivityFilters(urlState);
+
+  const [mobileView, setMobileView] = useState<MobileActivityView>(
+    urlState.eventId ? "detail" : "timeline",
+  );
+  const [queryInput, setQueryInput] = useState(urlState.q);
+  const [trackedQuery, setTrackedQuery] = useState(urlState.q);
   const [retryKey, setRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<ActivityListResponse | null>(null);
   const [selected, setSelected] = useState<ActivityEvent | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(Boolean(urlState.eventId));
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailRetryKey, setDetailRetryKey] = useState(0);
   const detailHeadingRef = useRef<HTMLHeadingElement>(null);
   const detailRequestRef = useRef(0);
-  const selectedIdRef = useRef<string | null>(null);
+  const selectedIdRef = useRef<string | null>(urlState.eventId);
+
+  if (urlState.q !== trackedQuery) {
+    setTrackedQuery(urlState.q);
+    setQueryInput(urlState.q);
+  }
+
+  const replaceUrl = useCallback(
+    (next: ActivityUrlState) => {
+      const serialized = serializeActivitySearchParams(next);
+      if (serialized === searchParams.toString()) {
+        return;
+      }
+      router.replace(serialized ? `${pathname}?${serialized}` : pathname, {
+        scroll: false,
+      });
+    },
+    [pathname, router, searchParams],
+  );
+
+  function patchUrl(patch: Partial<ActivityUrlState>) {
+    replaceUrl({ ...urlState, ...patch });
+  }
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const trimmed = queryInput.trim();
+      if (trimmed === urlState.q) {
+        return;
+      }
+      replaceUrl({
+        ...urlState,
+        q: trimmed,
+        offset: 0,
+        eventId: null,
+      });
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [queryInput, replaceUrl, urlState]);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     void listActivity({
-      q: query.trim() || undefined,
-      type: eventType || undefined,
-      entity_type: entityType || undefined,
-      limit: PAGE_SIZE,
-      offset,
+      q: urlState.q || undefined,
+      type: urlState.type || undefined,
+      entity_type: urlState.entityType || undefined,
+      limit: ACTIVITY_PAGE_SIZE,
+      offset: urlState.offset,
     })
       .then((data) => {
         if (cancelled) return;
         if (
           selectedIdRef.current &&
-          !data.items.some((item) => item.id === selectedIdRef.current)
+          !data.items.some((item) => item.id === selectedIdRef.current) &&
+          selectedIdRef.current !== urlState.eventId
         ) {
           detailRequestRef.current += 1;
           selectedIdRef.current = null;
@@ -85,7 +142,38 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [entityType, eventType, offset, onSummary, query, retryKey]);
+  }, [
+    onSummary,
+    retryKey,
+    urlState.entityType,
+    urlState.eventId,
+    urlState.offset,
+    urlState.q,
+    urlState.type,
+  ]);
+
+  useEffect(() => {
+    if (!urlState.eventId) {
+      return;
+    }
+    const requestId = ++detailRequestRef.current;
+    setDetailLoading(true);
+    setDetailError(null);
+    setMobileView("detail");
+    void getActivity(urlState.eventId)
+      .then((detail) => {
+        if (requestId !== detailRequestRef.current) return;
+        selectedIdRef.current = detail.id;
+        setSelected(detail);
+      })
+      .catch(() => {
+        if (requestId !== detailRequestRef.current) return;
+        setDetailError("Retry to load the complete recorded event.");
+      })
+      .finally(() => {
+        if (requestId === detailRequestRef.current) setDetailLoading(false);
+      });
+  }, [detailRetryKey, urlState.eventId]);
 
   const selectedId = selected?.id;
 
@@ -94,11 +182,6 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
       detailHeadingRef.current?.focus();
     }
   }, [mobileView, selectedId]);
-
-  function beginFetch() {
-    setLoading(true);
-    setError(null);
-  }
 
   function clearSelection() {
     detailRequestRef.current += 1;
@@ -109,31 +192,28 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
     setMobileView("timeline");
   }
 
-  function loadDetail(event: ActivityEvent) {
-    const requestId = ++detailRequestRef.current;
-    setDetailLoading(true);
-    setDetailError(null);
-    void getActivity(event.id)
-      .then((detail) => {
-        if (requestId === detailRequestRef.current) {
-          selectedIdRef.current = detail.id;
-          setSelected(detail);
-        }
-      })
-      .catch(() => {
-        if (requestId !== detailRequestRef.current) return;
-        selectedIdRef.current = event.id;
-        setSelected(event);
-        setDetailError("Retry to load the complete recorded event.");
-      })
-      .finally(() => {
-        if (requestId === detailRequestRef.current) setDetailLoading(false);
-      });
+  function selectEvent(event: ActivityEvent) {
+    selectedIdRef.current = event.id;
+    setSelected(event);
+    setMobileView("detail");
+    patchUrl({ eventId: event.id });
+  }
+
+  function clearFilters() {
+    clearSelection();
+    setQueryInput("");
+    replaceUrl({
+      q: "",
+      type: "",
+      entityType: "",
+      offset: 0,
+      eventId: null,
+    });
   }
 
   const total = page?.total ?? 0;
-  const start = total === 0 ? 0 : offset + 1;
-  const end = Math.min(offset + PAGE_SIZE, total);
+  const start = total === 0 ? 0 : urlState.offset + 1;
+  const end = Math.min(urlState.offset + ACTIVITY_PAGE_SIZE, total);
 
   return (
     <div className="grid gap-3">
@@ -186,35 +266,19 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
           </header>
           <div className="border-border border-t p-4">
             <ActivityToolbar
-              query={query}
-              eventType={eventType}
-              entityType={entityType}
-              onQueryChange={(value) => {
+              query={queryInput}
+              eventType={urlState.type}
+              entityType={urlState.entityType}
+              onQueryChange={setQueryInput}
+              onEventTypeChange={(value: ActivityEventType | "") => {
                 clearSelection();
-                beginFetch();
-                setQuery(value);
-                setOffset(0);
+                patchUrl({ type: value, offset: 0, eventId: null });
               }}
-              onEventTypeChange={(value) => {
+              onEntityTypeChange={(value: ActivityEntityType | "") => {
                 clearSelection();
-                beginFetch();
-                setEventType(value);
-                setOffset(0);
+                patchUrl({ entityType: value, offset: 0, eventId: null });
               }}
-              onEntityTypeChange={(value) => {
-                clearSelection();
-                beginFetch();
-                setEntityType(value);
-                setOffset(0);
-              }}
-              onClearFilters={() => {
-                clearSelection();
-                beginFetch();
-                setQuery("");
-                setEventType("");
-                setEntityType("");
-                setOffset(0);
-              }}
+              onClearFilters={clearFilters}
             />
           </div>
           {error ? (
@@ -227,10 +291,7 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      beginFetch();
-                      setRetryKey((value) => value + 1);
-                    }}
+                    onClick={() => setRetryKey((value) => value + 1)}
                   >
                     Retry
                   </Button>
@@ -243,23 +304,23 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
               <Skeleton className="h-24" />
               <span className="sr-only">Loading activity</span>
             </div>
-          ) : !loading && page && page.total === 0 && (query.trim() || eventType || entityType) ? (
+          ) : !loading && page && page.total === 0 && filtersActive ? (
             <div className="p-4">
               <StatePanel
                 title="No matching activity"
                 description="Nothing matches the current search or filters."
+                action={
+                  <Button type="button" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                }
               />
             </div>
           ) : (
             <ActivityTimeline
               events={page?.items ?? []}
               selectedId={selected?.id}
-              onSelect={(event) => {
-                selectedIdRef.current = event.id;
-                setSelected(event);
-                setMobileView("detail");
-                loadDetail(event);
-              }}
+              onSelect={selectEvent}
             />
           )}
           {total > 0 ? (
@@ -271,11 +332,13 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={offset === 0 || loading}
+                  disabled={urlState.offset === 0 || loading}
                   onClick={() => {
                     clearSelection();
-                    beginFetch();
-                    setOffset(Math.max(0, offset - PAGE_SIZE));
+                    patchUrl({
+                      offset: Math.max(0, urlState.offset - ACTIVITY_PAGE_SIZE),
+                      eventId: null,
+                    });
                   }}
                 >
                   Previous
@@ -283,11 +346,15 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={offset + PAGE_SIZE >= total || loading}
+                  disabled={
+                    urlState.offset + ACTIVITY_PAGE_SIZE >= total || loading
+                  }
                   onClick={() => {
                     clearSelection();
-                    beginFetch();
-                    setOffset(offset + PAGE_SIZE);
+                    patchUrl({
+                      offset: urlState.offset + ACTIVITY_PAGE_SIZE,
+                      eventId: null,
+                    });
                   }}
                 >
                   Next
@@ -309,7 +376,11 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
             event={selected}
             loading={detailLoading}
             error={detailError}
-            onRetry={selected ? () => loadDetail(selected) : undefined}
+            onRetry={
+              urlState.eventId
+                ? () => setDetailRetryKey((value) => value + 1)
+                : undefined
+            }
             onBack={() => setMobileView("timeline")}
             headingRef={detailHeadingRef}
           />

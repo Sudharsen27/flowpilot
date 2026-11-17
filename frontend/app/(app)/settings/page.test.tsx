@@ -68,8 +68,10 @@ vi.mock("@/lib/api/members", () => ({
 
 vi.mock("@/lib/api/invitations", () => ({
   listInvitations: vi.fn().mockResolvedValue([]),
+  listInvitationHistory: vi.fn().mockResolvedValue([]),
   createInvitation: vi.fn(),
   revokeInvitation: vi.fn(),
+  resendInvitation: vi.fn(),
 }));
 
 vi.mock("@/lib/api/runtime", () => ({

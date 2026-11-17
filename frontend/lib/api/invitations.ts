@@ -1,6 +1,7 @@
 import { apiGet, apiPost } from "@/lib/api/client";
 import type {
   InvitationAcceptResponse,
+  InvitationHistoryPublic,
   InvitationPublic,
   InvitationRole,
   InvitationStatusResponse,
@@ -11,11 +12,23 @@ export function listInvitations() {
   return apiGet<InvitationPublic[]>("/api/v1/organizations/current/invitations");
 }
 
+export function listInvitationHistory() {
+  return apiGet<InvitationHistoryPublic[]>(
+    "/api/v1/organizations/current/invitations/history",
+  );
+}
+
 export function createInvitation(email: string, role: InvitationRole) {
   return apiPost<InvitationStatusResponse>("/api/v1/organizations/current/invitations", {
     email,
     role,
   });
+}
+
+export function resendInvitation(invitationId: string) {
+  return apiPost<InvitationPublic>(
+    `/api/v1/organizations/current/invitations/${encodeURIComponent(invitationId)}/resend`,
+  );
 }
 
 export function revokeInvitation(invitationId: string) {

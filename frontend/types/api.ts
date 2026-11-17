@@ -179,6 +179,15 @@ export type InvitationPublic = {
   created_at: string;
 };
 
+export type InvitationHistoryPublic = {
+  id: string;
+  email: string;
+  role: string;
+  status: "accepted" | "revoked";
+  created_at: string;
+  resolved_at: string;
+};
+
 export type InvitationStatusResponse = {
   status: "accepted";
 };

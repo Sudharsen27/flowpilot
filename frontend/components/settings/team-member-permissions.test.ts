@@ -5,6 +5,7 @@ import {
   canChangeMemberRole,
   canLeaveOrganization,
   canRemoveMember,
+  canTransferOwnership,
 } from "@/components/settings/team-member-permissions";
 
 describe("team member permissions", () => {
@@ -33,5 +34,9 @@ describe("team member permissions", () => {
     expect(canLeaveOrganization("OWNER")).toBe(false);
     expect(canLeaveOrganization("ADMIN")).toBe(true);
     expect(canLeaveOrganization("MEMBER")).toBe(true);
+    expect(canTransferOwnership("OWNER", "ADMIN", false)).toBe(true);
+    expect(canTransferOwnership("OWNER", "MEMBER", false)).toBe(true);
+    expect(canTransferOwnership("OWNER", "ADMIN", true)).toBe(false);
+    expect(canTransferOwnership("ADMIN", "MEMBER", false)).toBe(false);
   });
 });
