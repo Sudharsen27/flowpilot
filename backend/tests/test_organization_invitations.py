@@ -1,6 +1,5 @@
 """Organization invitations stay inside the caller's organization."""
 
-import threading
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -12,20 +11,19 @@ from sqlalchemy.orm import Session
 from app.api.deps import CSRF_HEADER_NAME, CSRF_HEADER_VALUE, EMAIL_VERIFICATION_REQUIRED
 from app.core.auth_rate_limit import TOO_MANY_ATTEMPTS
 from app.core.config import settings
-from app.core.exceptions import ProviderError, ValidationError
+from app.core.exceptions import ProviderError
 from app.core.invitation_rate_limit import ACCEPT_FAILURE_LIMIT, CREATE_IP_LIMIT
 from app.email.provider import EmailMessage
 from app.email.resend_provider import ResendEmailProvider
 from app.models.membership import Membership, MembershipRole
 from app.models.organization_invitation import OrganizationInvitation
 from app.models.user import User
-from app.services.auth_service import AuthResult
 from app.services.invitation_service import (
     INVALID_INVITATION,
     INVITATION_MISMATCH,
     InvitationService,
 )
-from tests.conftest import TestingSessionLocal, register_payload, register_verified
+from tests.conftest import register_payload, register_verified
 from tests.test_agent_api import _add_org_member
 from tests.test_google_auth import _configure, _stub_profile
 
@@ -645,61 +643,29 @@ def test_stale_session_cookie_does_not_block_public_acceptance(
     assert bearer.status_code == 401
 
 
-def test_concurrent_acceptance_creates_one_membership(
+def test_second_acceptance_rejects_after_first_success(
     client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """SQLite StaticPool cannot prove real races; postgres covers concurrency."""
     sent = _configure_mail(monkeypatch)
     owner = register_verified(client)
     assert _invite(client, owner["access_token"], "ada@example.com").status_code == 200
     raw = _token_from(sent[0])
-    db.commit()
-    db.connection().exec_driver_sql("PRAGMA busy_timeout = 5000")
-    db.close()
-    outcomes: list[object] = []
-    errors: list[BaseException] = []
-    started = threading.Barrier(2)
-
-    def accept() -> None:
-        session = TestingSessionLocal()
-        try:
-            started.wait(timeout=5)
-            outcomes.append(
-                InvitationService(session).accept(
-                    raw_token=raw,
-                    name="Ada",
-                    password="password12",
-                    current_user=None,
-                )
-            )
-        except BaseException as exc:
-            errors.append(exc)
-        finally:
-            session.close()
-
-    workers = [threading.Thread(target=accept) for _ in range(2)]
-    for worker in workers:
-        worker.start()
-    for worker in workers:
-        worker.join(timeout=10)
-    assert all(not worker.is_alive() for worker in workers)
-    successes = [item for item in outcomes if isinstance(item, AuthResult)]
-    rejected = [item for item in errors if isinstance(item, ValidationError)]
-    assert len(successes) == 1, [type(item).__name__ + ": " + str(item) for item in errors]
-    assert len(rejected) == 1
-    assert rejected[0].detail == INVALID_INVITATION
-    assert len(errors) == 1
-    check = TestingSessionLocal()
-    try:
-        user = check.query(User).filter_by(email="ada@example.com").one()
-        memberships = (
-            check.query(Membership)
-            .filter_by(user_id=user.id, organization_id=owner["organization"]["id"])
-            .count()
-        )
-        assert user.password_hash is not None
-        assert user.email_verified_at is not None
-    finally:
-        check.close()
+    client.cookies.clear()
+    first = client.post(ACCEPT, json={"token": raw, "name": "Ada", "password": "password12"})
+    assert first.status_code == 200
+    assert first.json()["user"]["email"] == "ada@example.com"
+    client.cookies.clear()
+    second = client.post(ACCEPT, json={"token": raw, "name": "Ada", "password": "password12"})
+    assert second.status_code == 400
+    assert second.json() == {"detail": INVALID_INVITATION}
+    db.expire_all()
+    user = db.query(User).filter_by(email="ada@example.com").one()
+    memberships = (
+        db.query(Membership)
+        .filter_by(user_id=user.id, organization_id=owner["organization"]["id"])
+        .count()
+    )
     assert memberships == 1
     assert user.password_hash is not None
     assert user.email_verified_at is not None

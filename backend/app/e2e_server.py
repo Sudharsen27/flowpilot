@@ -221,6 +221,39 @@ def prepare_e2e_database() -> None:
     _run(["python3", "-m", "alembic", "upgrade", "head"], cwd=backend_dir)
 
 
+def _install_e2e_verification_route(app: object) -> None:
+    """Allow Playwright to clear B2 for disposable accounts only on this process."""
+    from collections.abc import Callable
+    from datetime import UTC, datetime
+    from typing import Any
+
+    from fastapi import Depends, FastAPI
+    from sqlalchemy.orm import Session
+
+    from app.api.deps import get_current_user
+    from app.db.session import get_db
+    from app.models.user import User
+
+    if not isinstance(app, FastAPI):
+        raise TypeError("E2E verification route requires a FastAPI app")
+
+    def mark_verified(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> dict[str, str]:
+        if user.email_verified_at is None:
+            user.email_verified_at = datetime.now(UTC)
+            db.commit()
+        return {"status": "verified"}
+
+    route: Callable[..., Any] = mark_verified
+    app.add_api_route(
+        "/api/v1/auth/e2e/mark-verified",
+        route,
+        methods=["POST"],
+    )
+
+
 def main() -> None:
     from app.core.config import settings
 
@@ -236,6 +269,7 @@ def main() -> None:
     from app.main import app
 
     app.dependency_overrides[get_ai_provider] = lambda: DeterministicE2EProvider()
+    _install_e2e_verification_route(app)
     port = int(os.environ.get("API_PORT", "8010"))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 

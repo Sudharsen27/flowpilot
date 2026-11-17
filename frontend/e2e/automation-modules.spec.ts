@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
+import { registerVerifiedOwner } from "./auth";
+
 const API_URL = process.env.E2E_API_URL ?? "http://127.0.0.1:8010";
 
 test("an owner can use Analytics, Knowledge, Workflows and Integrations", async ({
@@ -11,17 +13,10 @@ test("an owner can use Analytics, Knowledge, Workflows and Integrations", async 
   test.setTimeout(90_000);
   const stamp = randomUUID().slice(0, 8);
   const email = `e2e-modules-${stamp}@example.com`;
-  const password = "password12";
-  const registered = await request.post(`${API_URL}/api/v1/auth/register`, {
-    data: {
-      email,
-      password,
-      name: "E2E Owner",
-      organization_name: `E2E Modules ${stamp}`,
-    },
+  const account = await registerVerifiedOwner(request, {
+    email,
+    organizationName: `E2E Modules ${stamp}`,
   });
-  expect(registered.ok()).toBeTruthy();
-  const account = (await registered.json()) as { access_token: string };
   const createdLead = await request.post(`${API_URL}/api/v1/leads`, {
     headers: { Authorization: `Bearer ${account.access_token}` },
     data: { name: "Ada Prospect", email: `ada-${stamp}@customer.example` },
@@ -30,7 +25,7 @@ test("an owner can use Analytics, Knowledge, Workflows and Integrations", async 
 
   await page.goto("/login");
   await page.getByRole("textbox", { name: "Email" }).fill(email);
-  await page.getByRole("textbox", { name: "Password" }).fill(password);
+  await page.getByRole("textbox", { name: "Password" }).fill(account.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL("**/dashboard");
 

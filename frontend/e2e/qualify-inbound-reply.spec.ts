@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
+import { registerVerifiedOwner } from "./auth";
 import {
   E2E_INBOUND_DOMAIN,
   E2E_REPLY,
@@ -17,20 +18,11 @@ test("qualifies a matched inbound reply from Inbox", async ({
   test.setTimeout(60_000);
   const stamp = randomUUID().slice(0, 8);
   const email = `e2e-${stamp}@example.com`;
-  const password = "password12";
-  const registered = await request.post(`${API_URL}/api/v1/auth/register`, {
-    data: {
-      email,
-      password,
-      name: "E2E Owner",
-      organization_name: `E2E ${stamp}`,
-    },
+  const account = await registerVerifiedOwner(request, {
+    email,
+    organizationName: `E2E ${stamp}`,
   });
-  expect(registered.ok()).toBeTruthy();
-  const account = (await registered.json()) as {
-    access_token: string;
-    organization: { slug: string };
-  };
+  const password = account.password;
 
   const createdLead = await request.post(`${API_URL}/api/v1/leads`, {
     headers: { Authorization: `Bearer ${account.access_token}` },
