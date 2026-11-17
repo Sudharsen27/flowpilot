@@ -56,6 +56,34 @@ def test_resend_success_maps_message_and_idempotency() -> None:
     assert b"re_test" not in body
 
 
+def test_resend_http_error_redacts_invitation_tokens(caplog: pytest.LogCaptureFixture) -> None:
+    import urllib.error
+
+    def boom(_request: object, timeout: float) -> object:
+        raise urllib.error.HTTPError(
+            "https://api.resend.com/emails",
+            422,
+            "err",
+            hdrs={},
+            fp=BytesIO(
+                b'{"message":"https://app.example.com/invitations/accept?token=super-secret-token"}'
+            ),
+        )
+
+    provider = ResendEmailProvider(api_key="re_test", request=boom)
+    with caplog.at_level("WARNING"), pytest.raises(ProviderError):
+        provider.send(
+            EmailMessage(
+                to="lead@example.com",
+                from_email="noreply@example.com",
+                subject="Join",
+                body_text="Hello",
+            )
+        )
+    assert "super-secret-token" not in caplog.text
+    assert "token=[redacted]" in caplog.text
+
+
 def test_resend_http_error_is_provider_error() -> None:
     import urllib.error
 

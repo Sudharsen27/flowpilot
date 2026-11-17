@@ -12,6 +12,7 @@ from app.api.v1.deals import router as deals_router
 from app.api.v1.follow_ups import router as follow_ups_router
 from app.api.v1.inbox import router as inbox_router
 from app.api.v1.integrations import router as integrations_router
+from app.api.v1.invitations import router as invitations_router
 from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.organizations import router as organizations_router
@@ -31,6 +32,7 @@ api_router = APIRouter()
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(organizations_router)
+api_router.include_router(invitations_router)
 api_router.include_router(activity_router)
 api_router.include_router(analytics_router)
 api_router.include_router(knowledge_router)

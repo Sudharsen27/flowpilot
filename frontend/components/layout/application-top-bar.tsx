@@ -19,7 +19,7 @@ type ApplicationTopBarProps = {
 export function ApplicationTopBar({
   mobileNavigationTrigger,
 }: ApplicationTopBarProps) {
-  const { session, signOut } = useAuth();
+  const { session, signOut, switchOrganization } = useAuth();
   const pathname = usePathname();
   const currentPageLabel = getNavigationItemLabel(pathname);
   const currentGroupLabel = getNavigationGroupLabel(pathname);
@@ -56,8 +56,10 @@ export function ApplicationTopBar({
             <UserMenu
               user={session.user}
               organizationName={session.organization.name}
+              organizationId={session.organization.id}
               role={session.membership.role}
               onSignOut={signOut}
+              onSwitchOrganization={switchOrganization}
             />
           </div>
         ) : null}

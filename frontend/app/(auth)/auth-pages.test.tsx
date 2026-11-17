@@ -18,6 +18,7 @@ const auth: AuthResponse = {
     user_id: "user-1",
     role: "OWNER",
   },
+  email_verified: true,
 };
 
 const ACCEPTED_MESSAGE =
@@ -74,6 +75,7 @@ describe("auth pages", () => {
     mocks.completeAuth.mockReset();
     mocks.requestVerificationEmail.mockReset();
     mocks.requestPasswordReset.mockReset();
+    window.history.replaceState({}, "", "/login");
   });
 
   it("frames sign-in as an approval workspace", () => {
@@ -165,12 +167,88 @@ describe("auth pages", () => {
 
   it("opens the workspace after a successful login", async () => {
     const user = userEvent.setup();
-    mocks.signIn.mockResolvedValue(undefined);
+    mocks.signIn.mockResolvedValue(true);
 
     await fillLogin(user);
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(mocks.signIn).toHaveBeenCalledWith("owner@example.com", "password12");
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("sends an unverified password sign-in to the pending page", async () => {
+    const user = userEvent.setup();
+    mocks.signIn.mockResolvedValue(false);
+
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(mocks.push).toHaveBeenCalledWith("/verify-email/pending");
+    expect(mocks.push).not.toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("returns to the invitation after password or Google sign-in", async () => {
+    const user = userEvent.setup();
+    const next = "/invitations/accept?token=invite-token";
+    window.history.replaceState({}, "", `/login?next=${encodeURIComponent(next)}`);
+    mocks.signIn.mockResolvedValue(false);
+
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(mocks.push).toHaveBeenCalledWith(next);
+    expect(mocks.push).not.toHaveBeenCalledWith("/verify-email/pending");
+
+    mocks.push.mockReset();
+    await user.click(screen.getByRole("button", { name: "Continue with Google" }));
+    expect(mocks.completeAuth).toHaveBeenCalledWith(auth);
+    expect(mocks.push).toHaveBeenCalledWith(next);
+    expect(mocks.push).not.toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("keeps the invitation return path through account creation", async () => {
+    const user = userEvent.setup();
+    const next = "/invitations/accept?token=invite-token";
+    window.history.replaceState({}, "", `/login?next=${encodeURIComponent(next)}`);
+    mocks.signUp.mockResolvedValue(undefined);
+
+    const login = render(<LoginPage />);
+    expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute(
+      "href",
+      `/register?next=${encodeURIComponent(next)}`,
+    );
+    login.unmount();
+
+    window.history.replaceState({}, "", `/register?next=${encodeURIComponent(next)}`);
+    render(<RegisterPage />);
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
+      `/login?next=${encodeURIComponent(next)}`,
+    );
+    await user.type(screen.getByLabelText(/your name/i), "Ada");
+    await user.type(screen.getByLabelText(/organization name/i), "Ada Org");
+    await user.type(screen.getByLabelText(/^email/i), "ada@example.com");
+    await user.type(screen.getByLabelText(/^password/i), "password12");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+    expect(mocks.push).toHaveBeenCalledWith(next);
+    expect(mocks.push).not.toHaveBeenCalledWith("/verify-email/pending");
+
+    mocks.push.mockReset();
+    await user.click(screen.getByRole("button", { name: "Continue with Google" }));
+    expect(mocks.push).toHaveBeenCalledWith(next);
+    expect(mocks.push).not.toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("ignores an invitation return path that leaves the accept page", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(
+      {},
+      "",
+      "/login?next=https://evil.example/invitations/accept?token=x",
+    );
+    mocks.signIn.mockResolvedValue(true);
+
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(mocks.push).toHaveBeenCalledWith("/dashboard");
   });
 

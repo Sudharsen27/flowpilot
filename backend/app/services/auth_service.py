@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
     ConflictError,
+    ForbiddenError,
     GoogleLinkPasswordError,
     InvalidCredentialsError,
+    NotFoundError,
     UnauthorizedError,
 )
 from app.core.security import create_access_token, hash_password, verify_password
@@ -171,11 +173,64 @@ class AuthService:
         memberships = self.memberships.list_for_user(user.id)
         if not memberships:
             raise UnauthorizedError("Invalid email or password")
-        membership = min(memberships, key=lambda item: item.created_at)
+        membership = self._selected_membership(user, memberships)
         organization = self.organizations.get_by_id(membership.organization_id)
         if organization is None:
             raise UnauthorizedError("Invalid email or password")
         return self._to_result(user, organization, membership)
+
+    def activate_organization(self, user: User, organization_id: str) -> AuthResult:
+        """Point this user's next login, and this browser cookie, at one membership.
+
+        Does not increment session_version. Tokens already issued for another
+        organization remain valid until logout.
+        """
+        if user.email_verified_at is None:
+            raise ForbiddenError("Email verification required")
+        membership = self.memberships.get_for_user_in_organization(organization_id, user.id)
+        if membership is None:
+            raise NotFoundError("Organization not found")
+        organization = self.organizations.get_by_id(organization_id)
+        if organization is None:
+            raise NotFoundError("Organization not found")
+        user.active_organization_id = organization.id
+        self.session.commit()
+        self.session.refresh(user)
+        return self._to_result(user, organization, membership)
+
+    def list_organizations(self, user: User) -> list[tuple[Organization, Membership]]:
+        memberships = sorted(
+            self.memberships.list_for_user(user.id),
+            key=lambda item: item.created_at,
+        )
+        listed: list[tuple[Organization, Membership]] = []
+        for membership in memberships:
+            organization = self.organizations.get_by_id(membership.organization_id)
+            if organization is not None:
+                listed.append((organization, membership))
+        return listed
+
+    def session_for(
+        self,
+        user: User,
+        organization: Organization,
+        membership: Membership,
+    ) -> AuthResult:
+        return self._to_result(user, organization, membership)
+
+    def _selected_membership(self, user: User, memberships: list[Membership]) -> Membership:
+        if user.active_organization_id:
+            selected = next(
+                (
+                    item
+                    for item in memberships
+                    if item.organization_id == user.active_organization_id
+                ),
+                None,
+            )
+            if selected is not None:
+                return selected
+        return min(memberships, key=lambda item: item.created_at)
 
     def _unique_slug(self, organization_name: str) -> str:
         base = slugify(organization_name)

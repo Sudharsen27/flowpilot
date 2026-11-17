@@ -19,7 +19,7 @@ from app.repositories.inbound_email_repository import InboundEmailRepository
 from app.services.agent_orchestration_service import AgentOrchestrationService
 from app.services.inbound_email_service import InboundEmailService
 from app.services.lead_email_send_service import LeadEmailSendService
-from tests.conftest import register_payload
+from tests.conftest import mark_email_verified, register_payload
 
 WEBHOOK = "/api/v1/webhooks/resend/inbound"
 DOMAIN = "inbound.example.com"
@@ -103,7 +103,9 @@ def _register(client: TestClient, name: str) -> dict[str, Any]:
         ),
     )
     assert response.status_code == 200
-    return response.json()
+    body = response.json()
+    mark_email_verified(str(body["user"]["email"]))
+    return body
 
 
 def _rows(db: Session, organization_id: str) -> list[InboundEmail]:

@@ -33,7 +33,7 @@ from app.tools.base import Tool
 from app.tools.echo import EchoTool
 from app.tools.registry import ToolRegistry
 from app.tools.schema import ToolCall, ToolContext, ToolRiskLevel
-from tests.conftest import register_payload
+from tests.conftest import register_verified
 
 
 class FakeAIProvider:
@@ -85,7 +85,7 @@ def api_client(
 
 
 def _auth(client: TestClient, **kwargs: Any) -> dict[str, Any]:
-    return client.post("/api/v1/auth/register", json=register_payload(**kwargs)).json()
+    return register_verified(client, **kwargs)
 
 
 def _headers(token: str) -> dict[str, str]:

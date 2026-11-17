@@ -43,7 +43,7 @@ describe("verification pending page", () => {
     mocks.requestVerificationEmail.mockReset();
   });
 
-  it("shows the signed-in email and a way into the workspace", () => {
+  it("shows the signed-in email and keeps the workspace closed", () => {
     render(<VerificationPendingPage />);
 
     expect(
@@ -51,9 +51,8 @@ describe("verification pending page", () => {
     ).toBeVisible();
     expect(screen.getByText("Verification pending")).toBeVisible();
     expect(screen.getByText("owner@example.com")).toBeVisible();
-    expect(
-      screen.getByRole("link", { name: "Continue to workspace" }),
-    ).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("button", { name: /resend verification email/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Continue to workspace" })).not.toBeInTheDocument();
   });
 
   it("shows a generic accepted message after HTTP 200", async () => {

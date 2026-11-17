@@ -41,6 +41,7 @@ from app.schemas.deals import (
 from app.schemas.pipeline import ForecastGranularity
 from app.services.deal_service import DealService
 from app.services.pipeline_service import PipelineService
+from tests.conftest import mark_email_verified
 from tests.postgres_guard import postgres_test_url, requires_postgres
 
 pytestmark = requires_postgres
@@ -442,6 +443,7 @@ def _register(client: TestClient, email: str, organization: str) -> dict[str, An
         },
     )
     assert response.status_code in (200, 201), response.text
+    mark_email_verified(email)
     return dict(response.json())
 
 

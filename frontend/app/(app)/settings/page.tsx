@@ -11,8 +11,9 @@ import {
 import { StatePanel } from "@/components/data-display/state-panel";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
-import { WebsiteEnquirySettings } from "@/components/settings/website-enquiry-settings";
 import { IdealCustomerProfileSettings } from "@/components/settings/ideal-customer-profile-settings";
+import { TeamInvitations } from "@/components/settings/team-invitations";
+import { WebsiteEnquirySettings } from "@/components/settings/website-enquiry-settings";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -194,7 +195,11 @@ export default function SettingsPage() {
           </section>
 
           <section id="team" className="grid scroll-mt-20 gap-5" aria-label="Team settings">
-            <SectionHeader title="Team" description="People who currently belong to this organization." />
+            <SectionHeader
+              title="Team"
+              description="Invite people and review who currently belongs to this organization."
+            />
+            <TeamInvitations role={session.membership.role} />
             {membersError ? (
               <StatePanel
                 kind="error"

@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_current_membership, get_current_organization
+from app.core.auth_rate_limit import TOO_MANY_ATTEMPTS
+from app.core.exceptions import RateLimitError
+from app.core.invitation_rate_limit import InvitationRateLimiter
 from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.organization import Organization
@@ -10,8 +13,14 @@ from app.schemas.ideal_customer_profile import (
     IdealCustomerProfileUpdate,
 )
 from app.schemas.identity import MemberPublic, OrganizationPublic, UserPublic
+from app.schemas.invitations import (
+    InvitationCreateRequest,
+    InvitationPublic,
+    InvitationStatusResponse,
+)
 from app.schemas.website_capture import WebsiteCaptureSettings, WebsiteCaptureSettingsUpdate
 from app.services.ideal_customer_profile_service import IdealCustomerProfileService
+from app.services.invitation_service import InvitationService, assert_can_invite
 from app.services.organization_service import OrganizationService
 
 router = APIRouter(prefix="/api/v1/organizations", tags=["organizations"])
@@ -89,4 +98,75 @@ def update_ideal_customer_profile(
         organization_id=organization.id,
         role=membership.role,
         payload=payload,
+    )
+
+
+def _client_ip(request: Request) -> str:
+    if request.client is None or not request.client.host:
+        return "unknown"
+    return request.client.host
+
+
+def _invitation_limiter(db: Session) -> InvitationRateLimiter:
+    factory = sessionmaker(bind=db.get_bind(), autoflush=False, expire_on_commit=False)
+    return InvitationRateLimiter(factory)
+
+
+@router.post("/current/invitations", response_model=InvitationStatusResponse)
+def create_invitation(
+    payload: InvitationCreateRequest,
+    request: Request,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> InvitationStatusResponse:
+    assert_can_invite(membership.role, payload.role)
+    if not _invitation_limiter(db).allow_create(
+        client_ip=_client_ip(request),
+        organization_id=organization.id,
+    ):
+        raise RateLimitError(TOO_MANY_ATTEMPTS)
+    InvitationService(db).create(
+        organization_id=organization.id,
+        invited_by_user_id=membership.user_id,
+        actor_role=membership.role,
+        email=str(payload.email),
+        role=payload.role,
+    )
+    return InvitationStatusResponse(status="accepted")
+
+
+@router.get("/current/invitations", response_model=list[InvitationPublic])
+def list_invitations(
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> list[InvitationPublic]:
+    invitations = InvitationService(db).list_pending(
+        organization_id=organization.id,
+        actor_role=membership.role,
+    )
+    return [
+        InvitationPublic(
+            id=invitation.id,
+            email=invitation.email,
+            role=invitation.role,
+            expires_at=invitation.expires_at,
+            created_at=invitation.created_at,
+        )
+        for invitation in invitations
+    ]
+
+
+@router.post("/current/invitations/{invitation_id}/revoke", status_code=204)
+def revoke_invitation(
+    invitation_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> None:
+    InvitationService(db).revoke(
+        organization_id=organization.id,
+        invitation_id=invitation_id,
+        actor_role=membership.role,
     )

@@ -6,6 +6,7 @@ from app.api.deps import (
     CSRF_HEADER_NAME,
     CSRF_HEADER_VALUE,
     clear_session_cookie,
+    get_current_user,
     presented_access_token,
     set_session_cookie,
 )
@@ -21,6 +22,7 @@ from app.core.password_reset_rate_limit import PasswordResetRateLimiter
 from app.core.security import decode_access_token, token_session_version
 from app.core.verification_rate_limit import VerificationPurpose, VerificationRateLimiter
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.identity import (
     AuthResponse,
     GoogleAuthRequest,
@@ -38,6 +40,7 @@ from app.schemas.identity import (
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
+from app.schemas.invitations import ActiveOrganizationRequest
 from app.services.auth_service import AuthResult, AuthService
 from app.services.email_verification_service import EmailVerificationService
 from app.services.google_oauth_service import GoogleOAuthService
@@ -74,6 +77,7 @@ def to_auth_response(result: AuthResult) -> AuthResponse:
         user=UserPublic.model_validate(result.user),
         organization=OrganizationPublic.model_validate(result.organization),
         membership=MembershipPublic.model_validate(result.membership),
+        email_verified=result.user.email_verified_at is not None,
     )
 
 
@@ -237,6 +241,23 @@ def login_with_google(
         if not limiter.record_failure(email=profile.email, client_ip=client_ip):
             raise RateLimitError(TOO_MANY_ATTEMPTS) from None
         raise
+    body = to_auth_response(result)
+    set_session_cookie(response, body.access_token)
+    return body
+
+
+@router.post("/active-organization", response_model=AuthResponse)
+def activate_organization(
+    payload: ActiveOrganizationRequest,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AuthResponse:
+    """Replace the browser session with one membership this user already has.
+
+    Previous tokens stay valid. Logout still revokes every session version.
+    """
+    result = AuthService(db).activate_organization(user, payload.organization_id)
     body = to_auth_response(result)
     set_session_cookie(response, body.access_token)
     return body

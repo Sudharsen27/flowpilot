@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -74,6 +75,33 @@ def client(db: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
     contact_form_limiter.reset()
     prospect_discovery_limiter.reset()
+
+
+def mark_email_verified(email: str) -> None:
+    """Mark one registered test user verified on the active database override.
+
+    CRM tests call this, or ``register_verified``, after a normal registration.
+    Verification tests leave the column null.
+    """
+    override = app.dependency_overrides[get_db]
+    generator = override()
+    session = next(generator)
+    try:
+        user = session.query(User).filter_by(email=email.strip().lower()).one()
+        if user.email_verified_at is None:
+            user.email_verified_at = datetime.now(UTC)
+            session.commit()
+    finally:
+        generator.close()
+
+
+def register_verified(client: TestClient, **kwargs: Any) -> dict[str, Any]:
+    """Register through the API, then mark that user verified for CRM calls."""
+    response = client.post("/api/v1/auth/register", json=register_payload(**kwargs))
+    body = response.json()
+    if response.status_code == 200:
+        mark_email_verified(str(body["user"]["email"]))
+    return body
 
 
 def register_payload(

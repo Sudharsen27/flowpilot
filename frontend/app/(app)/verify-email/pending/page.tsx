@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -53,14 +52,14 @@ export default function VerificationPendingPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Verify your email"
-        description="Your account is signed in. Email verification for this address is still pending."
+        description="Your account is signed in. Confirm this address before using the workspace."
       />
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Verification pending</CardTitle>
           <CardDescription>
-            You can continue into the workspace now. Verification does not
-            block access to your organization.
+            Workspace pages stay closed until this email is verified. You can
+            resend the message or sign out.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -79,12 +78,6 @@ export default function VerificationPendingPage() {
             >
               {pending ? "Sending…" : "Resend verification email"}
             </Button>
-            <Link
-              href="/dashboard"
-              className={buttonVariants({ className: "w-fit" })}
-            >
-              Continue to workspace
-            </Link>
           </div>
           {accepted ? (
             <p className="text-sm" role="status">

@@ -14,6 +14,10 @@ import { Input } from "@/components/forms/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
+import {
+  currentInvitationReturnPath,
+  pathWithInvitationReturn,
+} from "@/lib/invitations/return-path";
 import type { AuthResponse } from "@/types/api";
 
 export default function RegisterPage() {
@@ -29,7 +33,7 @@ export default function RegisterPage() {
   const handleGoogleSuccess = useCallback(
     (auth: AuthResponse) => {
       completeAuth(auth);
-      router.push("/dashboard");
+      router.push(currentInvitationReturnPath() ?? "/dashboard");
     },
     [completeAuth, router],
   );
@@ -44,7 +48,7 @@ export default function RegisterPage() {
     setPending(true);
     try {
       await signUp({ email, password, name, organizationName });
-      router.push("/verify-email/pending");
+      router.push(currentInvitationReturnPath() ?? "/verify-email/pending");
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 409
@@ -65,7 +69,7 @@ export default function RegisterPage() {
           Already registered?{" "}
           <Link
             className="text-foreground underline underline-offset-4"
-            href="/login"
+            href={pathWithInvitationReturn("/login")}
           >
             Sign in
           </Link>

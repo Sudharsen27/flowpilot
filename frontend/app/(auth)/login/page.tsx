@@ -15,6 +15,10 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { requestPasswordReset, requestVerificationEmail } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import {
+  currentInvitationReturnPath,
+  pathWithInvitationReturn,
+} from "@/lib/invitations/return-path";
 import type { AuthResponse } from "@/types/api";
 
 const ACCEPTED_MESSAGE =
@@ -44,7 +48,7 @@ export default function LoginPage() {
   const handleGoogleSuccess = useCallback(
     (auth: AuthResponse) => {
       completeAuth(auth);
-      router.push("/dashboard");
+      router.push(currentInvitationReturnPath() ?? "/dashboard");
     },
     [completeAuth, router],
   );
@@ -58,8 +62,9 @@ export default function LoginPage() {
     setError(null);
     setPending(true);
     try {
-      await signIn(email, password);
-      router.push("/dashboard");
+      const verified = await signIn(email, password);
+      const returnPath = currentInvitationReturnPath();
+      router.push(returnPath ?? (verified ? "/dashboard" : "/verify-email/pending"));
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 429) {
         setError("Too many attempts. Try again later.");
@@ -126,7 +131,7 @@ export default function LoginPage() {
           Need an organization?{" "}
           <Link
             className="text-foreground underline underline-offset-4"
-            href="/register"
+            href={pathWithInvitationReturn("/register")}
           >
             Create an account
           </Link>

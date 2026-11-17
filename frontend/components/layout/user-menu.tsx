@@ -2,6 +2,7 @@
 
 import { ChevronDown, LogOut, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,13 +12,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { MembershipRole, UserPublic } from "@/types/api";
+import { apiErrorDetail } from "@/lib/api/error-detail";
+import { listMyOrganizations } from "@/lib/api/invitations";
+import type { MembershipRole, UserOrganizationPublic, UserPublic } from "@/types/api";
 
 type UserMenuProps = {
   user: UserPublic;
   organizationName: string;
+  organizationId: string;
   role: MembershipRole;
   onSignOut: () => void;
+  onSwitchOrganization?: (organizationId: string) => Promise<void> | void;
   /** "sidebar": full-width account row for the bottom of the sidebar. */
   variant?: "compact" | "sidebar";
   /** Sidebar only: show just the avatar. */
@@ -45,12 +50,17 @@ function getInitials(name: string): string {
 export function UserMenu({
   user,
   organizationName,
+  organizationId,
   role,
   onSignOut,
+  onSwitchOrganization,
   variant = "compact",
   collapsed = false,
 }: UserMenuProps) {
   const router = useRouter();
+  const [organizations, setOrganizations] = useState<UserOrganizationPublic[] | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
   const sidebar = variant === "sidebar";
   const avatar = (
     <span className="bg-brand-subtle text-brand-text ring-brand-border flex size-7 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold ring-1">
@@ -59,7 +69,17 @@ export function UserMenu({
   );
 
   return (
-    <DropdownMenu>
+    <div className={sidebar ? "w-full" : undefined}>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open || organizations !== null) {
+          return;
+        }
+        void listMyOrganizations()
+          .then(setOrganizations)
+          .catch(() => setOrganizations([]));
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -119,6 +139,45 @@ export function UserMenu({
           </p>
         </div>
         <DropdownMenuSeparator />
+        {organizations && organizations.length > 0 ? (
+          <>
+            <p className="text-muted-foreground px-2 py-1 text-xs">Organizations</p>
+            {organizations.map((organization) => {
+              const current = organization.organization_id === organizationId;
+              return (
+                <DropdownMenuItem
+                  key={organization.organization_id}
+                  disabled={current || switchingId !== null || !onSwitchOrganization}
+                  onClick={() => {
+                    if (!onSwitchOrganization || current) {
+                      return;
+                    }
+                    setSwitchError(null);
+                    setSwitchingId(organization.organization_id);
+                    void Promise.resolve(onSwitchOrganization(organization.organization_id))
+                      .then(() => undefined)
+                      .catch((cause: unknown) => {
+                        setSwitchError(
+                          apiErrorDetail(
+                            cause,
+                            "The organization could not be switched. Try again.",
+                          ),
+                        );
+                      })
+                      .finally(() => setSwitchingId(null));
+                  }}
+                >
+                  {switchingId === organization.organization_id
+                    ? "Switching…"
+                    : current
+                      ? `${organization.name} (current)`
+                      : organization.name}
+                </DropdownMenuItem>
+              );
+            })}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem onClick={() => router.push("/settings")}>
           <Settings aria-hidden="true" />
           Settings
@@ -129,5 +188,11 @@ export function UserMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    {switchError ? (
+      <p className="text-danger-text px-2 py-1 text-xs" role="alert">
+        {switchError}
+      </p>
+    ) : null}
+  </div>
   );
 }

@@ -62,12 +62,14 @@ class AuthResponse(BaseModel):
     user: UserPublic
     organization: OrganizationPublic
     membership: MembershipPublic
+    email_verified: bool
 
 
 class MeResponse(BaseModel):
     user: UserPublic
     organization: OrganizationPublic
     membership: MembershipPublic
+    email_verified: bool
 
 
 class VerifyEmailRequest(BaseModel):

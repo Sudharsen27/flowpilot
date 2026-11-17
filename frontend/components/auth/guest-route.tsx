@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { AuthLoading } from "@/components/auth/auth-loading";
 import { useAuth } from "@/hooks/use-auth";
+import { currentInvitationReturnPath } from "@/lib/invitations/return-path";
 
 export function GuestRoute({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -12,7 +13,10 @@ export function GuestRoute({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && session) {
-      router.replace("/dashboard");
+      const returnPath = currentInvitationReturnPath();
+      router.replace(
+        returnPath ?? (session.emailVerified ? "/dashboard" : "/verify-email/pending"),
+      );
     }
   }, [isLoading, router, session]);
 

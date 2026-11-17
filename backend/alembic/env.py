@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models import (
     Agent,
     AgentExecution,
+    AuthInvitationEvent,
     AuthLoginFailure,
     AuthPasswordResetEvent,
     AuthToken,
@@ -25,6 +26,7 @@ from app.models import (
     LeadResponseDraft,
     Membership,
     Organization,
+    OrganizationInvitation,
     SalesRun,
     ToolInvocation,
     User,
@@ -32,6 +34,7 @@ from app.models import (
 
 assert (
     AuthLoginFailure
+    and AuthInvitationEvent
     and AuthPasswordResetEvent
     and AuthToken
     and AuthVerificationEvent
@@ -48,6 +51,7 @@ assert (
     and LeadResponseDraft
     and Membership
     and Organization
+    and OrganizationInvitation
     and SalesRun
     and ToolInvocation
     and User

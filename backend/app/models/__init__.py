@@ -1,4 +1,5 @@
 from app.core.auth_rate_limit import AuthLoginFailure
+from app.core.invitation_rate_limit import AuthInvitationEvent
 from app.core.password_reset_rate_limit import AuthPasswordResetEvent
 from app.core.verification_rate_limit import AuthVerificationEvent
 from app.core.website_capture_rate_limit import WebsiteCaptureAttempt
@@ -25,6 +26,7 @@ from app.models.lead_qualification import LeadQualification
 from app.models.lead_response_draft import LeadResponseDraft
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
+from app.models.organization_invitation import OrganizationInvitation
 from app.models.sales_run import SalesRun, SalesRunStage, SalesRunStatus
 from app.models.sales_target import SalesTarget
 from app.models.tool_invocation import ToolInvocation
@@ -33,6 +35,7 @@ from app.models.webhook import WebhookDelivery, WebhookEndpoint
 from app.models.workflow import WorkflowRule, WorkflowRun
 
 __all__ = [
+    "AuthInvitationEvent",
     "AuthLoginFailure",
     "AuthPasswordResetEvent",
     "AuthToken",
@@ -70,6 +73,7 @@ __all__ = [
     "Membership",
     "MembershipRole",
     "Organization",
+    "OrganizationInvitation",
     "SalesRun",
     "SalesTarget",
     "SalesRunStage",

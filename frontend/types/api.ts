@@ -159,12 +159,49 @@ export type AuthResponse = {
   user: UserPublic;
   organization: OrganizationPublic;
   membership: MembershipPublic;
+  email_verified: boolean;
 };
 
 export type MeResponse = {
   user: UserPublic;
   organization: OrganizationPublic;
   membership: MembershipPublic;
+  email_verified: boolean;
+};
+
+export type InvitationRole = "ADMIN" | "MEMBER";
+
+export type InvitationPublic = {
+  id: string;
+  email: string;
+  role: string;
+  expires_at: string;
+  created_at: string;
+};
+
+export type InvitationStatusResponse = {
+  status: "accepted";
+};
+
+export type InvitationAcceptedResponse = {
+  status: "accepted";
+  organization_id: string;
+};
+
+export type InvitationSignInResponse = {
+  status: "sign_in_required";
+};
+
+export type InvitationAcceptResponse =
+  | AuthResponse
+  | InvitationAcceptedResponse
+  | InvitationSignInResponse;
+
+export type UserOrganizationPublic = {
+  organization_id: string;
+  name: string;
+  role: string;
+  membership_id: string;
 };
 
 export type VerificationEmailResponse = {

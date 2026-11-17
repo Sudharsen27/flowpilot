@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import ssl
 import urllib.error
 import urllib.request
@@ -17,6 +18,12 @@ from app.email.provider import EmailMessage, EmailSendResult
 logger = logging.getLogger(__name__)
 
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
+_TOKEN_QUERY = re.compile(r"(?i)([?&#]token=)[^&#\s\"']+")
+
+
+def redact_logged_provider_text(message: str) -> str:
+    """Remove provider secrets and invitation tokens before a provider error is logged."""
+    return _TOKEN_QUERY.sub(r"\1[redacted]", sanitize_provider_error(message))
 
 
 class ResendEmailProvider:
@@ -84,7 +91,7 @@ class ResendEmailProvider:
             error_body = exc.read().decode("utf-8", errors="replace")
             logger.warning(
                 "Resend request failed: %s",
-                sanitize_provider_error(error_body or str(exc)),
+                redact_logged_provider_text(error_body or str(exc)),
             )
             raise ProviderError("Email provider request failed") from exc
         except TimeoutError as exc:

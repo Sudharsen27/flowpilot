@@ -59,6 +59,12 @@ vi.mock("@/lib/api/client", () => ({
   apiGet,
 }));
 
+vi.mock("@/lib/api/invitations", () => ({
+  listInvitations: vi.fn().mockResolvedValue([]),
+  createInvitation: vi.fn(),
+  revokeInvitation: vi.fn(),
+}));
+
 vi.mock("@/lib/api/runtime", () => ({
   getRuntimeConfiguration: vi.fn(() => new Promise(() => undefined)),
 }));

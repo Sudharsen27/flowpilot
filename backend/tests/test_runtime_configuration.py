@@ -3,7 +3,7 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.runtime_configuration import build_runtime_configuration
-from tests.conftest import register_payload
+from tests.conftest import mark_email_verified, register_payload
 
 SECRET_KEY = "sk-test-secret-value"
 GROQ_KEY = "gsk_test_secret_value"
@@ -14,6 +14,7 @@ RESEND_KEY = "re_test_secret_value"
 def _token(client: TestClient) -> str:
     response = client.post("/api/v1/auth/register", json=register_payload())
     assert response.status_code == 200
+    mark_email_verified("owner@example.com")
     return str(response.json()["access_token"])
 
 

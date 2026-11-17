@@ -24,6 +24,7 @@ _bearer = HTTPBearer(auto_error=False)
 SESSION_COOKIE_NAME = "flowpilot_session"
 CSRF_HEADER_NAME = "X-FlowPilot-Request"
 CSRF_HEADER_VALUE = "1"
+EMAIL_VERIFICATION_REQUIRED = "Email verification required"
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Tool registry is request-scoped so business tools share the same DB session.
@@ -132,11 +133,11 @@ def get_current_user(
     return user
 
 
-def get_current_membership(
+def _membership_for_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None,
+    db: Session,
+    user: User,
 ) -> Membership:
     try:
         payload = decode_access_token(presented_access_token(request, credentials))
@@ -153,10 +154,7 @@ def get_current_membership(
     return membership
 
 
-def get_current_organization(
-    membership: Membership = Depends(get_current_membership),
-    db: Session = Depends(get_db),
-) -> Organization:
+def _organization_for_membership(membership: Membership, db: Session) -> Organization:
     organization = OrganizationRepository(db).get_by_id(membership.organization_id)
     if organization is None:
         raise HTTPException(
@@ -165,6 +163,49 @@ def get_current_organization(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return organization
+
+
+def get_account_membership(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Membership:
+    """Membership for account endpoints that stay open before email verification.
+
+    CRM routes use ``get_current_membership`` instead.
+    """
+    return _membership_for_user(request, credentials, db, user)
+
+
+def get_current_membership(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Membership:
+    membership = _membership_for_user(request, credentials, db, user)
+    if user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=EMAIL_VERIFICATION_REQUIRED,
+        )
+    return membership
+
+
+def get_account_organization(
+    membership: Membership = Depends(get_account_membership),
+    db: Session = Depends(get_db),
+) -> Organization:
+    """Organization for ``GET /users/me``. Does not require a verified email."""
+    return _organization_for_membership(membership, db)
+
+
+def get_current_organization(
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Organization:
+    return _organization_for_membership(membership, db)
 
 
 def get_ai_provider() -> AIProvider:

@@ -30,19 +30,21 @@ export type Session = {
   user: UserPublic;
   organization: OrganizationPublic;
   membership: MembershipPublic;
+  emailVerified: boolean;
 };
 
 type AuthContextValue = {
   session: Session | null;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<boolean>;
   signUp: (input: {
     email: string;
     password: string;
     name: string;
     organizationName: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   completeAuth: (auth: AuthResponse) => void;
+  switchOrganization: (organizationId: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -59,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: auth.user,
       organization: auth.organization,
       membership: auth.membership,
+      emailVerified: auth.email_verified,
     });
   }, []);
 
@@ -107,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password,
       });
       applyAuth(auth);
+      return auth.email_verified;
     },
     [applyAuth],
   );
@@ -125,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         organization_name: input.organizationName,
       });
       applyAuth(auth);
+      return auth.email_verified;
     },
     [applyAuth],
   );
@@ -134,6 +139,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applyAuth(auth);
     },
     [applyAuth],
+  );
+
+  const switchOrganization = useCallback(
+    async (organizationId: string) => {
+      const auth = await apiPost<AuthResponse>("/api/v1/auth/active-organization", {
+        organization_id: organizationId,
+      });
+      applyAuth(auth);
+      router.refresh();
+    },
+    [applyAuth, router],
   );
 
   const signOut = useCallback(async () => {
@@ -155,8 +171,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const value = useMemo(
-    () => ({ session, isLoading, signIn, signUp, completeAuth, signOut }),
-    [session, isLoading, signIn, signUp, completeAuth, signOut],
+    () => ({
+      session,
+      isLoading,
+      signIn,
+      signUp,
+      completeAuth,
+      switchOrganization,
+      signOut,
+    }),
+    [session, isLoading, signIn, signUp, completeAuth, switchOrganization, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

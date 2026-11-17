@@ -50,7 +50,7 @@ from app.tools.schema import (
     ToolResult,
     ToolRiskLevel,
 )
-from tests.conftest import register_payload
+from tests.conftest import register_verified
 from tests.test_agent_planner import ScriptedPlannerProvider
 from tests.test_agent_runtime import _create_agent
 from tests.test_tools import FailingTool, MediumRiskTool, RecordingEchoTool
@@ -108,10 +108,7 @@ class CountingPlanExecutor:
 
 
 def _auth(client: TestClient, **kwargs: str) -> dict[str, Any]:
-    return client.post(
-        "/api/v1/auth/register",
-        json=register_payload(**kwargs) if kwargs else register_payload(),
-    ).json()
+    return register_verified(client, **kwargs)
 
 
 def _plan(*steps: AgentPlanStep, plan_id: str = "plan-orch-1") -> AgentPlan:

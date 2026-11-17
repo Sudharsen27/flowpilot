@@ -30,6 +30,7 @@ const me: MeResponse = {
     user_id: "user-1",
     role: "OWNER",
   },
+  email_verified: true,
 };
 
 const auth: AuthResponse = {
@@ -216,6 +217,53 @@ describe("AuthProvider", () => {
     finishLogout?.();
     await waitFor(() => expect(screen.getByText("GUEST")).toBeInTheDocument());
     expect(mocks.apiPost).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
+  });
+
+  it("replaces the session after switching organization and does not store the token", async () => {
+    const user = userEvent.setup();
+    mocks.apiGet.mockResolvedValue(me);
+    const switched: AuthResponse = {
+      ...auth,
+      access_token: "next-token",
+      organization: { id: "org-2", name: "Ada Org", slug: "ada-org" },
+      membership: {
+        id: "membership-2",
+        organization_id: "org-2",
+        user_id: "user-1",
+        role: "MEMBER",
+      },
+    };
+    mocks.apiPost.mockResolvedValue(switched);
+
+    function SwitchConsumer() {
+      const { session, isLoading, switchOrganization } = useAuth();
+      if (isLoading) {
+        return <span>Loading</span>;
+      }
+      return (
+        <>
+          <span>{session?.organization.name}</span>
+          <button type="button" onClick={() => void switchOrganization("org-2")}>
+            Switch
+          </button>
+        </>
+      );
+    }
+
+    render(
+      <AuthProvider>
+        <SwitchConsumer />
+      </AuthProvider>,
+    );
+    expect(await screen.findByText("Acme")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Switch" }));
+
+    expect(await screen.findByText("Ada Org")).toBeInTheDocument();
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/auth/active-organization", {
+      organization_id: "org-2",
+    });
+    expect(mocks.refresh).toHaveBeenCalledOnce();
     expect(window.localStorage.getItem("flowpilot.access_token")).toBeNull();
   });
 });

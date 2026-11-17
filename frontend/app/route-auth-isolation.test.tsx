@@ -24,6 +24,7 @@ vi.mock("@/lib/api/client", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mocks.replace, refresh: mocks.refresh }),
+  usePathname: () => "/dashboard",
 }));
 
 vi.mock("next/font/google", () => ({
@@ -59,6 +60,7 @@ const me: MeResponse = {
     user_id: "user-1",
     role: "OWNER",
   },
+  email_verified: true,
 };
 
 const auth: AuthResponse = {

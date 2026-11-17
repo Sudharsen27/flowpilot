@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 
 from app.api.deps import CSRF_HEADER_NAME, CSRF_HEADER_VALUE, SESSION_COOKIE_NAME
-from tests.conftest import register_payload
+from tests.conftest import mark_email_verified, register_payload
 
 ME = "/api/v1/users/me"
 LEADS = "/api/v1/leads"
@@ -13,6 +13,7 @@ LEAD = {"name": "Ada Prospect"}
 def _login(client: TestClient) -> str:
     registered = client.post("/api/v1/auth/register", json=register_payload())
     assert registered.status_code == 200
+    mark_email_verified("owner@example.com")
     client.cookies.clear()
     logged_in = client.post(
         "/api/v1/auth/login",

@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.models.lead import Lead, LeadSource, LeadStatus
 from app.models.membership import MembershipRole
-from tests.conftest import register_payload
+from tests.conftest import register_verified
 from tests.test_agent_api import _add_org_member
 from tests.test_agent_runtime import _headers
 
 
 def _auth(client: TestClient, **kwargs: Any) -> dict[str, Any]:
-    return client.post("/api/v1/auth/register", json=register_payload(**kwargs)).json()
+    return register_verified(client, **kwargs)
 
 
 def _create(client: TestClient, token: str, **overrides: Any) -> Any:

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -9,12 +10,12 @@ from app.main import app
 from app.models.agent import AgentStatus
 from app.models.membership import Membership, MembershipRole
 from app.models.user import User
-from tests.conftest import register_payload
+from tests.conftest import register_verified
 from tests.test_agent_runtime import FakeAIProvider, _create_agent, _headers
 
 
 def _auth(client: TestClient, **kwargs: Any) -> dict[str, Any]:
-    return client.post("/api/v1/auth/register", json=register_payload(**kwargs)).json()
+    return register_verified(client, **kwargs)
 
 
 def _add_org_member(
@@ -25,7 +26,12 @@ def _add_org_member(
     role: MembershipRole,
     name: str = "Teammate",
 ) -> str:
-    user = User(email=email, name=name, password_hash=hash_password("password12"))
+    user = User(
+        email=email,
+        name=name,
+        password_hash=hash_password("password12"),
+        email_verified_at=datetime.now(UTC),
+    )
     membership = Membership(organization_id=organization_id, user=user, role=role)
     db.add(user)
     db.add(membership)

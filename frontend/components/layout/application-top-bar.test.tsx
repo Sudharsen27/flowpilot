@@ -35,7 +35,12 @@ vi.mock("@/hooks/use-auth", () => ({
       },
     },
     signOut: mockSignOut,
+    switchOrganization: vi.fn(),
   }),
+}));
+
+vi.mock("@/lib/api/invitations", () => ({
+  listMyOrganizations: vi.fn().mockResolvedValue([]),
 }));
 
 function renderTopBar() {

@@ -1,14 +1,16 @@
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from tests.conftest import register_payload
+from tests.conftest import mark_email_verified, register_payload
 
 
 def _register(client: TestClient, email: str, organization_name: str) -> dict[str, object]:
-    return client.post(
+    body = client.post(
         "/api/v1/auth/register",
         json=register_payload(email=email, organization_name=organization_name, name=email),
     ).json()
+    mark_email_verified(email)
+    return body
 
 
 def test_tenant_isolation_prevents_cross_organization_access(client: TestClient) -> None:

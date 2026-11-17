@@ -26,7 +26,7 @@ def test_alembic_revision_chain_is_linear() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "045_website_capture_attempts"
+    assert script.get_current_head() == "046_organization_invitations"
     chain = {
         "022_lead_human_attention": "021_sales_agent_auto_start",
         "023_inbound_emails": "022_lead_human_attention",
@@ -45,8 +45,8 @@ def test_alembic_revision_chain_is_linear() -> None:
         "036_deal_forecast_category": "035_deal_history_probability",
         # 037 is reserved for the 4C contract step. 038 revises 036, 039 revises
         # 038, 040 revises 039, 041 revises 040, 042 revises 041, 043 revises 042,
-        # 044 revises 043, and 045 revises 044. When 037 ships it should revise
-        # the current head.
+        # 044 revises 043, 045 revises 044, and 046 revises 045. When 037 ships
+        # it should revise the current head.
         "038_forecast_snapshots": "036_deal_forecast_category",
         "039_auth_login_failures": "038_forecast_snapshots",
         "040_auth_session_tokens": "039_auth_login_failures",
@@ -55,6 +55,7 @@ def test_alembic_revision_chain_is_linear() -> None:
         "043_auth_password_reset_events": "042_auth_verification_events",
         "044_chronological_order": "043_auth_password_reset_events",
         "045_website_capture_attempts": "044_chronological_order",
+        "046_organization_invitations": "045_website_capture_attempts",
     }
     for revision, down_revision in chain.items():
         row = script.get_revision(revision)

@@ -53,7 +53,7 @@ function subscribeCollapsed(onChange: () => void) {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const { session, signOut } = useAuth();
+  const { session, signOut, switchOrganization } = useAuth();
   const organizationName = session?.organization.name;
   const role = session?.membership.role;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -72,8 +72,10 @@ export function AppShell({ children }: AppShellProps) {
       <UserMenu
         user={session.user}
         organizationName={session.organization.name}
+        organizationId={session.organization.id}
         role={session.membership.role}
         onSignOut={signOut}
+        onSwitchOrganization={switchOrganization}
         variant="sidebar"
         collapsed={collapsedMenu}
       />
