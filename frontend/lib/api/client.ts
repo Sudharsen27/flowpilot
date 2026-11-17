@@ -1,15 +1,34 @@
 import { invalidateAuthSession } from "@/lib/auth/storage";
 
+function isCrossSiteRenderApiUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "onrender.com" || host.endsWith(".onrender.com");
+  } catch {
+    return false;
+  }
+}
+
 export function resolveApiBaseUrl(
   url = process.env.NEXT_PUBLIC_API_URL,
   nodeEnv = process.env.NODE_ENV,
 ) {
   const configured = url?.trim();
-  // Empty or "same-origin" → relative `/api/...` (Vercel rewrite to Render).
-  if (!configured || configured === "same-origin") {
-    if (nodeEnv === "production") {
+  // Production browser calls must be same-origin (`/api/...`) when the API is
+  // on Render. A leftover NEXT_PUBLIC_API_URL pointing at onrender.com keeps
+  // Chrome from storing the session cookie; ignore it and use the Vercel
+  // rewrite (API_PROXY_TARGET) instead.
+  if (nodeEnv === "production") {
+    if (
+      !configured ||
+      configured === "same-origin" ||
+      isCrossSiteRenderApiUrl(configured)
+    ) {
       return "";
     }
+    return configured.replace(/\/$/, "");
+  }
+  if (!configured || configured === "same-origin") {
     return "http://localhost:8000";
   }
   return configured.replace(/\/$/, "");

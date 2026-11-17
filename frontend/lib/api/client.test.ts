@@ -298,12 +298,18 @@ describe("API client", () => {
     await expect(apiPost("/api/v1/public/organizations/acme/enquiries")).resolves.toBeUndefined();
   });
 
-  it("uses same-origin relative URLs in production when unset", () => {
+  it("uses same-origin relative URLs in production when unset or Render-hosted", () => {
     expect(resolveApiBaseUrl("https://api.example.com/", "production")).toBe(
       "https://api.example.com",
     );
     expect(resolveApiBaseUrl("", "production")).toBe("");
     expect(resolveApiBaseUrl("same-origin", "production")).toBe("");
+    expect(
+      resolveApiBaseUrl(
+        "https://flowpilot-backend-product.onrender.com",
+        "production",
+      ),
+    ).toBe("");
     expect(resolveApiBaseUrl(undefined, "test")).toBe("http://localhost:8000");
   });
 
