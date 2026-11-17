@@ -7,8 +7,9 @@ import AiSettingsPage from "@/app/(app)/settings/ai/page";
 import { isNavigationItemActive } from "@/lib/navigation";
 
 const {
-  apiGet,
+  listMembers,
   signOut,
+  completeAuth,
   authState,
   getWebsiteCaptureSettings,
   updateWebsiteCaptureSettings,
@@ -18,9 +19,11 @@ const {
 } =
   vi.hoisted(() => {
     const signOut = vi.fn();
+    const completeAuth = vi.fn();
     return {
-      apiGet: vi.fn(),
+      listMembers: vi.fn(),
       signOut,
+      completeAuth,
       getWebsiteCaptureSettings: vi.fn(),
       updateWebsiteCaptureSettings: vi.fn(),
       getIdealCustomerProfile: vi.fn(),
@@ -47,6 +50,7 @@ const {
           },
         },
         signOut,
+        completeAuth,
       },
     };
   });
@@ -55,8 +59,11 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => authState,
 }));
 
-vi.mock("@/lib/api/client", () => ({
-  apiGet,
+vi.mock("@/lib/api/members", () => ({
+  listMembers,
+  updateMemberRole: vi.fn(),
+  removeMember: vi.fn(),
+  leaveOrganization: vi.fn(),
 }));
 
 vi.mock("@/lib/api/invitations", () => ({
@@ -115,7 +122,7 @@ describe("identity-backed settings", () => {
   });
 
   it("renders authenticated identity and real organization members", async () => {
-    apiGet.mockResolvedValue([
+    listMembers.mockResolvedValue([
       {
         membership_id: "membership-1",
         role: "OWNER",
@@ -140,14 +147,11 @@ describe("identity-backed settings", () => {
     expect(screen.getByText("northstar-operations")).toBeVisible();
     expect(screen.getAllByText("Owner")).not.toHaveLength(0);
 
-    await waitFor(() =>
-      expect(apiGet).toHaveBeenCalledWith(
-        "/api/v1/organizations/current/members",
-      ),
-    );
+    await waitFor(() => expect(listMembers).toHaveBeenCalled());
     expect(screen.getAllByText("Jordan Lee")).not.toHaveLength(0);
     expect(screen.getAllByText("jordan@example.com")).not.toHaveLength(0);
     expect(screen.getAllByText("Member")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Invitations" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Website enquiries" })).toBeVisible();
     expect(screen.getByText(/Hosted form for website visitors/)).toBeVisible();
     expect(screen.getByRole("region", { name: "Team settings" })).toBeVisible();
@@ -160,7 +164,7 @@ describe("identity-backed settings", () => {
   });
 
   it("provides the AI settings entry without removing existing settings areas", async () => {
-    apiGet.mockResolvedValue([]);
+    listMembers.mockResolvedValue([]);
 
     render(<SettingsPage />);
 
@@ -185,15 +189,15 @@ describe("identity-backed settings", () => {
   });
 
   it("shows a member loading state while the request is pending", () => {
-    apiGet.mockReturnValue(new Promise(() => undefined));
+    listMembers.mockReturnValue(new Promise(() => undefined));
 
     render(<SettingsPage />);
 
-    expect(screen.getByText("Loading records")).toBeInTheDocument();
+    expect(screen.getByText("Loading people")).toBeInTheDocument();
   });
 
   it("shows a truthful empty state when no members are returned", async () => {
-    apiGet.mockResolvedValue([]);
+    listMembers.mockResolvedValue([]);
 
     render(<SettingsPage />);
 
@@ -209,7 +213,7 @@ describe("identity-backed settings", () => {
 
   it("shows an error and retries the members request", async () => {
     const user = userEvent.setup();
-    apiGet
+    listMembers
       .mockRejectedValueOnce(new Error("Request failed"))
       .mockResolvedValueOnce([
         {
@@ -232,13 +236,13 @@ describe("identity-backed settings", () => {
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
-    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listMembers).toHaveBeenCalledTimes(2));
     expect(screen.getAllByText("Jordan Lee")).not.toHaveLength(0);
   });
 
   it("delegates sign-out to the existing authentication mechanism", async () => {
     const user = userEvent.setup();
-    apiGet.mockResolvedValue([]);
+    listMembers.mockResolvedValue([]);
 
     render(<SettingsPage />);
 

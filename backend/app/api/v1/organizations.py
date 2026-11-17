@@ -1,18 +1,32 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.deps import get_current_membership, get_current_organization
+from app.api.deps import (
+    clear_session_cookie,
+    get_current_membership,
+    get_current_organization,
+    get_current_user,
+    set_session_cookie,
+)
+from app.api.v1.auth import to_auth_response
 from app.core.auth_rate_limit import TOO_MANY_ATTEMPTS
 from app.core.exceptions import RateLimitError
 from app.core.invitation_rate_limit import InvitationRateLimiter
 from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.organization import Organization
+from app.models.user import User
 from app.schemas.ideal_customer_profile import (
     IdealCustomerProfilePublic,
     IdealCustomerProfileUpdate,
 )
-from app.schemas.identity import MemberPublic, OrganizationPublic, UserPublic
+from app.schemas.identity import (
+    AuthResponse,
+    MemberPublic,
+    MemberRoleUpdate,
+    OrganizationPublic,
+    UserPublic,
+)
 from app.schemas.invitations import (
     InvitationCreateRequest,
     InvitationPublic,
@@ -47,6 +61,76 @@ def read_current_members(
         )
         for membership in memberships
     ]
+
+
+@router.patch(
+    "/current/members/{membership_id}",
+    response_model=MemberPublic,
+)
+def update_current_member_role(
+    membership_id: str,
+    payload: MemberRoleUpdate,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> MemberPublic:
+    updated = OrganizationService(db).update_member_role(
+        organization_id=organization.id,
+        actor=membership,
+        membership_id=membership_id,
+        role=payload.role,
+    )
+    return MemberPublic(
+        membership_id=updated.id,
+        role=updated.role,
+        user=UserPublic.model_validate(updated.user),
+    )
+
+
+@router.delete(
+    "/current/members/{membership_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_current_member(
+    membership_id: str,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> None:
+    OrganizationService(db).remove_member(
+        organization_id=organization.id,
+        actor=membership,
+        membership_id=membership_id,
+    )
+
+
+@router.post(
+    "/current/leave",
+    response_model=None,
+    responses={
+        200: {"model": AuthResponse},
+        204: {"description": "Left and no remaining organizations"},
+    },
+)
+def leave_current_organization(
+    response: Response,
+    organization: Organization = Depends(get_current_organization),
+    membership: Membership = Depends(get_current_membership),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AuthResponse | Response:
+    outcome = OrganizationService(db).leave_organization(
+        organization_id=organization.id,
+        actor=membership,
+        user=user,
+    )
+    if outcome is None:
+        clear_session_cookie(response)
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return response
+    body = to_auth_response(outcome)
+    set_session_cookie(response, body.access_token)
+    return body
 
 
 @router.get("/current/website-capture", response_model=WebsiteCaptureSettings)

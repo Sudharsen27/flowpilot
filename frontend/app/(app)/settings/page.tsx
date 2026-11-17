@@ -1,18 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BrainCircuit } from "lucide-react";
 
-import {
-  DataTable,
-  type DataTableColumn,
-} from "@/components/data-display/data-table";
 import { StatePanel } from "@/components/data-display/state-panel";
 import { SectionHeader } from "@/components/layout/section-header";
 import { PageHeader } from "@/components/page-header";
 import { IdealCustomerProfileSettings } from "@/components/settings/ideal-customer-profile-settings";
-import { TeamInvitations } from "@/components/settings/team-invitations";
+import { TeamPeopleSettings } from "@/components/settings/team-people-settings";
 import { WebsiteEnquirySettings } from "@/components/settings/website-enquiry-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,9 +20,8 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
-import { apiGet } from "@/lib/api/client";
 import { SECONDARY_NAV_ITEMS } from "@/lib/navigation";
-import type { MemberPublic, MembershipRole } from "@/types/api";
+import type { MembershipRole } from "@/types/api";
 
 const roleLabels: Record<MembershipRole, string> = {
   OWNER: "Owner",
@@ -35,60 +29,8 @@ const roleLabels: Record<MembershipRole, string> = {
   MEMBER: "Member",
 };
 
-const memberColumns: DataTableColumn<MemberPublic>[] = [
-  {
-    key: "name",
-    header: "Name",
-    cell: (member) => <span className="font-medium">{member.user.name}</span>,
-  },
-  {
-    key: "email",
-    header: "Email",
-    cell: (member) => (
-      <span className="text-muted-foreground">{member.user.email}</span>
-    ),
-  },
-  {
-    key: "role",
-    header: "Role",
-    cell: (member) => roleLabels[member.role],
-  },
-];
-
 export default function SettingsPage() {
   const { session, isLoading, signOut } = useAuth();
-  const [members, setMembers] = useState<MemberPublic[] | null>(null);
-  const [membersError, setMembersError] = useState(false);
-  const [requestVersion, setRequestVersion] = useState(0);
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    let cancelled = false;
-    void apiGet<MemberPublic[]>("/api/v1/organizations/current/members")
-      .then((response) => {
-        if (!cancelled) {
-          setMembers(response);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMembersError(true);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [requestVersion, session]);
-
-  function retryMembers() {
-    setMembers(null);
-    setMembersError(false);
-    setRequestVersion((version) => version + 1);
-  }
 
   return (
     <div className="gap-section flex flex-col">
@@ -197,26 +139,13 @@ export default function SettingsPage() {
           <section id="team" className="grid scroll-mt-20 gap-5" aria-label="Team settings">
             <SectionHeader
               title="Team"
-              description="Invite people and review who currently belongs to this organization."
+              description="Invite people, manage roles, and review who belongs to this organization."
             />
-            <TeamInvitations role={session.membership.role} />
-            {membersError ? (
-              <StatePanel
-                kind="error"
-                title="Members could not be loaded"
-                description="Try again to retrieve the current organization members."
-                action={<Button onClick={retryMembers}>Try again</Button>}
-              />
-            ) : (
-              <DataTable
-                columns={memberColumns}
-                rows={members ?? []}
-                getRowKey={(member) => member.membership_id}
-                loading={members === null}
-                emptyTitle="No organization members"
-                emptyDescription="No members were returned for the current organization."
-              />
-            )}
+            <TeamPeopleSettings
+              role={session.membership.role}
+              currentUserId={session.user.id}
+              currentMembershipId={session.membership.id}
+            />
           </section>
 
           <section className="grid gap-5" aria-label="Automation settings">
