@@ -3,6 +3,7 @@ import type { Lead } from "@/types/api";
 export type LeadNextStepKind =
   | "resolve-attention"
   | "review-draft"
+  | "send-response"
   | "analyze"
   | "draft-response";
 
@@ -27,13 +28,17 @@ export function leadNextStep(lead: Lead): LeadNextStep {
     };
   }
   if (hasReviewableDraft(lead)) {
+    if (lead.latest_response_draft?.review_status === "APPROVED") {
+      return {
+        kind: "send-response",
+        label: "Send response",
+        hint: "The reply is approved but not sent. Open Approvals to send it — approval alone does not email the customer.",
+      };
+    }
     return {
       kind: "review-draft",
       label: "Review draft",
-      hint:
-        lead.latest_response_draft?.review_status === "APPROVED"
-          ? "A reply is approved but not sent. Review it and send it yourself."
-          : "An AI reply is waiting. Review, edit, approve, or reject it.",
+      hint: "An AI reply is waiting. Review, edit, approve, or reject it.",
     };
   }
   const qualification = lead.latest_qualification;

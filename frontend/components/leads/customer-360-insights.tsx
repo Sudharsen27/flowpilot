@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Bot, Sparkles } from "lucide-react";
 
 import { AiBadge } from "@/components/ai/ai-badge";
@@ -7,8 +8,9 @@ import { QualificationStatus } from "@/components/leads/qualification-status";
 import { SalesAgentStatus } from "@/components/leads/sales-agent-status";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { buildApprovalsHref } from "@/lib/approvals-url";
 import {
   deriveCustomer360NextStep,
   type Customer360NextStep,
@@ -64,6 +66,7 @@ function confidenceLabel(value: number | null | undefined) {
 function nextStepTone(kind: Customer360NextStep["kind"]) {
   switch (kind) {
     case "review":
+    case "send":
       return "border-warning/30 bg-warning/10";
     case "failed":
       return "border-destructive/25 bg-destructive/5";
@@ -76,6 +79,23 @@ function nextStepTone(kind: Customer360NextStep["kind"]) {
     default:
       return "border-border bg-muted/40";
   }
+}
+
+function nextStepApprovalsHref(step: Customer360NextStep) {
+  if (!step.approvalDraftId) return null;
+  if (step.kind === "send") {
+    return buildApprovalsHref({
+      approvalId: step.approvalDraftId,
+      status: "approved",
+    });
+  }
+  if (step.kind === "review") {
+    return buildApprovalsHref({
+      approvalId: step.approvalDraftId,
+      status: "pending",
+    });
+  }
+  return null;
 }
 
 export function Customer360Insights({
@@ -96,6 +116,7 @@ export function Customer360Insights({
   const draft = lead.latest_response_draft;
   const analysis = qualificationDetail?.analysis;
   const nextStep = deriveCustomer360NextStep(lead, conversation);
+  const nextStepHref = nextStepApprovalsHref(nextStep);
 
   if (loading) {
     return (
@@ -195,6 +216,17 @@ export function Customer360Insights({
         <p className="text-muted-foreground mt-1 text-xs leading-5">
           {nextStep.description}
         </p>
+        {nextStepHref ? (
+          <Link
+            href={nextStepHref}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "mt-3 w-fit",
+            )}
+          >
+            {nextStep.kind === "send" ? "Send in Approvals" : "Open in Approvals"}
+          </Link>
+        ) : null}
       </div>
 
       {!hasAnyInsight

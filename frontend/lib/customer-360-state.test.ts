@@ -135,5 +135,29 @@ describe("customer-360-state", () => {
         },
       }).title,
     ).toBe("Email send failed");
+
+    expect(
+      deriveCustomer360NextStep({
+        ...baseLead,
+        latest_response_draft: {
+          id: "draft-approved",
+          status: "COMPLETED",
+          review_status: "APPROVED",
+          created_at: "2026-09-11T10:00:00Z",
+        },
+        latest_sales_run: {
+          id: "run-1",
+          agent_id: "agent-1",
+          status: "WAITING_APPROVAL",
+          stage: "AWAIT_APPROVAL",
+          email_send: null,
+          follow_up: null,
+        },
+      }),
+    ).toMatchObject({
+      kind: "send",
+      title: "Send approved response",
+      approvalDraftId: "draft-approved",
+    });
   });
 });

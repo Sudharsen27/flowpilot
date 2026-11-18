@@ -35,4 +35,25 @@ describe("Customer360Insights", () => {
     await user.click(retry);
     expect(onRetry).toHaveBeenCalledOnce();
   });
+
+  it("deep-links approved drafts to Approvals send", () => {
+    render(
+      <Customer360Insights
+        lead={{
+          ...lead,
+          latest_response_draft: {
+            id: "draft-9",
+            status: "COMPLETED",
+            review_status: "APPROVED",
+            created_at: "2026-09-11T10:00:00Z",
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Send in Approvals" }),
+    ).toHaveAttribute("href", "/approvals?status=approved&approval=draft-9");
+    expect(screen.getByText("Send approved response")).toBeInTheDocument();
+  });
 });

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { buildAgentExecutionsHref } from "@/lib/agent-executions-url";
+import { buildApprovalsHref } from "@/lib/approvals-url";
 import { buildCreateDealHref } from "@/lib/deals-url";
 import { leadNextStep } from "@/lib/lead-next-step";
 import type { Lead } from "@/types/api";
@@ -30,6 +31,13 @@ export function LeadActionBar({
   const next = leadNextStep(lead);
   const recommended = (kind: typeof next.kind) =>
     next.kind === kind ? ("default" as const) : ("outline" as const);
+  const draftId = lead.latest_response_draft?.id ?? null;
+  const approvalsHref = draftId
+    ? buildApprovalsHref({
+        approvalId: draftId,
+        status: next.kind === "send-response" ? "approved" : "pending",
+      })
+    : null;
 
   return (
     <section
@@ -56,7 +64,7 @@ export function LeadActionBar({
         >
           Draft response
         </Button>
-        {canReviewDraft ? (
+        {canReviewDraft && next.kind !== "send-response" ? (
           <Button
             type="button"
             variant={recommended("review-draft")}
@@ -64,6 +72,21 @@ export function LeadActionBar({
           >
             Review draft
           </Button>
+        ) : null}
+        {approvalsHref &&
+        (next.kind === "review-draft" ||
+          next.kind === "send-response" ||
+          canReviewDraft) ? (
+          <Link
+            href={approvalsHref}
+            className={buttonVariants({
+              variant: recommended("send-response"),
+            })}
+          >
+            {next.kind === "send-response"
+              ? "Send in Approvals"
+              : "Open in Approvals"}
+          </Link>
         ) : null}
         <Button type="button" variant="outline" onClick={onFollowUps}>
           Follow-ups
@@ -86,14 +109,19 @@ export function LeadActionBar({
       </div>
       <ul className="text-muted-foreground grid gap-1 text-xs leading-5">
         <li>Analyze and Draft use AI and are saved as history. Neither sends email.</li>
-        <li>Email is only sent when you press Send inside an approved draft.</li>
+        <li>
+          Email is only sent when you press Send in Approvals (or inside an approved
+          draft). Approval alone does not send.
+        </li>
         {salesRunOpen ? (
           <li>
             Start Sales Agent is unavailable because a Sales Agent run is already in
             progress or waiting for approval.
           </li>
         ) : null}
-        {!canReviewDraft ? <li>Review draft appears once an AI draft exists.</li> : null}
+        {!canReviewDraft && next.kind !== "send-response" ? (
+          <li>Review draft appears once an AI draft exists.</li>
+        ) : null}
       </ul>
     </section>
   );

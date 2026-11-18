@@ -7,6 +7,7 @@ import type {
 
 export type Customer360NextStepKind =
   | "review"
+  | "send"
   | "follow-up"
   | "progress"
   | "failed"
@@ -17,6 +18,8 @@ export type Customer360NextStep = {
   kind: Customer360NextStepKind;
   title: string;
   description: string;
+  /** Draft id for Approvals deep-link when the next step is review or send. */
+  approvalDraftId?: string | null;
 };
 
 export function leadNeedsApproval(
@@ -66,12 +69,24 @@ export function deriveCustomer360NextStep(
   const draftReview = lead.latest_response_draft?.review_status;
   const needsApproval = leadNeedsApproval(lead, conversation);
 
+  // Approved-but-not-sent beats WAITING_APPROVAL so operators get a Send CTA.
+  if (draftReview === "APPROVED" && summary?.email_send?.status !== "SENT") {
+    return {
+      kind: "send",
+      title: "Send approved response",
+      description:
+        "The AI draft is approved but not sent. Open Approvals to send it — approval alone does not email the customer.",
+      approvalDraftId: lead.latest_response_draft?.id ?? null,
+    };
+  }
+
   if (needsApproval || draftNeedsReview(draftReview)) {
     return {
       kind: "review",
       title: "Review AI response",
       description:
         "An AI-generated draft is waiting for human review. Approval does not send the email by itself.",
+      approvalDraftId: lead.latest_response_draft?.id ?? null,
     };
   }
 
@@ -136,15 +151,6 @@ export function deriveCustomer360NextStep(
       title: "Draft rejected",
       description:
         "The latest AI draft was rejected. Start a new Sales Agent run or draft when ready.",
-    };
-  }
-
-  if (draftReview === "APPROVED" && summary?.email_send?.status !== "SENT") {
-    return {
-      kind: "idle",
-      title: "Draft approved",
-      description:
-        "The AI draft was approved. Sending still uses the existing Sales Agent send step.",
     };
   }
 
