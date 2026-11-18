@@ -527,6 +527,13 @@ export type AnalyticsSummary = {
   };
 };
 
+export type LeadSalesAgentAutoStartStatus =
+  | "PENDING"
+  | "CLAIMED"
+  | "STARTED"
+  | "SKIPPED"
+  | "FAILED";
+
 export type Lead = {
   id: string;
   name: string;
@@ -538,6 +545,7 @@ export type Lead = {
   human_attention_required?: boolean;
   notes: string | null;
   enquiry?: string | null;
+  sales_agent_auto_start_status?: LeadSalesAgentAutoStartStatus | null;
   created_at: string;
   updated_at: string;
   latest_qualification?: LeadQualificationSummary | null;

@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -71,7 +71,13 @@ class LeadEmailSendService:
             organization_id, draft.id, draft.revision
         )
         if existing is not None:
-            return self._existing_active(existing)
+            if (
+                existing.status == LeadEmailSendStatus.PENDING
+                and self._is_stale_pending(existing)
+            ):
+                self._abandon_stale_pending(existing)
+            else:
+                return self._existing_active(existing)
 
         if not lead.email:
             raise UnprocessableError("This lead has no email address.")
@@ -206,6 +212,43 @@ class LeadEmailSendService:
                 | {"detail": "This email was already sent."},
             )
         raise ConflictError("A send is already in progress.")
+
+    def _is_stale_pending(self, row: LeadEmailSend) -> bool:
+        started = row.started_at or row.created_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        cutoff = datetime.now(UTC) - timedelta(
+            seconds=settings.lead_email_send_pending_stale_timeout_effective_seconds()
+        )
+        return started < cutoff
+
+    def _abandon_stale_pending(self, row: LeadEmailSend) -> None:
+        """Mark a crash-stuck PENDING send FAILED so a retry can create a new row."""
+        row.status = LeadEmailSendStatus.FAILED
+        row.error = "Send abandoned after timeout"
+        row.failure_category = ExecutionFailureCategory.EXECUTION_ERROR
+        row.completed_at = datetime.now(UTC)
+        self.sends.add(row)
+        ActivityService(self.session).record(
+            organization_id=row.organization_id,
+            event_type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            title="Email send abandoned",
+            summary="A stuck pending send was cleared so it can be retried.",
+            entity_type=ActivityEntityType.LEAD_EMAIL_SEND,
+            entity_id=row.id,
+            lead_id=row.lead_id,
+            actor_user_id=row.initiated_by_user_id,
+            status=LeadEmailSendStatus.FAILED,
+            dedupe_key=f"email_send:{row.id}:ABANDONED",
+        )
+        self.session.commit()
+        self.session.refresh(row)
+        logger.warning(
+            "abandoned stale PENDING email send id=%s draft_id=%s",
+            row.id,
+            row.response_draft_id,
+        )
 
     def _fail(
         self,

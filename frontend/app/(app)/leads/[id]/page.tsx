@@ -216,6 +216,52 @@ export default function LeadWorkspacePage() {
     };
   }, [leadId, loading, errorKind, retryKey, conversationRetryKey]);
 
+  const salesRunStatus = lead?.latest_sales_run?.status;
+  const autoStartStatus = lead?.sales_agent_auto_start_status;
+  const shouldPollSalesProgress =
+    !loading &&
+    !errorKind &&
+    Boolean(leadId) &&
+    (salesRunStatus === "RUNNING" ||
+      autoStartStatus === "PENDING" ||
+      autoStartStatus === "CLAIMED");
+
+  useEffect(() => {
+    if (!shouldPollSalesProgress || !leadId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const poll = () => {
+      void getLead(leadId)
+        .then(async (data) => {
+          if (cancelled) return;
+          setLead(data);
+          const salesSummary = data.latest_sales_run;
+          if (!salesSummary) {
+            setLatestRun(null);
+            return;
+          }
+          try {
+            const run = await getSalesRun(salesSummary.agent_id, salesSummary.id);
+            if (!cancelled) setLatestRun(run);
+          } catch {
+            if (!cancelled) setLatestRun(null);
+          }
+        })
+        .catch(() => {
+          // Keep the last good lead snapshot; the next tick retries.
+        });
+    };
+
+    const timer = window.setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [shouldPollSalesProgress, leadId, salesRunStatus, autoStartStatus]);
+
   async function qualifyReply(inboundEmailId: string) {
     if (!leadId || qualifyingInboundEmailId) return;
     setQualifyingInboundEmailId(inboundEmailId);

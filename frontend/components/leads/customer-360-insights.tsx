@@ -171,7 +171,16 @@ export function Customer360Insights({
     );
   }
 
-  const hasAnyInsight = Boolean(qualification || draft || summary || analysis);
+  const autoStartStatus = lead.sales_agent_auto_start_status ?? null;
+  const showAutoStartOnly =
+    !summary &&
+    (autoStartStatus === "PENDING" ||
+      autoStartStatus === "CLAIMED" ||
+      autoStartStatus === "FAILED" ||
+      autoStartStatus === "SKIPPED");
+  const hasAnyInsight = Boolean(
+    qualification || draft || summary || analysis || showAutoStartOnly,
+  );
 
   return (
     <section
@@ -367,10 +376,23 @@ export function Customer360Insights({
         </div>
       ) : null}
 
-      {hasAnyInsight && !summary ? (
+      {hasAnyInsight && !summary && !showAutoStartOnly ? (
         <p className="text-muted-foreground text-xs">
           No Sales Agent activity yet.
         </p>
+      ) : null}
+
+      {showAutoStartOnly ? (
+        <div className="border-border/80 grid gap-2 border-l-2 pl-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Bot className="text-muted-foreground size-4" aria-hidden="true" />
+            <span className="text-sm font-medium">Sales Agent</span>
+          </div>
+          <SalesAgentStatus
+            summary={null}
+            autoStartStatus={autoStartStatus}
+          />
+        </div>
       ) : null}
 
       {summary ? (
@@ -379,7 +401,10 @@ export function Customer360Insights({
             <Bot className="text-muted-foreground size-4" aria-hidden="true" />
             <span className="text-sm font-medium">Sales Agent</span>
           </div>
-          <SalesAgentStatus summary={summary} />
+          <SalesAgentStatus
+            summary={summary}
+            autoStartStatus={autoStartStatus}
+          />
           <dl className="grid gap-2">
             <DetailRow label="Stage" value={stageLabels[summary.stage]} />
             {agentName ? <DetailRow label="Agent" value={agentName} /> : null}

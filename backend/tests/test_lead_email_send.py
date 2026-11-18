@@ -289,6 +289,44 @@ def test_pending_send_conflicts(client: TestClient, db: Session, monkeypatch: ob
     detail = response.json()["detail"].lower()
     assert "already" in detail or "progress" in detail
 
+
+def test_stale_pending_send_is_abandoned_and_retried(
+    client: TestClient, db: Session, monkeypatch: object
+) -> None:
+    _email_settings(monkeypatch)
+    monkeypatch.setattr(settings, "lead_email_send_pending_stale_timeout_seconds", 1)
+    created = _auth(client)
+    token = created["access_token"]
+    org_id = created["organization"]["id"]
+    lead = _create(client, token, email="ada@example.com").json()
+    draft = _generate(client, token, lead["id"])
+    approved = _approve(client, token, lead["id"], draft["id"])
+    stale = LeadEmailSend(
+        organization_id=org_id,
+        lead_id=lead["id"],
+        response_draft_id=draft["id"],
+        status=LeadEmailSendStatus.PENDING,
+        recipient_email="ada@example.com",
+        sender_email="noreply@example.com",
+        subject="Re: Your enquiry",
+        body_text=DRAFT,
+        draft_revision=int(approved["revision"]),
+        started_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    db.add(stale)
+    db.commit()
+    provider = FakeEmailProvider(message_id="msg_retry")
+    _override_email(client, provider)
+    response = client.post(_send_path(lead["id"], draft["id"]), json={}, headers=_headers(token))
+    assert response.status_code == 200
+    assert response.json()["status"] == "SENT"
+    assert response.json()["provider_message_id"] == "msg_retry"
+    db.refresh(stale)
+    assert stale.status == LeadEmailSendStatus.FAILED
+    assert stale.error == "Send abandoned after timeout"
+    assert len(provider.messages) == 1
+
+
 def test_member_can_send(client: TestClient, db: Session, monkeypatch: object) -> None:
     _email_settings(monkeypatch)
     created = _auth(client)

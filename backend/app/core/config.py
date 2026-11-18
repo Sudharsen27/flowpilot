@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     # single-provider-call floor) may be taken over by an explicit retry.
     # There is no heartbeat, so a live attempt must never look abandoned.
     inbound_qualification_claim_stale_timeout_seconds: float = Field(default=600, ge=1)
+    # CLAIMED Sales Agent auto-start rows older than this (and the provider
+    # loop floor) are reset to PENDING so the worker can retry after a crash.
+    # There is no heartbeat; a live start must never look abandoned.
+    sales_agent_auto_start_claim_stale_timeout_seconds: float = Field(default=600, ge=1)
+    # PENDING lead email sends older than this (and the email request timeout
+    # plus margin) are marked FAILED so an operator retry is not blocked forever.
+    lead_email_send_pending_stale_timeout_seconds: float = Field(default=300, ge=1)
     # The follow-up worker is a separate process (`python -m app.worker`). It is
     # never started by the API process, so this flag only guards that entrypoint.
     follow_up_worker_enabled: bool = False
@@ -169,6 +176,19 @@ class Settings(BaseSettings):
             + _STALE_CLAIM_MARGIN_SECONDS
         )
         return max(self.inbound_qualification_claim_stale_timeout_seconds, floor)
+
+    def sales_agent_auto_start_claim_stale_timeout_effective_seconds(self) -> float:
+        # Auto-start runs SalesRun start (qualify + draft): two provider calls.
+        floor = 2 * (
+            (_OPENAI_SDK_MAX_RETRIES + 1) * self.openai_request_timeout_seconds
+            + _OPENAI_SDK_MAX_RETRIES * _OPENAI_SDK_MAX_RETRY_AFTER_SECONDS
+            + _STALE_CLAIM_MARGIN_SECONDS
+        )
+        return max(self.sales_agent_auto_start_claim_stale_timeout_seconds, floor)
+
+    def lead_email_send_pending_stale_timeout_effective_seconds(self) -> float:
+        floor = self.email_request_timeout_seconds + _STALE_CLAIM_MARGIN_SECONDS
+        return max(self.lead_email_send_pending_stale_timeout_seconds, floor)
 
     @property
     def cors_origin_list(self) -> list[str]:

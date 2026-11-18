@@ -109,6 +109,17 @@ Enable the loops this process should run:
 
 If all of these flags are false, the process exits immediately. Leave all of them false on the API service. The worker does not use Celery, Redis, or another queue.
 
+## Post Phase C operator checklist
+
+Do these in production when you are ready for real website enquiries (config only; no code change):
+
+1. **Resend verified domain** — verify a sending domain in Resend, then set Render `EMAIL_FROM_ADDRESS` (and optional `EMAIL_FROM_NAME`) plus `APP_BASE_URL` to the production Vercel origin so invites, verification, password reset, and customer mail leave `onboarding@resend.dev`.
+2. **Google OAuth** — set `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` on Render and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` on Vercel; add both origins and the API callback in Google Cloud Console. Prod returns unavailable until these match.
+3. **Enable worker loops** — on the Render worker service set `SALES_AGENT_AUTO_START_WORKER_ENABLED=true` (and follow-up / workflow / webhook flags as needed). Leave them false on the API service.
+4. **Org capture settings** — in Organization settings turn on website capture, choose a default Sales Agent, then enable Sales Agent auto-start.
+
+Deferred growth (not required for the sales loop): website embed + customer-domain CORS, auto CRM status from Sales Agent, chat channel, knowledge embeddings / RAG, licensed company discovery, CRM/WhatsApp/Slack integrations, auth login rate limiter, inbound Resend reply webhook, docs drift cleanup.
+
 ## Forecast snapshots (GitHub Actions)
 
 `.github/workflows/forecast-snapshots.yml` captures the daily forecast snapshots without a paid background worker. It runs the one-off runner:

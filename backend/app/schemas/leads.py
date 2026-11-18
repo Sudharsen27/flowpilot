@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models.lead import LeadSource, LeadStatus
+from app.models.lead import LeadSalesAgentAutoStartStatus, LeadSource, LeadStatus
 from app.schemas.ideal_customer_profile import LeadFitScore
 from app.schemas.lead_qualification import LeadQualificationSummary
 from app.schemas.lead_response_draft import LeadResponseDraftSummary
@@ -107,6 +107,7 @@ class LeadPublic(BaseModel):
     human_attention_required: bool
     notes: str | None
     enquiry: str | None
+    sales_agent_auto_start_status: LeadSalesAgentAutoStartStatus | None = None
     created_at: datetime
     updated_at: datetime
     latest_qualification: LeadQualificationSummary | None = None

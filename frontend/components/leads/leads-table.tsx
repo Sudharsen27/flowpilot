@@ -130,7 +130,10 @@ const leadColumns: DataTableColumn<Lead>[] = [
     className: "whitespace-nowrap",
     cell: (lead) => (
       <div className="flex items-start justify-start">
-        <SalesAgentStatus summary={lead.latest_sales_run} />
+        <SalesAgentStatus
+          summary={lead.latest_sales_run}
+          autoStartStatus={lead.sales_agent_auto_start_status}
+        />
       </div>
     ),
   },

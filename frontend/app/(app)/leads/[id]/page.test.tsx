@@ -945,4 +945,51 @@ describe("Lead workspace", () => {
       screen.queryByRole("dialog", { name: "Sales Agent history" }),
     ).not.toBeInTheDocument();
   });
+
+  it("shows Sales Agent auto-start status when no run exists yet", async () => {
+    getLeadMock.mockResolvedValue({
+      ...lead,
+      sales_agent_auto_start_status: "PENDING",
+    });
+    render(<LeadWorkspacePage />);
+    expect(await screen.findByText("Auto-start queued")).toBeVisible();
+    expect(screen.getByText("Processing")).toBeVisible();
+  });
+
+  it("polls the lead while the Sales Run is RUNNING", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    getLeadMock.mockResolvedValue({
+      ...lead,
+      latest_sales_run: {
+        id: "run-1",
+        agent_id: "agent-1",
+        status: "RUNNING",
+        stage: "QUALIFY",
+        email_send: null,
+        follow_up: null,
+      },
+    });
+    getSalesRunMock.mockResolvedValue(
+      run({
+        status: "RUNNING",
+        stage: "QUALIFY",
+        qualification_id: null,
+        response_draft_id: null,
+        follow_up_id: null,
+      }),
+    );
+    render(<LeadWorkspacePage />);
+    expect(await screen.findByLabelText("AI Processing")).toBeVisible();
+    const pollCall = setIntervalSpy.mock.calls.find(
+      (call) => call[1] === 3000,
+    );
+    expect(pollCall).toBeDefined();
+    const initialLeadCalls = getLeadMock.mock.calls.length;
+    const poll = pollCall?.[0] as () => void;
+    poll();
+    await waitFor(() =>
+      expect(getLeadMock.mock.calls.length).toBeGreaterThan(initialLeadCalls),
+    );
+    setIntervalSpy.mockRestore();
+  });
 });

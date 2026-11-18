@@ -314,8 +314,9 @@ def test_authenticated_create_cannot_set_auto_start_status(
     assert rejected.status_code == 422
     created = _create(client, token, source="WEBSITE", enquiry="Need a demo")
     assert created.status_code == 200
-    assert "sales_agent_auto_start_status" not in created.json()
-    row = db.get(Lead, created.json()["id"])
+    body = created.json()
+    assert body.get("sales_agent_auto_start_status") is None
+    row = db.get(Lead, body["id"])
     assert row is not None
     assert row.source == LeadSource.WEBSITE
     assert row.sales_agent_auto_start_status is None

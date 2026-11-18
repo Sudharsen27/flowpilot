@@ -64,6 +64,43 @@ def test_worker_discovers_pending_website_leads_from_database_rows(
     assert (first_org, claimed.id) not in discovered
 
 
+def test_worker_reclaims_stale_claimed_auto_starts(
+    client: TestClient, db: Session
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.repositories.lead_repository import LeadRepository
+
+    created = _auth(client)
+    org_id = created["organization"]["id"]
+    agent = _ready_sales_agent(db, org_id)
+    _configure_org(db, org_id, agent_id=agent.id)
+    stale = _pending_website_lead(db, org_id, name="Stale claimed")
+    fresh = _pending_website_lead(db, org_id, name="Fresh claimed")
+    stale.sales_agent_auto_start_status = LeadSalesAgentAutoStartStatus.CLAIMED
+    stale.updated_at = datetime.now(UTC) - timedelta(hours=2)
+    fresh.sales_agent_auto_start_status = LeadSalesAgentAutoStartStatus.CLAIMED
+    fresh.updated_at = datetime.now(UTC)
+    db.commit()
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=30)
+    reclaimed = LeadRepository(db).reclaim_stale_claimed_auto_starts(
+        cutoff=cutoff, limit=20
+    )
+    assert reclaimed == 1
+    db.refresh(stale)
+    db.refresh(fresh)
+    assert stale.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING
+    assert fresh.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.CLAIMED
+
+    result = _worker(SalesPipelineProvider()).run_once()
+    db.refresh(stale)
+    db.refresh(fresh)
+    assert stale.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.STARTED
+    assert fresh.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.CLAIMED
+    assert result.started >= 1
+
+
 def test_worker_respects_batch_size(client: TestClient, db: Session) -> None:
     created = _auth(client)
     org_id = created["organization"]["id"]

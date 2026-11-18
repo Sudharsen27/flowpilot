@@ -580,6 +580,9 @@ def test_auto_start_enabled_queues_pending_without_starting_sales_run(
     assert row.status == LeadStatus.NEW
     assert row.sales_agent_auto_start_status == LeadSalesAgentAutoStartStatus.PENDING
     assert row.enquiry == ENQUIRY
+    public = client.get(f"/api/v1/leads/{row.id}", headers=_headers(token))
+    assert public.status_code == 200
+    assert public.json()["sales_agent_auto_start_status"] == "PENDING"
     assert db.scalar(select(func.count()).select_from(SalesRun)) == 0
     assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
     assert db.scalar(select(func.count()).select_from(LeadEmailSend)) == 0

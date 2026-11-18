@@ -13,6 +13,9 @@ per item, and hands ``organization_id`` / ``lead_id`` from the database row
 to ``SalesAgentAutoStartService``. Claiming, skip/fail rules, SalesRun
 orchestration and Activity remain owned by that service.
 
+Before discovery it resets stale ``CLAIMED`` rows (crash recovery) back to
+``PENDING`` so they are eligible again.
+
 Discovery
 ---------
 ``list_pending_auto_start(..., for_update_skip_locked=True)`` is a short-lived
@@ -26,6 +29,7 @@ import signal
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from types import FrameType
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -124,6 +128,12 @@ class SalesAgentAutoStartWorker:
             logger.info("sales-agent auto-start worker stopped")
 
     def run_once(self) -> AutoStartBatchResult:
+        reclaimed = self.reclaim_stale_claims(self.batch_size)
+        if reclaimed:
+            logger.info(
+                "sales-agent auto-start worker reclaimed stale claims count=%s",
+                reclaimed,
+            )
         candidates = self.discover_pending(self.batch_size)
         logger.info("sales-agent auto-start worker polled candidates=%s", len(candidates))
         if not candidates:
@@ -163,6 +173,19 @@ class SalesAgentAutoStartWorker:
             result.errors,
         )
         return result
+
+    def reclaim_stale_claims(self, limit: int) -> int:
+        session = self._session_factory()
+        try:
+            cutoff = datetime.now(UTC) - timedelta(
+                seconds=settings.sales_agent_auto_start_claim_stale_timeout_effective_seconds()
+            )
+            return LeadRepository(session).reclaim_stale_claimed_auto_starts(
+                cutoff=cutoff,
+                limit=limit,
+            )
+        finally:
+            session.close()
 
     def discover_pending(self, limit: int) -> list[tuple[str, str]]:
         session = self._session_factory()

@@ -171,6 +171,7 @@ class LeadRepository:
     ) -> int:
         self._expire_leads()
         self.session.flush()
+        now = datetime.now(UTC)
         result = self.session.execute(
             update(Lead)
             .where(
@@ -178,7 +179,55 @@ class LeadRepository:
                 Lead.id == lead_id,
                 Lead.sales_agent_auto_start_status == from_status,
             )
-            .values(sales_agent_auto_start_status=to_status)
+            .values(
+                sales_agent_auto_start_status=to_status,
+                updated_at=now,
+            )
+        )
+        self.session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    def reclaim_stale_claimed_auto_starts(
+        self,
+        *,
+        cutoff: datetime,
+        limit: int,
+    ) -> int:
+        """Reset abandoned CLAIMED rows to PENDING so the worker can retry.
+
+        Uses ``updated_at`` set when the claim was taken. Bulk UPDATE does not
+        rely on ORM ``onupdate``.
+        """
+        self._expire_leads()
+        self.session.flush()
+        now = datetime.now(UTC)
+        stale_ids = list(
+            self.session.scalars(
+                select(Lead.id)
+                .where(
+                    Lead.sales_agent_auto_start_status
+                    == LeadSalesAgentAutoStartStatus.CLAIMED,
+                    Lead.source == LeadSource.WEBSITE,
+                    Lead.updated_at < cutoff,
+                )
+                .order_by(Lead.updated_at.asc(), Lead.id.asc())
+                .limit(limit)
+            )
+        )
+        if not stale_ids:
+            return 0
+        result = self.session.execute(
+            update(Lead)
+            .where(
+                Lead.id.in_(stale_ids),
+                Lead.sales_agent_auto_start_status
+                == LeadSalesAgentAutoStartStatus.CLAIMED,
+                Lead.updated_at < cutoff,
+            )
+            .values(
+                sales_agent_auto_start_status=LeadSalesAgentAutoStartStatus.PENDING,
+                updated_at=now,
+            )
         )
         self.session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
