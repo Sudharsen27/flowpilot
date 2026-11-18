@@ -60,9 +60,34 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
   const detailRequestRef = useRef(0);
   const selectedIdRef = useRef<string | null>(urlState.eventId);
 
+  const filterKey = [
+    urlState.q,
+    urlState.type,
+    urlState.entityType,
+    urlState.offset,
+    retryKey,
+  ].join("|");
+  const [trackedFilterKey, setTrackedFilterKey] = useState(filterKey);
+  const detailKey = `${urlState.eventId ?? ""}|${detailRetryKey}`;
+  const [trackedDetailKey, setTrackedDetailKey] = useState(detailKey);
+
+  // Match ApprovalsWorkspace: adjust local UI state when the URL changes.
   if (urlState.q !== trackedQuery) {
     setTrackedQuery(urlState.q);
     setQueryInput(urlState.q);
+  }
+  if (filterKey !== trackedFilterKey) {
+    setTrackedFilterKey(filterKey);
+    setLoading(true);
+    setError(null);
+  }
+  if (detailKey !== trackedDetailKey) {
+    setTrackedDetailKey(detailKey);
+    if (urlState.eventId) {
+      setDetailLoading(true);
+      setDetailError(null);
+      setMobileView("detail");
+    }
   }
 
   const replaceUrl = useCallback(
@@ -100,8 +125,6 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     void listActivity({
       q: urlState.q || undefined,
       type: urlState.type || undefined,
@@ -143,8 +166,8 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
       cancelled = true;
     };
   }, [
+    filterKey,
     onSummary,
-    retryKey,
     urlState.entityType,
     urlState.eventId,
     urlState.offset,
@@ -157,9 +180,6 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
       return;
     }
     const requestId = ++detailRequestRef.current;
-    setDetailLoading(true);
-    setDetailError(null);
-    setMobileView("detail");
     void getActivity(urlState.eventId)
       .then((detail) => {
         if (requestId !== detailRequestRef.current) return;
@@ -173,7 +193,7 @@ export function ActivityWorkspace({ onSummary }: ActivityWorkspaceProps) {
       .finally(() => {
         if (requestId === detailRequestRef.current) setDetailLoading(false);
       });
-  }, [detailRetryKey, urlState.eventId]);
+  }, [detailKey, urlState.eventId]);
 
   const selectedId = selected?.id;
 

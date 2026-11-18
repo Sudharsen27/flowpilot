@@ -74,6 +74,7 @@ export function TeamPeopleSettings({
 }: TeamPeopleSettingsProps) {
   const { completeAuth, signOut } = useAuth();
   const [actorRole, setActorRole] = useState<MembershipRole>(role);
+  const [trackedRole, setTrackedRole] = useState(role);
   const [members, setMembers] = useState<MemberPublic[] | null>(null);
   const [membersError, setMembersError] = useState(false);
   const [requestVersion, setRequestVersion] = useState(0);
@@ -81,9 +82,10 @@ export function TeamPeopleSettings({
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
-  useEffect(() => {
+  if (role !== trackedRole) {
+    setTrackedRole(role);
     setActorRole(role);
-  }, [role]);
+  }
 
   useEffect(() => {
     let cancelled = false;

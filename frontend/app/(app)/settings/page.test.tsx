@@ -9,7 +9,6 @@ import { isNavigationItemActive } from "@/lib/navigation";
 const {
   listMembers,
   signOut,
-  completeAuth,
   authState,
   getWebsiteCaptureSettings,
   updateWebsiteCaptureSettings,
@@ -23,7 +22,6 @@ const {
     return {
       listMembers: vi.fn(),
       signOut,
-      completeAuth,
       getWebsiteCaptureSettings: vi.fn(),
       updateWebsiteCaptureSettings: vi.fn(),
       getIdealCustomerProfile: vi.fn(),
