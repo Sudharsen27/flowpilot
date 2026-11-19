@@ -245,12 +245,6 @@ export function ApprovalDetail({
   }, [selectedDraftId, approval]);
 
   useEffect(() => {
-    setOfferFollowUp(false);
-    setFollowUpOpen(false);
-    setActionSuccess(null);
-  }, [selectedDraftId]);
-
-  useEffect(() => {
     if (!selectedLeadId) {
       return;
     }
