@@ -126,11 +126,9 @@ describe("Website enquiry settings", () => {
       await screen.findByRole("button", { name: "Enable website enquiries" }),
     );
     await waitFor(() =>
-      expect(updateSettingsMock).toHaveBeenCalledWith({
-        website_capture_enabled: true,
-        sales_agent_auto_start_enabled: false,
-        default_sales_agent_id: null,
-      }),
+      expect(updateSettingsMock).toHaveBeenCalledWith(
+        captureSettings({ website_capture_enabled: true }),
+      ),
     );
     expect(screen.getByText("On")).toBeVisible();
     expect(submitPublicEnquiryMock).not.toHaveBeenCalled();
@@ -171,11 +169,13 @@ describe("Website enquiry settings", () => {
     await user.selectOptions(screen.getByLabelText(/Default Sales Agent/), "agent-sales-1");
     await user.click(screen.getByRole("button", { name: "Save Sales Agent settings" }));
     await waitFor(() =>
-      expect(updateSettingsMock).toHaveBeenCalledWith({
-        website_capture_enabled: true,
-        sales_agent_auto_start_enabled: true,
-        default_sales_agent_id: "agent-sales-1",
-      }),
+      expect(updateSettingsMock).toHaveBeenCalledWith(
+        captureSettings({
+          website_capture_enabled: true,
+          sales_agent_auto_start_enabled: true,
+          default_sales_agent_id: "agent-sales-1",
+        }),
+      ),
     );
     expect(submitPublicEnquiryMock).not.toHaveBeenCalled();
   });
@@ -300,11 +300,7 @@ describe("Website enquiry settings", () => {
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Disable" }));
     await waitFor(() =>
-      expect(updateSettingsMock).toHaveBeenCalledWith({
-        website_capture_enabled: false,
-        sales_agent_auto_start_enabled: false,
-        default_sales_agent_id: null,
-      }),
+      expect(updateSettingsMock).toHaveBeenCalledWith(captureSettings()),
     );
     expect(submitPublicEnquiryMock).not.toHaveBeenCalled();
   });

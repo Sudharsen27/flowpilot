@@ -324,8 +324,9 @@ describe("Integrations page", () => {
       within(catalog).queryByRole("heading", { name: "Webhooks" }),
     ).toBeNull();
     expect(within(catalog).getAllByText("Needs provider setup")).toHaveLength(
-      10,
+      9,
     );
+    expect(within(catalog).getByText("Not connected")).toBeVisible();
     expect(within(catalog).queryByRole("button")).toBeNull();
     expect(
       within(catalog).getByText(/API keys for FlowPilot are not available yet/),

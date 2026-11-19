@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import MutableMapping
+from typing import Any
 
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -49,7 +51,7 @@ class PublicEmbedCorsMiddleware:
             await response(scope, receive, send)
             return
 
-        async def send_with_cors(message: dict) -> None:
+        async def send_with_cors(message: MutableMapping[str, Any]) -> None:
             if allowed and origin and message["type"] == "http.response.start":
                 raw_headers = list(message.get("headers") or [])
                 extra = [

@@ -186,7 +186,7 @@ def import_discovered_company_prospects(
     organization: Organization = Depends(get_current_organization),
     membership: Membership = Depends(get_current_membership),
     db: Session = Depends(get_db),
-) -> ProspectCompanyImportResponse:
+) -> ProspectCompanyImportResponse | JSONResponse:
     from app.core.exceptions import ConflictError, UnprocessableError
     from app.schemas.company_prospect import CompanyProspectCreate
     from app.services.company_prospect_service import CompanyProspectService
