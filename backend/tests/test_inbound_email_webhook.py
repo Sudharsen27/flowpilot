@@ -484,3 +484,113 @@ def test_integrity_conflict_is_treated_as_duplicate(
     assert response.status_code == 200
     assert response.json()["status"] == "duplicate"
     assert _rows(db, created["organization"]["id"]) == []
+
+
+class _StubReceivingProvider:
+    def __init__(
+        self,
+        *,
+        text: str | None = "FETCHED_BODY_TEXT",
+        html: str | None = "<p>FETCHED</p>",
+        fail: Exception | None = None,
+    ) -> None:
+        self.text = text
+        self.html = html
+        self.fail = fail
+        self.calls: list[str] = []
+
+    def fetch_received_email(self, email_id: str) -> Any:
+        from app.email.resend_provider import ReceivedEmailContent
+
+        self.calls.append(email_id)
+        if self.fail is not None:
+            raise self.fail
+        return ReceivedEmailContent(text=self.text, html=self.html)
+
+
+def test_metadata_only_webhook_fetches_body_via_receiving_api(
+    client: TestClient,
+    db: Session,
+    configured: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1 import webhooks as webhooks_module
+
+    created = _register(client, "Acme")
+    stub = _StubReceivingProvider()
+
+    def factory(session: Session) -> InboundEmailService:
+        return InboundEmailService(session, receiving_provider=stub)
+
+    monkeypatch.setattr(webhooks_module, "InboundEmailService", factory)
+    payload = _event(
+        data={
+            "email_id": "email_meta_1",
+            "message_id": "<meta-1@customer.example>",
+            "text": None,
+            "html": None,
+        }
+    )
+    response = _post(client, payload)
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    assert stub.calls == ["email_meta_1"]
+    stored = _rows(db, created["organization"]["id"])
+    assert len(stored) == 1
+    assert stored[0].body_text == "FETCHED_BODY_TEXT"
+    assert stored[0].body_html == "<p>FETCHED</p>"
+
+
+def test_receiving_fetch_failure_is_retryable(
+    client: TestClient,
+    db: Session,
+    configured: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1 import webhooks as webhooks_module
+    from app.core.exceptions import ProviderError
+
+    _register(client, "Acme")
+    stub = _StubReceivingProvider(fail=ProviderError("Email provider request failed"))
+
+    def factory(session: Session) -> InboundEmailService:
+        return InboundEmailService(session, receiving_provider=stub)
+
+    monkeypatch.setattr(webhooks_module, "InboundEmailService", factory)
+    response = _post(
+        client,
+        _event(
+            data={
+                "email_id": "email_meta_fail",
+                "message_id": "<meta-fail@customer.example>",
+                "text": None,
+                "html": None,
+            }
+        ),
+    )
+    assert response.status_code == 502
+    assert stub.calls == ["email_meta_fail"]
+    assert db.scalars(select(InboundEmail)).all() == []
+
+
+def test_injected_body_skips_receiving_fetch(
+    client: TestClient,
+    db: Session,
+    configured: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1 import webhooks as webhooks_module
+
+    created = _register(client, "Acme")
+    stub = _StubReceivingProvider()
+
+    def factory(session: Session) -> InboundEmailService:
+        return InboundEmailService(session, receiving_provider=stub)
+
+    monkeypatch.setattr(webhooks_module, "InboundEmailService", factory)
+    response = _post(client, _event())
+    assert response.status_code == 200
+    assert response.json()["status"] == "accepted"
+    assert stub.calls == []
+    stored = _rows(db, created["organization"]["id"])
+    assert stored[0].body_text == BODY_MARKER

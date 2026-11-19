@@ -5,7 +5,9 @@ import logging
 import re
 import ssl
 import urllib.error
+import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from typing import Any
 
 import certifi
@@ -18,7 +20,14 @@ from app.email.provider import EmailMessage, EmailSendResult
 logger = logging.getLogger(__name__)
 
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
+RESEND_RECEIVING_URL = "https://api.resend.com/emails/receiving"
 _TOKEN_QUERY = re.compile(r"(?i)([?&#]token=)[^&#\s\"']+")
+
+
+@dataclass(frozen=True)
+class ReceivedEmailContent:
+    text: str | None = None
+    html: str | None = None
 
 
 def redact_logged_provider_text(message: str) -> str:
@@ -110,3 +119,49 @@ class ResendEmailProvider:
         if isinstance(parsed, dict) and isinstance(parsed.get("id"), str):
             message_id = parsed["id"][:200]
         return EmailSendResult(provider=self.provider_name, message_id=message_id)
+
+    def fetch_received_email(self, email_id: str) -> ReceivedEmailContent:
+        """Load text/html for a received inbound message (Resend Receiving API)."""
+        if not self._api_key:
+            raise ProviderNotConfiguredError("RESEND_API_KEY is not configured")
+        cleaned_id = email_id.strip()
+        if not cleaned_id or "\x00" in cleaned_id or "/" in cleaned_id:
+            raise ProviderError("Email provider request failed")
+        url = f"{RESEND_RECEIVING_URL}/{urllib.parse.quote(cleaned_id, safe='')}"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Accept": "application/json",
+            "User-Agent": "FlowPilot/0.1",
+        }
+        request = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with self._request(request, timeout=self._timeout) as response:
+                raw = response.read().decode("utf-8")
+                status = getattr(response, "status", 200)
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            logger.warning(
+                "Resend receiving fetch failed: %s",
+                redact_logged_provider_text(error_body or str(exc)),
+            )
+            raise ProviderError("Email provider request failed") from exc
+        except TimeoutError as exc:
+            raise ProviderError("Email provider request timed out") from exc
+        except Exception as exc:
+            logger.warning("Resend receiving fetch failed unexpectedly")
+            raise ProviderError("Email provider request failed") from exc
+
+        if status >= 400:
+            raise ProviderError("Email provider request failed")
+        try:
+            parsed: Any = json.loads(raw) if raw else {}
+        except json.JSONDecodeError as exc:
+            raise ProviderError("Email provider returned invalid output") from exc
+        if not isinstance(parsed, dict):
+            raise ProviderError("Email provider returned invalid output")
+        text = parsed.get("text")
+        html = parsed.get("html")
+        return ReceivedEmailContent(
+            text=text if isinstance(text, str) else None,
+            html=html if isinstance(html, str) else None,
+        )

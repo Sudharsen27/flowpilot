@@ -180,3 +180,45 @@ def test_another_organization_cannot_see_the_reply(
     assert hidden.status_code == 404
     assert BODY_MARKER not in hidden.text
     assert _reply_count(db, beta["organization"]["id"]) == 0
+
+
+def test_metadata_only_reply_fetches_body_for_inbox(
+    client: TestClient,
+    db: Session,
+    configured: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1 import webhooks as webhooks_module
+    from app.email.resend_provider import ReceivedEmailContent
+    from app.services.inbound_email_service import InboundEmailService
+
+    created = _register(client, "Acme")
+    token = created["access_token"]
+    lead = _lead(client, token, SENDER)
+    fetched = "FETCHED_CUSTOMER_REPLY"
+
+    class Stub:
+        def fetch_received_email(self, email_id: str) -> ReceivedEmailContent:
+            assert email_id == "email_fetched"
+            return ReceivedEmailContent(text=fetched, html="<p>ignore</p>")
+
+    monkeypatch.setattr(
+        webhooks_module,
+        "InboundEmailService",
+        lambda session: InboundEmailService(session, receiving_provider=Stub()),
+    )
+    payload = _event(
+        data={
+            "email_id": "email_fetched",
+            "message_id": "<fetched@customer.example>",
+            "from": f"Ada Customer <{SENDER}>",
+            "text": None,
+            "html": None,
+            "subject": "Works for me",
+        }
+    )
+    assert _post(client, payload).json()["status"] == "accepted"
+    replies = _reply_items(_conversation(client, token, str(lead["id"])))
+    assert len(replies) == 1
+    assert replies[0]["body"] == fetched
+    assert _reply_count(db, created["organization"]["id"]) == 1

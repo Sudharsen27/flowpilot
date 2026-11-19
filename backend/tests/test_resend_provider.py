@@ -122,3 +122,40 @@ def test_resend_timeout_is_provider_error() -> None:
                 body_text="Hello",
             )
         )
+
+
+def test_fetch_received_email_maps_text_and_html() -> None:
+    response = SimpleNamespace(
+        read=lambda: b'{"text":"Hello reply","html":"<p>Hello</p>","id":"email_1"}',
+        status=200,
+    )
+    context = MagicMock()
+    context.__enter__.return_value = response
+    context.__exit__.return_value = False
+    request_fn = MagicMock(return_value=context)
+    provider = ResendEmailProvider(api_key="re_test", request=request_fn)
+    content = provider.fetch_received_email("email_abc")
+    assert content.text == "Hello reply"
+    assert content.html == "<p>Hello</p>"
+    http_request = request_fn.call_args.args[0]
+    assert http_request.full_url.endswith("/emails/receiving/email_abc")
+    assert http_request.get_method() == "GET"
+    headers = {key.lower(): value for key, value in http_request.header_items()}
+    assert headers["authorization"] == "Bearer re_test"
+
+
+def test_fetch_received_email_http_error_is_provider_error() -> None:
+    import urllib.error
+
+    def boom(_request: object, timeout: float) -> object:
+        raise urllib.error.HTTPError(
+            "https://api.resend.com/emails/receiving/email_1",
+            500,
+            "err",
+            hdrs={},
+            fp=BytesIO(b'{"message":"boom"}'),
+        )
+
+    provider = ResendEmailProvider(api_key="re_test", request=boom)
+    with pytest.raises(ProviderError, match="Email provider request failed"):
+        provider.fetch_received_email("email_1")

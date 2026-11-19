@@ -27,6 +27,7 @@ from app.models.lead_response_draft import (
 from app.repositories.lead_email_send_repository import LeadEmailSendRepository
 from app.repositories.lead_repository import LeadRepository
 from app.repositories.lead_response_draft_repository import LeadResponseDraftRepository
+from app.repositories.organization_repository import OrganizationRepository
 from app.schemas.lead_email_send import LeadEmailSendPublic
 from app.services import webhook_events
 from app.services.activity_service import ActivityService
@@ -44,6 +45,7 @@ class LeadEmailSendService:
         self.leads = LeadRepository(session)
         self.drafts = LeadResponseDraftRepository(session)
         self.sends = LeadEmailSendRepository(session)
+        self.organizations = OrganizationRepository(session)
 
     def send(
         self,
@@ -128,6 +130,7 @@ class LeadEmailSendService:
                     from_name=safe_optional_name(settings.email_from_name),
                     subject=EMAIL_SUBJECT,
                     body_text=draft.current_response,
+                    reply_to=self._inbound_reply_to(organization_id),
                     idempotency_key=f"{organization_id}:{draft.id}:{draft.revision}",
                 )
             )
@@ -179,6 +182,18 @@ class LeadEmailSendService:
         self.session.commit()
         self.session.refresh(row)
         return row
+
+    def _inbound_reply_to(self, organization_id: str) -> str | None:
+        domain = (settings.resend_inbound_domain or "").strip().lower()
+        if not domain:
+            return None
+        organization = self.organizations.get_by_id(organization_id)
+        if organization is None:
+            return None
+        slug = (organization.slug or "").strip().lower()
+        if not slug:
+            return None
+        return f"{slug}@{domain}"
 
     def _new_row(
         self,

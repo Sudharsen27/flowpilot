@@ -104,6 +104,7 @@ def test_approved_draft_sends_exact_current_response(
     assert provider.messages[0].to == "ada@example.com"
     assert provider.messages[0].from_email == "noreply@example.com"
     assert provider.messages[0].body_text == EDITED
+    assert provider.messages[0].reply_to is None
     assert DRAFT not in provider.messages[0].body_text
     row = db.scalar(select(LeadEmailSend))
     assert row is not None
@@ -114,6 +115,24 @@ def test_approved_draft_sends_exact_current_response(
     assert lead_row.status == "NEW"
     assert db.scalar(select(func.count()).select_from(AgentExecution)) == 0
     assert db.scalar(select(func.count()).select_from(ToolInvocation)) == 0
+
+
+def test_send_sets_reply_to_when_inbound_domain_configured(
+    client: TestClient, monkeypatch: object
+) -> None:
+    _email_settings(monkeypatch)
+    monkeypatch.setattr(settings, "resend_inbound_domain", "inbound.example.com")
+    auth = _auth(client)
+    token = auth["access_token"]
+    slug = auth["organization"]["slug"]
+    lead = _create(client, token, email="ada@example.com").json()
+    draft = _generate(client, token, lead["id"])
+    _approve(client, token, lead["id"], draft["id"])
+    provider = FakeEmailProvider()
+    _override_email(client, provider)
+    response = client.post(_send_path(lead["id"], draft["id"]), json={}, headers=_headers(token))
+    assert response.status_code == 200
+    assert provider.messages[0].reply_to == f"{slug}@inbound.example.com"
 
 
 def test_unapproved_states_cannot_send(client: TestClient, monkeypatch: object) -> None:

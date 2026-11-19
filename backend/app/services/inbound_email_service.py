@@ -19,11 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.exceptions import (
+    ProviderError,
     ProviderNotConfiguredError,
 )
 from app.core.exceptions import (
     ValidationError as AppValidationError,
 )
+from app.email.resend_provider import ReceivedEmailContent, ResendEmailProvider
 from app.email.resend_webhook import verify_resend_signature
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.inbound_email import InboundEmail, InboundEmailStatus
@@ -53,11 +55,17 @@ class InboundEmailResult:
 
 
 class InboundEmailService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        receiving_provider: ResendEmailProvider | None = None,
+    ) -> None:
         self.session = session
         self.emails = InboundEmailRepository(session)
         self.organizations = OrganizationRepository(session)
         self.leads = LeadRepository(session)
+        self._receiving_provider = receiving_provider
 
     def receive(
         self,
@@ -185,6 +193,13 @@ class InboundEmailService:
         received_at = data.created_at or event.created_at or datetime.now(UTC)
         from_email = _sender(data.from_address)
         lead_id = self._matched_lead_id(organization_id, from_email)
+        body_text = _clean(data.text, _BODY_LIMIT)
+        body_html = _clean(data.html, _BODY_LIMIT)
+        if body_text is None and body_html is None:
+            fetched = self._fetch_received_body(data.email_id)
+            if fetched is not None:
+                body_text = _clean(fetched.text, _BODY_LIMIT)
+                body_html = _clean(fetched.html, _BODY_LIMIT)
         row = InboundEmail(
             organization_id=organization_id,
             lead_id=lead_id,
@@ -196,8 +211,8 @@ class InboundEmailService:
             cc_addresses=_address_json(data.cc),
             bcc_addresses=_address_json(data.bcc),
             subject=_clean(data.subject, 200),
-            body_text=_clean(data.text, _BODY_LIMIT),
-            body_html=_clean(data.html, _BODY_LIMIT),
+            body_text=body_text,
+            body_html=body_html,
             attachment_metadata=_attachment_json(data.attachments),
             status=InboundEmailStatus.RECEIVED,
             received_at=received_at,
@@ -222,6 +237,31 @@ class InboundEmailService:
             data.email_id,
         )
         return InboundEmailResult(status="accepted")
+
+    def _fetch_received_body(self, email_id: str) -> ReceivedEmailContent | None:
+        """Fill missing webhook body via Resend Receiving API when configured."""
+        provider = self._receiving_provider
+        if provider is None:
+            if not (settings.resend_api_key or "").strip():
+                logger.info(
+                    "inbound email body missing and RESEND_API_KEY unset "
+                    "provider_email_id=%s",
+                    email_id,
+                )
+                return None
+            provider = ResendEmailProvider()
+        try:
+            return provider.fetch_received_email(email_id)
+        except ProviderNotConfiguredError:
+            logger.info(
+                "inbound email body missing and receiving provider not configured "
+                "provider_email_id=%s",
+                email_id,
+            )
+            return None
+        except ProviderError:
+            # Propagate so Resend can retry the webhook after a transient failure.
+            raise
 
 
 def _secret_value(secret: SecretStr | None) -> str | None:

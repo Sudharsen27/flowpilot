@@ -118,7 +118,7 @@ Do these in production when you are ready for real website enquiries (config onl
 3. **Enable worker loops** — on the Render worker service set `SALES_AGENT_AUTO_START_WORKER_ENABLED=true` (and follow-up / workflow / webhook flags as needed). Leave them false on the API service.
 4. **Org capture settings** — in Organization settings turn on website capture, choose a default Sales Agent, then enable Sales Agent auto-start.
 
-Growth P2 MVPs shipped: website embed + per-org CORS allowlist, Sales Agent send → CRM `CONTACTED`, public chat enquiries, knowledge embeddings (optional), config-gated discovery import (`PROSPECT_DISCOVERY_APPROVED_IMPORT_SOURCE`), Slack Incoming Webhook formatting on outbound webhooks. Still deferred: native CRM/WhatsApp OAuth, auth login rate limiter polish, inbound Resend reply webhook, docs drift cleanup.
+Growth P2 MVPs shipped: website embed + per-org CORS allowlist, Sales Agent send → CRM `CONTACTED`, public chat enquiries, knowledge embeddings (optional), config-gated discovery import (`PROSPECT_DISCOVERY_APPROVED_IMPORT_SOURCE`), Slack Incoming Webhook formatting on outbound webhooks. Inbound Resend reply path is implemented (Receiving API body fetch + outbound Reply-To). Still deferred: native CRM/WhatsApp OAuth, auth login rate limiter polish, docs drift cleanup.
 
 ## Forecast snapshots (GitHub Actions)
 
@@ -175,14 +175,15 @@ Rollback: deploy the previous application release only when its code still match
 
 ## Inbound email
 
-The public webhook is `POST /api/v1/webhooks/resend/inbound`. Production is not receiving inbound mail. Turning it on later requires every one of these:
+The public webhook is `POST /api/v1/webhooks/resend/inbound`. The route is implemented; production inbound is an ops enablement step. To receive customer replies:
 
 - `RESEND_WEBHOOK_SECRET` set on the API service to the Resend webhook signing secret
 - `RESEND_INBOUND_DOMAIN` set on the API service to the domain whose recipient local-part equals an organization slug, such as `acme@inbound.example.com`
-- migration `023_inbound_emails` applied before that API release starts
+- `RESEND_API_KEY` set so metadata-only `email.received` events can fetch the body via Resend Receiving (`GET /emails/receiving/{id}`)
+- migration `023_inbound_emails` applied
 - a Resend `email.received` webhook pointing at `https://<render-api-host>/api/v1/webhooks/resend/inbound`
 
-Leave the secret and domain unset until that route exists. Outbound mail does not use them. The webhook returns 503 until the signing secret is set. A signed event is stored only when exactly one `to` mailbox is `{organization-slug}@{RESEND_INBOUND_DOMAIN}`. This repository does not create the Resend webhook.
+When `RESEND_INBOUND_DOMAIN` is set, outbound lead email sets `Reply-To` to `{organization-slug}@{RESEND_INBOUND_DOMAIN}` so customer replies hit that mailbox. The webhook returns 503 until the signing secret is set. A signed event is stored only when exactly one `to` mailbox is `{organization-slug}@{RESEND_INBOUND_DOMAIN}`. If the webhook payload has no `text`/`html` and the API key is unset, the row is stored with a null body. This repository does not create the Resend webhook.
 
 ## Local datastores
 
