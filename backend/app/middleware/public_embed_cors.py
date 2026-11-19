@@ -44,15 +44,21 @@ class PublicEmbedCorsMiddleware:
         slug = match.group(1)
         allowed = self._origin_allowed(slug, origin)
 
+        # Only take over CORS for allowlisted embed origins. Otherwise fall
+        # through so global CORS (e.g. localhost:3000 hosted form) can apply.
+        if not allowed:
+            await self.app(scope, receive, send)
+            return
+
         if scope.get("method") == "OPTIONS":
-            response = Response(status_code=204 if allowed else 403)
-            if allowed and origin:
+            response = Response(status_code=204)
+            if origin:
                 self._apply_cors(response, origin)
             await response(scope, receive, send)
             return
 
         async def send_with_cors(message: MutableMapping[str, Any]) -> None:
-            if allowed and origin and message["type"] == "http.response.start":
+            if origin and message["type"] == "http.response.start":
                 raw_headers = list(message.get("headers") or [])
                 extra = [
                     (b"access-control-allow-origin", origin.encode("latin-1")),

@@ -90,7 +90,8 @@ describe("Website enquiry settings", () => {
     expect(screen.getByText("Website Capture Enabled")).toBeVisible();
     expect(screen.getByText("Off")).toBeVisible();
     expect(screen.getByRole("button", { name: "Enable website enquiries" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy form URL" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy embed snippet" })).not.toBeInTheDocument();
     expect(
       screen.getByRole("switch", { name: "Start Sales Agent automatically" }),
     ).toBeDisabled();
@@ -111,8 +112,13 @@ describe("Website enquiry settings", () => {
     expect(await screen.findByText(/Enquiry form URL/)).toBeVisible();
     expect(screen.getByText("On")).toBeVisible();
     expect(screen.getByText(/\/capture\/acme/)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Copy URL" }));
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Copy form URL" }));
+    expect(await screen.findByRole("button", { name: "Form URL copied" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open form" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/capture/acme"),
+    );
+    expect(screen.getByRole("button", { name: "Copy embed snippet" })).toBeDisabled();
   });
 
   it("lets owners enable capture without auto-start", async () => {
@@ -317,7 +323,7 @@ describe("Website enquiry settings", () => {
     expect(
       screen.queryByRole("button", { name: "Disable website enquiries" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Copy form URL" })).toBeVisible();
     expect(
       screen.getByRole("switch", { name: "Start Sales Agent automatically" }),
     ).toBeDisabled();
@@ -344,5 +350,31 @@ describe("Website enquiry settings", () => {
       expect(getAgentsMock).toHaveBeenCalledWith({ agentType: "SALES" }),
     );
     expect(getAgentsMock.mock.calls[0]?.[0]).not.toHaveProperty("organization_id");
+  });
+
+  it("allows embed copy after a saved origin and exposes chat URL controls", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    getSettingsMock.mockResolvedValue(
+      captureSettings({
+        website_capture_enabled: true,
+        website_embed_allowed_origins: ["https://www.example.com"],
+        chat_capture_enabled: true,
+      }),
+    );
+    render(<WebsiteEnquirySettings slug="acme" role="OWNER" />);
+    expect(await screen.findByRole("button", { name: "Copy embed snippet" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Copy embed snippet" }));
+    expect(await screen.findByRole("button", { name: "Snippet copied" })).toBeVisible();
+    expect(screen.getByText(/Chat URL:/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Copy chat URL" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open chat" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/chat/acme"),
+    );
   });
 });

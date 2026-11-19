@@ -46,7 +46,20 @@ def test_public_enquiry_cors_allows_listed_origin(
             "Access-Control-Request-Method": "POST",
         },
     )
-    assert denied.status_code == 403
+    # Falls through to global CORS when not embed-allowlisted.
+    assert denied.status_code in {400, 403}
+    assert denied.headers.get("access-control-allow-origin") != "https://evil.example"
+
+    # Hosted form on the app origin still works via global CORS_ORIGINS.
+    local = client.options(
+        PATH.format(slug=slug),
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert local.status_code == 200
+    assert local.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
     response = client.post(
         PATH.format(slug=slug),

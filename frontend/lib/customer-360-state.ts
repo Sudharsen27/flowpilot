@@ -129,6 +129,17 @@ export function deriveCustomer360NextStep(
   }
 
   if (summary?.status === "COMPLETED") {
+    if (
+      summary.email_send?.status === "SENT" &&
+      (!summary.follow_up || summary.follow_up.status !== "PENDING")
+    ) {
+      return {
+        kind: "follow-up",
+        title: "Schedule follow-up",
+        description:
+          "The response was sent. Schedule a follow-up so the next touch is not missed.",
+      };
+    }
     if (summary.follow_up?.status === "COMPLETED") {
       return {
         kind: "complete",

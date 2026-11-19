@@ -477,10 +477,11 @@ export function NeedsAttention({ onChanged }: NeedsAttentionProps) {
   ];
 
   return (
-    <section className="grid gap-5" aria-label="Needs attention">
+    <section id="todays-work" className="grid gap-5" aria-label="Today's work">
       <SectionHeader
-        title="Needs attention"
-        description="Leads that require human attention, drafts waiting for review, emails that failed to send, and overdue follow-ups. Human attention is separate from approval. Completed work is not listed here."
+        id="todays-work-heading"
+        title="Today's work"
+        description="Ranked queue for today: human attention, drafts waiting for review, emails that failed to send, and overdue follow-ups. Do the top item first. Human attention is separate from approval. Completed work is not listed here."
       />
       {actionAlert ? (
         <p className="text-danger-text text-sm" role="alert">

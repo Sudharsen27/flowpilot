@@ -8,7 +8,7 @@ import { Label } from "@/components/forms/label";
 import { Select } from "@/components/forms/select";
 import { Switch } from "@/components/forms/switch";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -36,6 +36,13 @@ function captureUrl(slug: string) {
     return `/capture/${slug}`;
   }
   return `${window.location.origin}/capture/${slug}`;
+}
+
+function chatUrl(slug: string) {
+  if (typeof window === "undefined") {
+    return `/chat/${slug}`;
+  }
+  return `${window.location.origin}/chat/${slug}`;
 }
 
 function isEligibleSalesAgent(agent: Agent) {
@@ -83,6 +90,7 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [copiedChat, setCopiedChat] = useState(false);
   const [originsText, setOriginsText] = useState("");
   const [chatEnabled, setChatEnabled] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -264,6 +272,12 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
   }
 
   async function copyEmbedSnippet() {
+    if ((saved?.website_embed_allowed_origins ?? []).length === 0) {
+      setActionError(
+        "Add and save at least one https origin before copying the embed snippet.",
+      );
+      return;
+    }
     try {
       await navigator.clipboard.writeText(embedSnippet(slug));
     } catch {
@@ -273,9 +287,24 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
     setCopiedSnippet(true);
   }
 
+  async function copyChatUrl() {
+    try {
+      await navigator.clipboard.writeText(chatUrl(slug));
+    } catch {
+      setActionError("The chat URL could not be copied.");
+      return;
+    }
+    setCopiedChat(true);
+  }
+
   const url = captureUrl(slug);
+  const chatPageUrl = chatUrl(slug);
   const selectedAgent = eligible.find((agent) => agent.id === agentId);
   const showSelector = enabled && autoStartChecked;
+  const savedOrigins = saved?.website_embed_allowed_origins ?? [];
+  const hasSavedOrigin = savedOrigins.length > 0;
+  const originsDirty =
+    currentOrigins().join("\n") !== savedOrigins.join("\n");
 
   return (
     <>
@@ -319,11 +348,49 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                 label={enabled ? "On" : "Off"}
               />
             </div>
+            {canManage ? (
+              <ol className="border-border bg-muted/40 grid list-decimal gap-2 rounded-md border px-5 py-3 text-sm leading-6">
+                <li>
+                  <span className="font-medium">Enable capture</span>
+                  {enabled ? " — done." : " — turn on website enquiries below."}
+                </li>
+                <li>
+                  <span className="font-medium">Add and save an https origin</span>
+                  {hasSavedOrigin
+                    ? " — done."
+                    : " — required before the embed snippet works."}
+                </li>
+                <li>
+                  <span className="font-medium">Copy the embed snippet</span> and
+                  paste it on your site, then submit a test enquiry and check Leads.
+                </li>
+              </ol>
+            ) : null}
             {enabled ? (
-              <p className="text-sm">
-                Enquiry form URL:{" "}
-                <span className="font-mono break-all">{url}</span>
-              </p>
+              <div className="grid gap-2">
+                <p className="text-sm">
+                  Enquiry form URL:{" "}
+                  <span className="font-mono break-all">{url}</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void copyUrl()}
+                  >
+                    {copied ? "Form URL copied" : "Copy form URL"}
+                  </Button>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    Open form
+                  </a>
+                </div>
+              </div>
             ) : (
               <p className="text-muted-foreground text-sm">
                 Website capture is off. Enquiries cannot be submitted.
@@ -344,6 +411,16 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                     disabled={!canManage || pending}
                     onChange={(event) => setOriginsText(event.target.value)}
                   />
+                  {!hasSavedOrigin ? (
+                    <p className="text-danger-text mt-2 text-xs" role="status">
+                      Embed will fail until you save at least one https origin.
+                    </p>
+                  ) : originsDirty ? (
+                    <p className="text-muted-foreground mt-2 text-xs" role="status">
+                      Origin changes are not saved yet. Save before copying the
+                      snippet.
+                    </p>
+                  ) : null}
                 </div>
                 <p className="text-sm">
                   Embed snippet:{" "}
@@ -357,7 +434,7 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={pending}
+                      disabled={pending || !hasSavedOrigin || originsDirty}
                       onClick={() => void copyEmbedSnippet()}
                     >
                       {copiedSnippet ? "Snippet copied" : "Copy embed snippet"}
@@ -372,6 +449,10 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                     </Button>
                   </div>
                 ) : null}
+                <p className="text-muted-foreground text-xs leading-5">
+                  After install: submit a test enquiry from your site, then confirm
+                  the lead appears under Leads.
+                </p>
               </div>
             ) : null}
             <div className="flex items-start justify-between gap-4">
@@ -401,6 +482,32 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                 }}
               />
             </div>
+            {chatEnabled ? (
+              <div className="grid gap-2">
+                <p className="text-sm">
+                  Chat URL:{" "}
+                  <span className="font-mono break-all">{chatPageUrl}</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void copyChatUrl()}
+                  >
+                    {copiedChat ? "Chat URL copied" : "Copy chat URL"}
+                  </Button>
+                  <a
+                    href={chatPageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    Open chat
+                  </a>
+                </div>
+              </div>
+            ) : null}
             <div className="flex items-start justify-between gap-4">
               <div>
                 <Label htmlFor="sales-agent-auto-start">
@@ -525,11 +632,6 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                 onClick={() => void saveAutoStart()}
               >
                 {pending ? "Saving…" : "Save Sales Agent settings"}
-              </Button>
-            ) : null}
-            {enabled ? (
-              <Button type="button" variant="outline" onClick={() => void copyUrl()}>
-                {copied ? "Copied" : "Copy URL"}
               </Button>
             ) : null}
           </CardFooter>

@@ -44,19 +44,28 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-medium">
-              Review the response waiting for approval.
+              Work from Today&apos;s work — a response is waiting for approval.
             </p>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
-              Approval is required before a response can be sent.
+              Start in the ranked queue below, or open Approvals to review and
+              send. Approval alone does not email the customer.
             </p>
           </div>
-          <Link
-            href="/approvals"
-            className={buttonVariants({ variant: "default" })}
-          >
-            Review Approvals
-            <CheckCheck aria-hidden="true" />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="#todays-work"
+              className={buttonVariants({ variant: "default" })}
+            >
+              Open Today&apos;s work
+            </a>
+            <Link
+              href="/approvals"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Review Approvals
+              <CheckCheck aria-hidden="true" />
+            </Link>
+          </div>
         </CardContent>
       </Card>
     );
@@ -149,17 +158,25 @@ function CommandCenterNextStep({ data }: { data: DashboardData }) {
               There are {data.newLeads} leads with New status.
             </p>
             <p className="text-muted-foreground mt-1 text-sm leading-6">
-              Review a lead in Leads to run qualification and, when useful,
-              generate a response draft for human approval.
+              Check Today&apos;s work below for anything urgent, then open Leads
+              to qualify and draft a response for approval.
             </p>
           </div>
-          <Link
-            href="/leads"
-            className={buttonVariants({ variant: "default" })}
-          >
-            Open Leads
-            <Users aria-hidden="true" />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="#todays-work"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Open Today&apos;s work
+            </a>
+            <Link
+              href="/leads"
+              className={buttonVariants({ variant: "default" })}
+            >
+              Open Leads
+              <Users aria-hidden="true" />
+            </Link>
+          </div>
         </CardContent>
       </Card>
     );

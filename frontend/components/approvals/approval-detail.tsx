@@ -16,6 +16,7 @@ import { AiBadge } from "@/components/ai/ai-badge";
 import { DetailRow } from "@/components/data-display/detail-row";
 import { FormField } from "@/components/forms/form-field";
 import { Textarea } from "@/components/forms/textarea";
+import { LeadFollowUpsDialog } from "@/components/leads/lead-follow-ups-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -226,6 +227,8 @@ export function ApprovalDetail({
     null,
   );
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [offerFollowUp, setOfferFollowUp] = useState(false);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(approval?.draft.response ?? "");
@@ -240,6 +243,12 @@ export function ApprovalDetail({
   useEffect(() => {
     if (approval) detailHeadingRef.current?.focus();
   }, [selectedDraftId, approval]);
+
+  useEffect(() => {
+    setOfferFollowUp(false);
+    setFollowUpOpen(false);
+    setActionSuccess(null);
+  }, [selectedDraftId]);
 
   useEffect(() => {
     if (!selectedLeadId) {
@@ -502,6 +511,15 @@ export function ApprovalDetail({
             ? "Send pending. The response is not confirmed as sent yet."
             : "The send request completed without a confirmed delivery status.",
       );
+      setOfferFollowUp(emailStatus === "SENT");
+      if (emailStatus === "SENT" && selectedLeadId) {
+        try {
+          const refreshed = await getLead(selectedLeadId);
+          setLeadDetail(refreshed);
+        } catch {
+          // Keep existing lead detail; schedule CTA still opens with it when present.
+        }
+      }
     } catch (cause) {
       setActionErrorMessage(actionError(cause, "Could not send this email."));
     } finally {
@@ -564,12 +582,28 @@ export function ApprovalDetail({
 
       <div className="flex flex-1 flex-col gap-7 overflow-y-auto p-5 sm:p-6">
         {actionSuccess ? (
-          <p
-            className="border-success/25 bg-success/5 text-success-text rounded-md border px-3 py-2 text-sm"
+          <div
+            className="border-success/25 bg-success/5 text-success-text grid gap-2 rounded-md border px-3 py-2 text-sm"
             role="status"
           >
-            {actionSuccess}
-          </p>
+            <p>{actionSuccess}</p>
+            {offerFollowUp ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-foreground text-sm">
+                  Next: schedule a follow-up so the next touch is not missed.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!leadDetail}
+                  onClick={() => setFollowUpOpen(true)}
+                >
+                  Schedule follow-up
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
         {actionErrorMessage ? (
           <p
@@ -909,6 +943,11 @@ export function ApprovalDetail({
         onConfirm={() => {
           void handleSend();
         }}
+      />
+      <LeadFollowUpsDialog
+        open={followUpOpen}
+        lead={leadDetail}
+        onOpenChange={setFollowUpOpen}
       />
     </Card>
   );

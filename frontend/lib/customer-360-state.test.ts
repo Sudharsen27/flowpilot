@@ -119,8 +119,11 @@ describe("customer-360-state", () => {
           email_send: { status: "SENT", completed_at: "2026-09-11T11:00:00Z" },
           follow_up: null,
         },
-      }).title,
-    ).toBe("Sales Agent completed");
+      }),
+    ).toMatchObject({
+      kind: "follow-up",
+      title: "Schedule follow-up",
+    });
 
     expect(
       deriveCustomer360NextStep({

@@ -703,6 +703,9 @@ describe("Approvals page", () => {
     );
     expect(sendDraftMock).not.toHaveBeenCalled();
     expect(await screen.findByText("Response sent.")).toBeVisible();
+    expect(
+      await screen.findByRole("button", { name: "Schedule follow-up" }),
+    ).toBeVisible();
   });
 
   it("renders standalone draft without inventing an agent", async () => {

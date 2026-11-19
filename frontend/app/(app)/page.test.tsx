@@ -225,7 +225,7 @@ describe("Command Center", () => {
       "Ask FlowPilot",
       "Pipeline at a glance",
       "AI workforce",
-      "Needs attention",
+      "Today's work",
       "Failed sends",
       "Overdue follow-ups",
       "Recent activity",

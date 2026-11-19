@@ -88,8 +88,16 @@ export function LeadActionBar({
               : "Open in Approvals"}
           </Link>
         ) : null}
-        <Button type="button" variant="outline" onClick={onFollowUps}>
-          Follow-ups
+        <Button
+          type="button"
+          variant={
+            next.kind === "open-follow-up" || next.kind === "schedule-follow-up"
+              ? "default"
+              : "outline"
+          }
+          onClick={onFollowUps}
+        >
+          {next.kind === "schedule-follow-up" ? "Schedule follow-up" : "Follow-ups"}
         </Button>
         <Button type="button" variant="outline" onClick={onSalesAgentHistory}>
           Sales Agent history

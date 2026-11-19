@@ -187,7 +187,9 @@ function LeadRowActions({
         ? onQualify
         : next.kind === "draft-response"
           ? onDraftResponse
-          : undefined;
+          : next.kind === "open-follow-up" || next.kind === "schedule-follow-up"
+            ? onFollowUps
+            : undefined;
 
   return (
     <div className="flex items-center justify-end gap-2">
