@@ -97,6 +97,8 @@ describe("identity-backed settings", () => {
       website_capture_enabled: false,
       sales_agent_auto_start_enabled: false,
       default_sales_agent_id: null,
+      website_embed_allowed_origins: [],
+      chat_capture_enabled: false,
     });
     getAgents.mockResolvedValue([]);
     getIdealCustomerProfile.mockResolvedValue({

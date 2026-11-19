@@ -61,6 +61,8 @@ describe("Website capture API client", () => {
       website_capture_enabled: true,
       sales_agent_auto_start_enabled: true,
       default_sales_agent_id: "agent-sales-1",
+      website_embed_allowed_origins: [],
+      chat_capture_enabled: false,
     };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(

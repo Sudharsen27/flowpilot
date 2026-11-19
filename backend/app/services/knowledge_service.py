@@ -12,7 +12,12 @@ from app.ai.embedding_provider import (
     dump_embedding,
     load_embedding,
 )
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ProviderNotConfiguredError
+from app.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ProviderNotConfiguredError,
+)
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.knowledge_entry import KnowledgeCategory, KnowledgeEntry, KnowledgeEntryStatus
 from app.models.membership import MembershipRole

@@ -1,6 +1,10 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.core.embed_origins import normalize_origin, parse_allowed_origins, serialize_allowed_origins
+from app.core.embed_origins import (
+    normalize_origin,
+    parse_allowed_origins,
+    serialize_allowed_origins,
+)
 from app.schemas.leads import _blank_to_none
 
 UNAVAILABLE_DETAIL = "This enquiry form is not available."

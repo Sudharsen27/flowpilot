@@ -31,10 +31,13 @@ function captureSettings(
   overrides: Partial<WebsiteCaptureSettings> = {},
 ): WebsiteCaptureSettings {
   return {
-    website_capture_enabled: false,
-    sales_agent_auto_start_enabled: false,
-    default_sales_agent_id: null,
-    ...overrides,
+    website_capture_enabled: overrides.website_capture_enabled ?? false,
+    sales_agent_auto_start_enabled:
+      overrides.sales_agent_auto_start_enabled ?? false,
+    default_sales_agent_id: overrides.default_sales_agent_id ?? null,
+    website_embed_allowed_origins:
+      overrides.website_embed_allowed_origins ?? [],
+    chat_capture_enabled: overrides.chat_capture_enabled ?? false,
   };
 }
 
