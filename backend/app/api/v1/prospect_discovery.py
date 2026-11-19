@@ -2,6 +2,7 @@ import asyncio
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_membership, get_current_organization
@@ -178,14 +179,18 @@ def search_government_companies(
 @router.post(
     "/company-prospects/import",
     response_model=ProspectCompanyImportResponse,
-    status_code=status.HTTP_409_CONFLICT,
 )
 def import_discovered_company_prospects(
     payload: ProspectCompanyImportRequest,
     confirmed: str | None = Header(default=None, alias="X-Prospect-Import-Confirmed"),
-    _organization: Organization = Depends(get_current_organization),
+    organization: Organization = Depends(get_current_organization),
     membership: Membership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> ProspectCompanyImportResponse:
+    from app.core.exceptions import ConflictError, UnprocessableError
+    from app.schemas.company_prospect import CompanyProspectCreate
+    from app.services.company_prospect_service import CompanyProspectService
+
     if membership.role not in {MembershipRole.OWNER, MembershipRole.ADMIN}:
         raise ForbiddenError("Only owners and admins can import company prospects")
     if confirmed != "true":
@@ -194,20 +199,72 @@ def import_discovered_company_prospects(
             detail="Explicit confirmation is required before importing company prospects.",
         )
 
-    return ProspectCompanyImportResponse(
-        detail=PROSPECT_IMPORT_UNAVAILABLE_DETAIL,
-        total_items=len(payload.items),
-        imported_count=0,
-        rejected_count=len(payload.items),
-        outcomes=[
-            ProspectCompanyImportOutcome(
-                item_number=index,
-                status="REJECTED",
-                reason_code="SOURCE_NOT_APPROVED",
-                message=PROSPECT_IMPORT_UNAVAILABLE_DETAIL,
+    approved = (settings.prospect_discovery_approved_import_source or "").strip()
+    if not approved or payload.source.strip() != approved:
+        body = ProspectCompanyImportResponse(
+            detail=PROSPECT_IMPORT_UNAVAILABLE_DETAIL,
+            total_items=len(payload.items),
+            imported_count=0,
+            rejected_count=len(payload.items),
+            outcomes=[
+                ProspectCompanyImportOutcome(
+                    item_number=index,
+                    status="REJECTED",
+                    reason_code="SOURCE_NOT_APPROVED",
+                    message=PROSPECT_IMPORT_UNAVAILABLE_DETAIL,
+                )
+                for index in range(1, len(payload.items) + 1)
+            ],
+        )
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=body.model_dump(mode="json"),
+        )
+
+    service = CompanyProspectService(db)
+    outcomes: list[ProspectCompanyImportOutcome] = []
+    imported = 0
+    for index, item in enumerate(payload.items, start=1):
+        try:
+            service.create(
+                organization.id,
+                role=membership.role,
+                user_id=membership.user_id,
+                payload=CompanyProspectCreate(
+                    name=item.name,
+                    website_domain=item.website_domain,
+                    name_evidence_quality=item.name_evidence_quality,
+                    website_domain_evidence_quality=item.website_domain_evidence_quality,
+                ),
             )
-            for index in range(1, len(payload.items) + 1)
-        ],
+            imported += 1
+            outcomes.append(
+                ProspectCompanyImportOutcome(
+                    item_number=index,
+                    status="IMPORTED",
+                    reason_code="IMPORTED",
+                    message="Imported",
+                )
+            )
+        except (ConflictError, UnprocessableError, Exception) as exc:
+            outcomes.append(
+                ProspectCompanyImportOutcome(
+                    item_number=index,
+                    status="REJECTED",
+                    reason_code="CREATE_FAILED",
+                    message=str(getattr(exc, "detail", None) or "Could not import this company"),
+                )
+            )
+    rejected = len(payload.items) - imported
+    return ProspectCompanyImportResponse(
+        detail=(
+            f"Imported {imported} of {len(payload.items)} companies from approved source "
+            f"'{approved}'."
+        ),
+        total_items=len(payload.items),
+        imported_count=imported,
+        rejected_count=rejected,
+        outcomes=outcomes,
     )
 
 

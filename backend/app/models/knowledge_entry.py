@@ -76,6 +76,8 @@ class KnowledgeEntry(Base):
         String(32), nullable=False, default=KnowledgeEntryStatus.ACTIVE
     )
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # JSON array of floats from EmbeddingProvider; null when embeddings are off.
+    embedding_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

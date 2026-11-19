@@ -468,9 +468,7 @@ class WebhookDeliverer:
         return self.attempt(delivery, endpoint, final=delivery.attempts >= MAX_ATTEMPTS)
 
     def attempt(self, delivery: WebhookDelivery, endpoint: WebhookEndpoint, *, final: bool) -> str:
-        body = json.dumps(
-            {"id": delivery.id, **delivery.payload}, separators=(",", ":"), sort_keys=True
-        ).encode()
+        body = _encode_delivery_body(endpoint.url, delivery)
         timestamp = int(time.time())
         headers = {
             "Content-Type": "application/json",
@@ -542,6 +540,34 @@ def requeue_stuck_deliveries(session: Session, *, started_before: datetime) -> i
     )
     session.commit()
     return int(getattr(result, "rowcount", 0) or 0)
+
+
+def _is_slack_incoming_webhook(url: str) -> bool:
+    try:
+        host = parse_webhook_url(url).hostname
+    except WebhookTargetError:
+        return False
+    return host == "hooks.slack.com"
+
+
+def _slack_text(delivery: WebhookDelivery) -> str:
+    event = str(delivery.event_type)
+    data = delivery.payload.get("data") if isinstance(delivery.payload, dict) else None
+    if not isinstance(data, dict):
+        data = {}
+    lead_name = data.get("lead_name") or data.get("name") or "a lead"
+    return f"FlowPilot {event}: {lead_name}"
+
+
+def _encode_delivery_body(url: str, delivery: WebhookDelivery) -> bytes:
+    envelope = {"id": delivery.id, **delivery.payload}
+    if _is_slack_incoming_webhook(url):
+        payload = {
+            "text": _slack_text(delivery),
+            "flowpilot": envelope,
+        }
+        return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    return json.dumps(envelope, separators=(",", ":"), sort_keys=True).encode()
 
 
 def _envelope(

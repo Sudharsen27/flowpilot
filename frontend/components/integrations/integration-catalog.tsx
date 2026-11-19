@@ -41,6 +41,8 @@ const integrationConcepts: IntegrationConcept[] = [
     category: "crm",
     description: "Sync leads and outcomes with Salesforce.",
     status: "needs-setup",
+    setupNote:
+      "Native Salesforce OAuth is not shipped. Forward FlowPilot webhook events through Zapier or Make.",
   },
   {
     id: "hubspot",
@@ -48,6 +50,8 @@ const integrationConcepts: IntegrationConcept[] = [
     category: "crm",
     description: "Sync leads and outcomes with HubSpot.",
     status: "needs-setup",
+    setupNote:
+      "Native HubSpot OAuth is not shipped. Forward FlowPilot webhook events through Zapier or Make.",
   },
   {
     id: "pipedrive",
@@ -55,6 +59,8 @@ const integrationConcepts: IntegrationConcept[] = [
     category: "crm",
     description: "Sync leads and deals with Pipedrive.",
     status: "needs-setup",
+    setupNote:
+      "Native Pipedrive OAuth is not shipped. Forward FlowPilot webhook events through Zapier or Make.",
   },
   {
     id: "gmail",
@@ -74,8 +80,10 @@ const integrationConcepts: IntegrationConcept[] = [
     id: "slack",
     name: "Slack",
     category: "communication",
-    description: "Post lead alerts to a Slack channel.",
-    status: "needs-setup",
+    description: "Post lead alerts to a Slack channel via Incoming Webhooks.",
+    status: "not-connected",
+    setupNote:
+      "Create a Slack Incoming Webhook URL, then add it under Webhooks for events like lead.created and email.sent. FlowPilot formats Slack deliveries as a short text message automatically.",
   },
   {
     id: "whatsapp",
@@ -83,6 +91,8 @@ const integrationConcepts: IntegrationConcept[] = [
     category: "communication",
     description: "Reply to leads on WhatsApp Business.",
     status: "needs-setup",
+    setupNote:
+      "Native WhatsApp is not connected yet. Use a webhook to Zapier or Make until a WhatsApp Business connector ships.",
   },
   {
     id: "google-calendar",

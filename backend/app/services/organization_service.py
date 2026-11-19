@@ -163,7 +163,11 @@ class OrganizationService:
         website_capture_enabled: bool,
         sales_agent_auto_start_enabled: bool,
         default_sales_agent_id: str | None,
+        website_embed_allowed_origins: list[str] | None = None,
+        chat_capture_enabled: bool = False,
     ) -> Organization:
+        from app.schemas.website_capture import stored_embed_origins
+
         try:
             parsed = MembershipRole(role)
         except ValueError as exc:
@@ -176,10 +180,18 @@ class OrganizationService:
             website_capture_enabled=website_capture_enabled,
             default_sales_agent_id=default_sales_agent_id,
         )
+        if sales_agent_auto_start_enabled and chat_capture_enabled and not website_capture_enabled:
+            # Auto-start still requires website capture; chat can be on independently.
+            pass
         organization = self.get_current(organization_id)
         organization.website_capture_enabled = website_capture_enabled
         organization.sales_agent_auto_start_enabled = sales_agent_auto_start_enabled
         organization.default_sales_agent_id = resolved_agent_id
+        if website_embed_allowed_origins is not None:
+            organization.website_embed_allowed_origins = stored_embed_origins(
+                website_embed_allowed_origins
+            )
+        organization.chat_capture_enabled = chat_capture_enabled
         self.session.commit()
         self.session.refresh(organization)
         return organization

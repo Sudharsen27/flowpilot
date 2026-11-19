@@ -9,6 +9,7 @@ from app.api.health import router as health_router
 from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.exceptions import AppError
+from app.middleware.public_embed_cors import PublicEmbedCorsMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outermost for public embed routes: per-org Origin allowlist (credentials omitted).
+    application.add_middleware(PublicEmbedCorsMiddleware)
     application.include_router(health_router)
     application.include_router(api_router)
 

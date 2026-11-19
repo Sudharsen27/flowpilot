@@ -31,6 +31,22 @@ export function submitPublicEnquiry(slug: string, input: PublicEnquiryCreateRequ
   );
 }
 
+export function getPublicChatEnquiryForm(slug: string) {
+  return apiGet<PublicCaptureForm>(
+    `/api/v1/public/organizations/${encodeURIComponent(slug)}/chat-enquiries`,
+  );
+}
+
+export function submitPublicChatEnquiry(
+  slug: string,
+  input: PublicEnquiryCreateRequest,
+) {
+  return apiPost<void>(
+    `/api/v1/public/organizations/${encodeURIComponent(slug)}/chat-enquiries`,
+    input,
+  );
+}
+
 export function getWebsiteCaptureSettings() {
   return apiGet<WebsiteCaptureSettings>(
     "/api/v1/organizations/current/website-capture",
@@ -46,6 +62,8 @@ export function updateWebsiteCaptureSettings(
       website_capture_enabled: input.website_capture_enabled,
       sales_agent_auto_start_enabled: input.sales_agent_auto_start_enabled,
       default_sales_agent_id: input.default_sales_agent_id,
+      website_embed_allowed_origins: input.website_embed_allowed_origins ?? [],
+      chat_capture_enabled: input.chat_capture_enabled ?? false,
     },
   );
 }

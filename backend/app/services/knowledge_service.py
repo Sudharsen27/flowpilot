@@ -5,7 +5,14 @@ from datetime import UTC, datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.ai.embedding_provider import (
+    EmbeddingProvider,
+    cosine_similarity,
+    create_embedding_provider,
+    dump_embedding,
+    load_embedding,
+)
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ProviderNotConfiguredError
 from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.knowledge_entry import KnowledgeCategory, KnowledgeEntry, KnowledgeEntryStatus
 from app.models.membership import MembershipRole
@@ -62,8 +69,13 @@ def _words(value: str) -> set[str]:
 
 
 class KnowledgeService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        embedding_provider: EmbeddingProvider | None = None,
+    ) -> None:
         self.session = session
+        self._injected_embedding_provider = embedding_provider
 
     def list_entries(
         self,
@@ -146,6 +158,7 @@ class KnowledgeService:
         )
         self.session.add(row)
         self.session.flush()
+        self._refresh_embedding(row)
         self._record(row, user_id, "Knowledge entry added", "CREATED")
         self.session.commit()
         self.session.refresh(row)
@@ -185,6 +198,8 @@ class KnowledgeService:
             )
         else:
             title = "Knowledge entry updated"
+        if any(key in changes for key in ("title", "content", "use_in_ai", "status")):
+            self._refresh_embedding(row)
         self.session.flush()
         self._record(row, user_id, title, f"REVISION:{row.revision}")
         self.session.commit()
@@ -200,31 +215,39 @@ class KnowledgeService:
 
     def context_for_ai(self, organization_id: str, text: str) -> list[KnowledgeEntry]:
         """Active entries most related to ``text``, within a fixed size budget."""
-        candidates = self.session.scalars(
-            select(KnowledgeEntry)
-            .where(
-                KnowledgeEntry.organization_id == organization_id,
-                KnowledgeEntry.status == KnowledgeEntryStatus.ACTIVE,
-                KnowledgeEntry.use_in_ai.is_(True),
-            )
-            .order_by(KnowledgeEntry.updated_at.desc(), KnowledgeEntry.id)
-            .limit(_AI_CANDIDATE_LIMIT)
-        ).all()
-        query_words = _words(text)
-        if not query_words:
-            return []
-        scored: list[tuple[int, int, KnowledgeEntry]] = []
-        for position, entry in enumerate(candidates):
-            score = 2 * len(query_words & _words(entry.title)) + len(
-                query_words & _words(entry.content)
-            )
-            if score > 0:
-                scored.append((score, -position, entry))
-        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        candidates = list(
+            self.session.scalars(
+                select(KnowledgeEntry)
+                .where(
+                    KnowledgeEntry.organization_id == organization_id,
+                    KnowledgeEntry.status == KnowledgeEntryStatus.ACTIVE,
+                    KnowledgeEntry.use_in_ai.is_(True),
+                )
+                .order_by(KnowledgeEntry.updated_at.desc(), KnowledgeEntry.id)
+                .limit(_AI_CANDIDATE_LIMIT)
+            ).all()
+        )
+        vector_hits = self._vector_rank(candidates, text)
+        if vector_hits is not None:
+            scored_entries = vector_hits
+        else:
+            query_words = _words(text)
+            if not query_words:
+                return []
+            scored: list[tuple[float, int, KnowledgeEntry]] = []
+            for position, entry in enumerate(candidates):
+                score = float(
+                    2 * len(query_words & _words(entry.title))
+                    + len(query_words & _words(entry.content))
+                )
+                if score > 0:
+                    scored.append((score, -position, entry))
+            scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            scored_entries = scored
 
         chosen: list[KnowledgeEntry] = []
         used = 0
-        for _, _, entry in scored:
+        for _, _, entry in scored_entries:
             size = len(entry.title) + len(entry.content)
             if used + size > AI_CONTEXT_CHAR_BUDGET:
                 continue
@@ -233,6 +256,60 @@ class KnowledgeService:
             if len(chosen) >= AI_CONTEXT_MAX_ENTRIES:
                 break
         return chosen
+
+    def _resolve_embedding_provider(self) -> EmbeddingProvider | None:
+        if self._injected_embedding_provider is not None:
+            return self._injected_embedding_provider
+        return create_embedding_provider()
+
+    def _refresh_embedding(self, row: KnowledgeEntry) -> None:
+        provider = self._resolve_embedding_provider()
+        if provider is None:
+            row.embedding_json = None
+            return
+        if (
+            row.status != KnowledgeEntryStatus.ACTIVE
+            or not row.use_in_ai
+        ):
+            row.embedding_json = None
+            return
+        try:
+            vectors = provider.embed([f"{row.title}\n{row.content}"])
+        except (ProviderNotConfiguredError, Exception):
+            row.embedding_json = None
+            return
+        if not vectors:
+            row.embedding_json = None
+            return
+        row.embedding_json = dump_embedding(vectors[0])
+
+    def _vector_rank(
+        self, candidates: list[KnowledgeEntry], text: str
+    ) -> list[tuple[float, int, KnowledgeEntry]] | None:
+        provider = self._resolve_embedding_provider()
+        if provider is None:
+            return None
+        embedded = [
+            (entry, load_embedding(entry.embedding_json))
+            for entry in candidates
+        ]
+        usable = [(entry, vector) for entry, vector in embedded if vector]
+        if not usable:
+            return None
+        try:
+            query_vectors = provider.embed([text])
+        except (ProviderNotConfiguredError, Exception):
+            return None
+        if not query_vectors:
+            return None
+        query = query_vectors[0]
+        scored: list[tuple[float, int, KnowledgeEntry]] = []
+        for position, (entry, vector) in enumerate(usable):
+            score = cosine_similarity(query, vector or [])
+            if score > 0:
+                scored.append((score, -position, entry))
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return scored
 
     def _record(self, row: KnowledgeEntry, user_id: str, title: str, marker: str) -> None:
         ActivityService(self.session).record(

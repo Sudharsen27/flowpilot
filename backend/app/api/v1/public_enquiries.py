@@ -44,3 +44,37 @@ def create_public_enquiry(
         honeypot=payload.website,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{slug}/chat-enquiries", response_model=PublicEnquiryFormPublic)
+def read_public_chat_enquiry_form(
+    slug: str,
+    db: Session = Depends(get_db),
+) -> PublicEnquiryFormPublic:
+    from app.models.lead import LeadSource
+
+    organization = WebsiteCaptureService(db).public_form(slug, source=LeadSource.CHAT)
+    return PublicEnquiryFormPublic(organization_name=organization.name)
+
+
+@router.post(
+    "/{slug}/chat-enquiries",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def create_public_chat_enquiry(
+    slug: str,
+    payload: PublicEnquiryCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    WebsiteCaptureService(db).submit_public_chat_enquiry(
+        slug=slug,
+        client_key=_client_key(request),
+        name=payload.name,
+        email=str(payload.email),
+        company=payload.company,
+        enquiry=payload.enquiry,
+        honeypot=payload.website,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

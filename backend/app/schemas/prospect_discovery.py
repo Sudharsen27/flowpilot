@@ -142,8 +142,8 @@ class ProspectCompanyImportOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     item_number: int
-    status: Literal["REJECTED"]
-    reason_code: Literal["SOURCE_NOT_APPROVED"]
+    status: Literal["REJECTED", "IMPORTED"]
+    reason_code: Literal["SOURCE_NOT_APPROVED", "IMPORTED", "CREATE_FAILED"]
     message: str
 
 

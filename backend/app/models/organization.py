@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, false, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -33,6 +33,14 @@ class Organization(Base):
         server_default=false(),
     )
     sales_agent_auto_start_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
+    # JSON array of https origins allowed to call the public embed enquiry API.
+    website_embed_allowed_origins: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chat_capture_enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,

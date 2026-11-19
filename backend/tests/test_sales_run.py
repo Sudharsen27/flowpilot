@@ -690,7 +690,7 @@ class ProbeEmailProvider:
         return EmailSendResult(provider="fake-email", message_id="msg_sales")
 
 
-def test_send_approved_waiting_run_completes_without_mutating_lead(
+def test_send_approved_waiting_run_completes_and_marks_new_lead_contacted(
     client: TestClient, db: Session, monkeypatch: object
 ) -> None:
     _email_settings(monkeypatch)
@@ -722,7 +722,7 @@ def test_send_approved_waiting_run_completes_without_mutating_lead(
     assert send.body_text == DRAFT_BODY
     lead = db.get(Lead, body["lead_id"])
     assert lead is not None
-    assert lead.status == LeadStatus.NEW
+    assert lead.status == LeadStatus.CONTACTED
     assert db.scalar(select(func.count()).select_from(LeadFollowUp)) == 0
     listed = client.get(
         f"/api/v1/agents/{run['agent_id']}/sales-runs",

@@ -385,7 +385,7 @@ Operators start Sales Agent work from the lead, not by pasting a lead UUID on th
 
 `POST /api/v1/leads/{lead_id}/sales-runs` body `{ enquiry, agent_id }` (`extra=forbid`). `lead_id` is the path only. Organization comes from the JWT. The route loads the lead in that org (404 if missing), then reuses `SalesRunService.start_sales_run` with that `lead_id`. It does not create a second lead and does not match by email. Open-run protection, SALES + READY/ACTIVE checks, qualification, drafting, and MEMBER start permission are unchanged. Non-SALES agents remain 422; ineligible status remains 400. Agent-nested start remains for creating a lead from an enquiry.
 
-The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity, stored enquiry text when present, and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. Inbox and automatic CRM status changes are out of this slice. Organization-wide Activity is a separate workspace and is not duplicated here.
+The Leads directory name links to `/leads/{id}`. The workspace shows CRM identity, stored enquiry text when present, and latest Sales Agent status, with Start Sales Agent (enquiry + eligible agent picker, no Lead ID field). History, follow-ups, draft review, and edit reuse existing dialogs. Directory row actions are unchanged. After a Sales Agent email is sent successfully, a `NEW` lead is moved to `CONTACTED` (Growth P2). Organization-wide Activity is a separate workspace and is not duplicated here.
 
 ## Website enquiry capture (Phase 5H)
 
@@ -399,7 +399,7 @@ Operator → Leads → workspace → Start Sales Agent (enquiry prefilled)
 
 Public POST requires no JWT. Tenant ownership comes only from `organizations.slug`. `organization_id`, `source`, `status`, and `lead_id` are rejected (`extra=forbid`). Success is `204` with no lead id. Unknown slugs and disabled capture return the same `404` body: `This enquiry form is not available.` A honeypot field (`website`) returns the same success without creating a lead.
 
-Abuse control is an **in-process sliding window** per slug + IP (`WEBSITE_CAPTURE_RATE_LIMIT_MAX` / `WEBSITE_CAPTURE_RATE_LIMIT_WINDOW_SECONDS`). It protects a single API process only. Redis is not used. CORS remains the existing frontend origin list; there is no embed widget and no customer-domain CORS.
+Abuse control uses PostgreSQL-backed capture attempts (rate window + daily cap). App CORS remains the FlowPilot frontend origin list. Public embed routes under `/api/v1/public/organizations/{slug}/…` additionally reflect `Origin` when it matches the org’s `website_embed_allowed_origins` allowlist. The static `/embed.js` script posts to the public enquiry API. Chat enquiries use `/chat/{slug}` and `LeadSource.CHAT` when `chat_capture_enabled` is on.
 
 Settings: `GET` / `PATCH /api/v1/organizations/current/website-capture`. `OWNER` and `ADMIN` may enable or disable. `MEMBER` may read. Hosted UI is `/capture/{slug}` (no AppShell). Authenticated lead APIs stay JWT-only and do not list leads on the public router.
 
@@ -598,7 +598,7 @@ The authenticated route `/forecast/accuracy`, linked from the Forecast page (no 
 
 ## LLM providers
 
-`AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` remains planned for knowledge retrieval. OpenAI is the first `AIProvider` implementation.
+`AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` is optional for knowledge retrieval (`EMBEDDING_PROVIDER_ENABLED`); when unset, `context_for_ai` keeps lexical overlap. Embeddings are stored as JSON float arrays on knowledge rows (portable; not requiring pgvector for the MVP).
 
 ## Workflows
 

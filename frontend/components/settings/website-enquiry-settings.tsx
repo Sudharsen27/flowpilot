@@ -49,13 +49,23 @@ function settingsPayload(
   captureEnabled: boolean,
   autoStartEnabled: boolean,
   agentId: string,
+  embedOrigins: string[] = [],
+  chatEnabled: boolean = false,
 ): WebsiteCaptureSettings {
   const autoStart = captureEnabled && autoStartEnabled;
   return {
     website_capture_enabled: captureEnabled,
     sales_agent_auto_start_enabled: autoStart,
     default_sales_agent_id: autoStart && agentId ? agentId : null,
+    website_embed_allowed_origins: embedOrigins,
+    chat_capture_enabled: chatEnabled,
   };
+}
+
+function embedSnippet(slug: string) {
+  const origin =
+    typeof window === "undefined" ? "" : window.location.origin;
+  return `<script src="${origin}/embed.js" data-org="${slug}" data-api="${origin}" async></script>`;
 }
 
 export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsProps) {
@@ -72,6 +82,9 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [originsText, setOriginsText] = useState("");
+  const [chatEnabled, setChatEnabled] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const eligible = useMemo(
@@ -87,6 +100,8 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
         setSettings(next);
         setAutoStart(next.sales_agent_auto_start_enabled);
         setAgentId(next.default_sales_agent_id ?? "");
+        setOriginsText((next.website_embed_allowed_origins ?? []).join("\n"));
+        setChatEnabled(next.chat_capture_enabled ?? false);
         setLoadError(false);
       })
       .catch(() => {
@@ -142,6 +157,8 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
       setSettings(result);
       setAutoStart(result.sales_agent_auto_start_enabled);
       setAgentId(result.default_sales_agent_id ?? "");
+      setOriginsText((result.website_embed_allowed_origins ?? []).join("\n"));
+      setChatEnabled(result.chat_capture_enabled ?? false);
       setConfirmOpen(false);
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 403) {
@@ -158,12 +175,23 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
     }
   }
 
+  function currentOrigins() {
+    return originsText
+      .split(/[\n,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
   async function setCapture(next: boolean) {
     if (next) {
-      await persist(settingsPayload(true, false, ""));
+      await persist(
+        settingsPayload(true, false, "", currentOrigins(), chatEnabled),
+      );
       return;
     }
-    await persist(settingsPayload(false, false, ""));
+    await persist(
+      settingsPayload(false, false, "", currentOrigins(), chatEnabled),
+    );
   }
 
   function onAutoStartChange(next: boolean) {
@@ -190,7 +218,9 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
     setAutoStart(false);
     setAgentId("");
     if (saved?.sales_agent_auto_start_enabled) {
-      void persist(settingsPayload(true, false, ""));
+      void persist(
+        settingsPayload(true, false, "", currentOrigins(), chatEnabled),
+      );
     }
   }
 
@@ -204,7 +234,22 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
       setActionError("Select a READY or ACTIVE Sales Agent.");
       return;
     }
-    await persist(settingsPayload(true, true, agentId));
+    await persist(
+      settingsPayload(true, true, agentId, currentOrigins(), chatEnabled),
+    );
+  }
+
+  async function saveEmbedAndChat() {
+    if (!canManage || pending || !settings) return;
+    await persist(
+      settingsPayload(
+        enabled,
+        autoStartChecked,
+        agentId,
+        currentOrigins(),
+        chatEnabled,
+      ),
+    );
   }
 
   async function copyUrl() {
@@ -216,6 +261,16 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
       return;
     }
     setCopied(true);
+  }
+
+  async function copyEmbedSnippet() {
+    try {
+      await navigator.clipboard.writeText(embedSnippet(slug));
+    } catch {
+      setActionError("The embed snippet could not be copied.");
+      return;
+    }
+    setCopiedSnippet(true);
   }
 
   const url = captureUrl(slug);
@@ -274,6 +329,78 @@ export function WebsiteEnquirySettings({ slug, role }: WebsiteEnquirySettingsPro
                 Website capture is off. Enquiries cannot be submitted.
               </p>
             )}
+            {enabled ? (
+              <div className="grid gap-3">
+                <div>
+                  <Label htmlFor="embed-origins">Allowed embed origins</Label>
+                  <p className="text-muted-foreground mt-1 text-xs leading-5">
+                    One https origin per line (for example https://www.example.com).
+                    Required for the script-tag embed on customer sites.
+                  </p>
+                  <textarea
+                    id="embed-origins"
+                    className="border-border bg-background mt-2 min-h-24 w-full rounded-md border px-3 py-2 font-mono text-xs"
+                    value={originsText}
+                    disabled={!canManage || pending}
+                    onChange={(event) => setOriginsText(event.target.value)}
+                  />
+                </div>
+                <p className="text-sm">
+                  Embed snippet:{" "}
+                  <span className="font-mono break-all text-xs">
+                    {embedSnippet(slug)}
+                  </span>
+                </p>
+                {canManage ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => void copyEmbedSnippet()}
+                    >
+                      {copiedSnippet ? "Snippet copied" : "Copy embed snippet"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => void saveEmbedAndChat()}
+                    >
+                      Save embed & chat settings
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Label htmlFor="chat-capture">Chat enquiries</Label>
+                <p className="text-muted-foreground mt-1 text-xs leading-5">
+                  Accept public chat enquiries at /chat/{slug}. Creates a lead with
+                  source Chat.
+                </p>
+              </div>
+              <Switch
+                id="chat-capture"
+                checked={chatEnabled}
+                disabled={!canManage || pending}
+                onCheckedChange={(next) => {
+                  setChatEnabled(next);
+                  if (!canManage || pending || !settings) return;
+                  void persist(
+                    settingsPayload(
+                      enabled,
+                      autoStartChecked,
+                      agentId,
+                      currentOrigins(),
+                      next,
+                    ),
+                  );
+                }}
+              />
+            </div>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <Label htmlFor="sales-agent-auto-start">

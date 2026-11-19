@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api/client";
 import {
+  getPublicChatEnquiryForm,
   getPublicEnquiryForm,
+  submitPublicChatEnquiry,
   submitPublicEnquiry,
 } from "@/lib/api/website-capture";
 
@@ -21,9 +23,16 @@ type FieldErrors = {
   enquiry?: string;
 };
 
-export function CaptureEnquiryForm() {
+type CaptureEnquiryFormProps = {
+  channel?: "website" | "chat";
+};
+
+export function CaptureEnquiryForm({
+  channel = "website",
+}: CaptureEnquiryFormProps) {
   const params = useParams<{ slug: string }>();
   const slug = typeof params.slug === "string" ? params.slug : "";
+  const isChat = channel === "chat";
   const [organizationName, setOrganizationName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
@@ -44,7 +53,7 @@ export function CaptureEnquiryForm() {
       return;
     }
     let cancelled = false;
-    void getPublicEnquiryForm(slug)
+    void (isChat ? getPublicChatEnquiryForm(slug) : getPublicEnquiryForm(slug))
       .then((form) => {
         if (cancelled) return;
         setOrganizationName(form.organization_name);
@@ -63,7 +72,7 @@ export function CaptureEnquiryForm() {
     return () => {
       cancelled = true;
     };
-  }, [slug, retryKey]);
+  }, [slug, retryKey, isChat]);
 
   const formLoading = Boolean(slug) && loading;
   const formUnavailable = !slug || unavailable;
@@ -88,13 +97,18 @@ export function CaptureEnquiryForm() {
     if (Object.keys(nextErrors).length > 0) return;
     setPending(true);
     try {
-      await submitPublicEnquiry(slug, {
+      const payload = {
         name: name.trim(),
         email: email.trim(),
         company: company.trim() || null,
         enquiry: enquiry.trim(),
         website: website.trim() || null,
-      });
+      };
+      if (isChat) {
+        await submitPublicChatEnquiry(slug, payload);
+      } else {
+        await submitPublicEnquiry(slug, payload);
+      }
       setSuccess(true);
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 404) {
@@ -164,7 +178,9 @@ export function CaptureEnquiryForm() {
         </div>
       ) : (
         <>
-          <h1 className="text-page-title mt-4 font-semibold tracking-tight">Contact us</h1>
+          <h1 className="text-page-title mt-4 font-semibold tracking-tight">
+            {isChat ? "Chat with us" : "Contact us"}
+          </h1>
           {organizationName ? (
             <p className="text-section-title mt-2 font-medium">{organizationName}</p>
           ) : null}

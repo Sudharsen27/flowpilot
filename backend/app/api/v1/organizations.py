@@ -177,6 +177,8 @@ def update_website_capture_settings(
         website_capture_enabled=payload.website_capture_enabled,
         sales_agent_auto_start_enabled=payload.sales_agent_auto_start_enabled,
         default_sales_agent_id=payload.default_sales_agent_id,
+        website_embed_allowed_origins=payload.website_embed_allowed_origins,
+        chat_capture_enabled=payload.chat_capture_enabled,
     )
     return WebsiteCaptureSettings.model_validate(updated)
 

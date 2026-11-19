@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     roc_data_gov_in_request_timeout_seconds: float = Field(default=10, ge=1, le=30)
     roc_data_gov_in_max_page_size: int = Field(default=100, ge=1, le=100)
     roc_data_gov_in_max_offset: int = Field(default=100_000, ge=0, le=1_000_000)
+    # Knowledge RAG embeddings (OpenAI-compatible). Off by default; lexical
+    # retrieval remains the fallback when embeddings are unavailable.
+    embedding_provider_enabled: bool = False
+    embedding_model: str = "text-embedding-3-small"
+    # Exact source_code allowed for company-prospect import. Empty keeps import blocked.
+    prospect_discovery_approved_import_source: str | None = None
     agent_max_tool_iterations: int = 3
     # Phase 6D.4: conservative bounds for untrusted AgentPlan artifacts.
     agent_plan_max_steps: int = Field(default=5, ge=1, le=20)

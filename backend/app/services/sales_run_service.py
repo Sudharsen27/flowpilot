@@ -634,6 +634,22 @@ class SalesRunService:
             status=SalesRunStatus.COMPLETED,
             dedupe_key=f"sales_run:{current.id}:COMPLETED",
         )
+        lead = self.lead_rows.get_by_id(current.organization_id, current.lead_id)
+        if lead is not None and lead.status == LeadStatus.NEW:
+            lead.status = LeadStatus.CONTACTED
+            lead.updated_at = now
+            ActivityService(self.session).record(
+                organization_id=current.organization_id,
+                event_type=ActivityEventType.SYSTEM_EVENT,
+                actor_type=ActivityActorType.SYSTEM,
+                title="Lead status changed",
+                summary="A lead CRM status was updated after the Sales Agent email was sent.",
+                entity_type=ActivityEntityType.LEAD,
+                entity_id=lead.id,
+                lead_id=lead.id,
+                status=LeadStatus.CONTACTED,
+                dedupe_key=f"lead:{lead.id}:STATUS:{LeadStatus.CONTACTED}:sales_run:{current.id}",
+            )
         self.session.commit()
         return self._to_public(current, include_enquiry=True)
 

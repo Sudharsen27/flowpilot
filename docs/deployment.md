@@ -118,7 +118,7 @@ Do these in production when you are ready for real website enquiries (config onl
 3. **Enable worker loops** — on the Render worker service set `SALES_AGENT_AUTO_START_WORKER_ENABLED=true` (and follow-up / workflow / webhook flags as needed). Leave them false on the API service.
 4. **Org capture settings** — in Organization settings turn on website capture, choose a default Sales Agent, then enable Sales Agent auto-start.
 
-Deferred growth (not required for the sales loop): website embed + customer-domain CORS, auto CRM status from Sales Agent, chat channel, knowledge embeddings / RAG, licensed company discovery, CRM/WhatsApp/Slack integrations, auth login rate limiter, inbound Resend reply webhook, docs drift cleanup.
+Growth P2 MVPs shipped: website embed + per-org CORS allowlist, Sales Agent send → CRM `CONTACTED`, public chat enquiries, knowledge embeddings (optional), config-gated discovery import (`PROSPECT_DISCOVERY_APPROVED_IMPORT_SOURCE`), Slack Incoming Webhook formatting on outbound webhooks. Still deferred: native CRM/WhatsApp OAuth, auth login rate limiter polish, inbound Resend reply webhook, docs drift cleanup.
 
 ## Forecast snapshots (GitHub Actions)
 

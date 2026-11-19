@@ -13,6 +13,7 @@ from app.core.rate_limit import contact_form_limiter, prospect_discovery_limiter
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.middleware import public_embed_cors
 from app.models import (  # noqa: F401 — register tables on Base.metadata
     ActivityEvent,
     Agent,
@@ -68,10 +69,13 @@ def client(db: Session) -> Generator[TestClient, None, None]:
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
+    previous_factory = public_embed_cors.session_factory
+    public_embed_cors.session_factory = TestingSessionLocal
     contact_form_limiter.reset()
     prospect_discovery_limiter.reset()
     with TestClient(app) as test_client:
         yield test_client
+    public_embed_cors.session_factory = previous_factory
     app.dependency_overrides.clear()
     contact_form_limiter.reset()
     prospect_discovery_limiter.reset()

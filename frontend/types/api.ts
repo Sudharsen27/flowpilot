@@ -1146,12 +1146,16 @@ export type WebsiteCaptureSettings = {
   website_capture_enabled: boolean;
   sales_agent_auto_start_enabled: boolean;
   default_sales_agent_id: string | null;
+  website_embed_allowed_origins: string[];
+  chat_capture_enabled: boolean;
 };
 
 export type WebsiteCaptureSettingsUpdate = {
   website_capture_enabled: boolean;
   sales_agent_auto_start_enabled: boolean;
   default_sales_agent_id: string | null;
+  website_embed_allowed_origins: string[];
+  chat_capture_enabled: boolean;
 };
 
 export type PublicEnquiryForm = {

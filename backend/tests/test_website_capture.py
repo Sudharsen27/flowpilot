@@ -67,6 +67,8 @@ def _settings_payload(**overrides: Any) -> dict[str, Any]:
         "website_capture_enabled": False,
         "sales_agent_auto_start_enabled": False,
         "default_sales_agent_id": None,
+        "website_embed_allowed_origins": [],
+        "chat_capture_enabled": False,
     }
     body.update(overrides)
     return body
@@ -361,6 +363,8 @@ def test_settings_get_returns_three_fields_with_auto_start_off(
         "website_capture_enabled": False,
         "sales_agent_auto_start_enabled": False,
         "default_sales_agent_id": None,
+        "website_embed_allowed_origins": [],
+        "chat_capture_enabled": False,
     }
 
 
