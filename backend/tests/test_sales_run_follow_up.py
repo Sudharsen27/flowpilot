@@ -112,7 +112,7 @@ def test_schedule_after_completed_sent_creates_one_follow_up(
     assert follow_up.body_text == FOLLOW_UP_BODY
     lead = db.get(Lead, body["lead_id"])
     assert lead is not None
-    assert lead.status == LeadStatus.NEW
+    assert lead.status == LeadStatus.CONTACTED
 
 
 def test_schedule_rejects_client_email_send_id(
@@ -491,7 +491,7 @@ def test_linked_follow_up_can_be_rescheduled_and_cancelled(
     assert fetched.json()["follow_up"]["status"] == "CANCELLED"
     lead = db.get(Lead, lead_id)
     assert lead is not None
-    assert lead.status == LeadStatus.NEW
+    assert lead.status == LeadStatus.CONTACTED
 
 
 def test_send_retry_and_already_sent_do_not_schedule(

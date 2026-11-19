@@ -264,7 +264,7 @@ def test_existing_approval_send_still_works_after_auto_start(
     assert len(provider.messages) == 1
     assert provider.messages[0].body_text == approved["response"]
     db.refresh(lead)
-    assert lead.status == LeadStatus.NEW
+    assert lead.status == LeadStatus.CONTACTED
 
 
 def test_two_organizations_auto_start_only_their_own_agent(
