@@ -25,6 +25,36 @@ jobs:
       - name: pytest
         run: pytest
 
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: flowpilot_pg_tests
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d flowpilot_pg_tests"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend
+        run: pip install -e "./backend[dev]"
+      - name: PostgreSQL integration tests
+        env:
+          DATABASE_URL: postgresql+psycopg://app@127.0.0.1:5432/flowpilot_pg_tests
+          TEST_DATABASE_URL: postgresql+psycopg://app@127.0.0.1:5432/flowpilot_pg_tests
+          REQUIRE_POSTGRES_TESTS: "1"
+        run: pytest -q backend/tests/*_postgres.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

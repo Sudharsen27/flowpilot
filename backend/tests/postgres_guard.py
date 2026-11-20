@@ -19,6 +19,7 @@ from app.core.config import Settings
 
 TEST_DATABASE_URL_ENV = "TEST_DATABASE_URL"
 ALLOW_REMOTE_TEST_DATABASE_ENV = "ALLOW_REMOTE_TEST_DATABASE"
+REQUIRE_POSTGRES_TESTS_ENV = "REQUIRE_POSTGRES_TESTS"
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 # libpq lets these query parameters replace the host in the URL authority.
 _HOST_OVERRIDE_PARAMS = frozenset({"host", "hostaddr"})
@@ -36,10 +37,13 @@ def resolve_test_database_url(environ: Mapping[str, str]) -> tuple[str | None, s
         return None, f"{TEST_DATABASE_URL_ENV} is not a valid database URL"
     if parsed.get_backend_name() != "postgresql":
         return None, f"{TEST_DATABASE_URL_ENV} is not a PostgreSQL URL"
-    if environ.get(ALLOW_REMOTE_TEST_DATABASE_ENV) == "1":
-        return url, ""
     # A missing host falls back to PGHOST or a socket, so it is not proven local.
-    if parsed.host not in _LOOPBACK_HOSTS or _HOST_OVERRIDE_PARAMS & set(parsed.query):
+    is_loopback = parsed.host in _LOOPBACK_HOSTS and not (
+        _HOST_OVERRIDE_PARAMS & set(parsed.query)
+    )
+    if not is_loopback and environ.get(REQUIRE_POSTGRES_TESTS_ENV) == "1":
+        return None, f"{TEST_DATABASE_URL_ENV} must use a loopback host in required mode"
+    if not is_loopback and environ.get(ALLOW_REMOTE_TEST_DATABASE_ENV) != "1":
         return None, (
             f"{TEST_DATABASE_URL_ENV} is not a loopback host; "
             f"set {ALLOW_REMOTE_TEST_DATABASE_ENV}=1 to use a remote test database"
@@ -70,7 +74,11 @@ def postgres_skip_reason() -> str | None:
     return None
 
 
-requires_postgres = pytest.mark.skipif(
-    postgres_skip_reason() is not None,
-    reason=postgres_skip_reason() or "",
-)
+def _enforce_required_postgres(reason: str | None, environ: Mapping[str, str]) -> str | None:
+    if reason is not None and environ.get(REQUIRE_POSTGRES_TESTS_ENV) == "1":
+        raise RuntimeError(f"Required PostgreSQL integration tests cannot run: {reason}")
+    return reason
+
+
+_SKIP_REASON = _enforce_required_postgres(postgres_skip_reason(), os.environ)
+requires_postgres = pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
