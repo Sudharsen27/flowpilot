@@ -6,9 +6,13 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { DealAmountCorrectionDialog } from "@/components/deals/deal-amount-correction-dialog";
+import { DealCrmProjection } from "@/components/deals/deal-crm-projection";
 import { DealFormDialog } from "@/components/deals/deal-form-dialog";
 import { DealHistoryList } from "@/components/deals/deal-history";
-import { DealProbability, DealStageBadge } from "@/components/deals/deal-stage-badge";
+import {
+  DealProbability,
+  DealStageBadge,
+} from "@/components/deals/deal-stage-badge";
 import { ForecastCategoryBadge } from "@/components/deals/forecast-category-badge";
 import { DealStageDialog } from "@/components/deals/deal-stage-dialog";
 import { DetailRow } from "@/components/data-display/detail-row";
@@ -23,7 +27,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api/client";
 import { getDeal, getDealHistory } from "@/lib/api/deals";
 import { listOrganizationMembers } from "@/lib/api/organizations";
-import { WON_STAGE_LOCKED_MESSAGE, canChangeStage, canCorrectWonAmount } from "@/lib/deals";
+import {
+  WON_STAGE_LOCKED_MESSAGE,
+  canChangeStage,
+  canCorrectWonAmount,
+} from "@/lib/deals";
 import { buildLeadHref } from "@/lib/lead-url";
 import { formatDateOnly, formatMoney } from "@/lib/money";
 import type { Deal, DealHistoryResponse, MemberPublic } from "@/types/api";
@@ -59,7 +67,10 @@ export default function DealDetailPage() {
       .catch((cause: unknown) => {
         if (cancelled) return;
         setState({
-          status: cause instanceof ApiError && cause.status === 404 ? "not-found" : "error",
+          status:
+            cause instanceof ApiError && cause.status === 404
+              ? "not-found"
+              : "error",
         });
       });
     return () => {
@@ -118,7 +129,10 @@ export default function DealDetailPage() {
     return (
       <div className="gap-section flex flex-col" aria-busy="true">
         <PageHeader
-          breadcrumbs={[{ label: "Deals", href: "/deals" }, { label: "Loading" }]}
+          breadcrumbs={[
+            { label: "Deals", href: "/deals" },
+            { label: "Loading" },
+          ]}
           title="Loading deal"
         />
         <Card className="grid gap-4 p-5" role="status">
@@ -144,7 +158,11 @@ export default function DealDetailPage() {
         <StatePanel
           kind="error"
           className="max-w-none"
-          title={notFound ? "This deal could not be found." : "Unable to load this deal"}
+          title={
+            notFound
+              ? "This deal could not be found."
+              : "Unable to load this deal"
+          }
           description={
             notFound
               ? "It may not exist or may belong to another organization."
@@ -163,7 +181,10 @@ export default function DealDetailPage() {
                   Retry
                 </Button>
               ) : null}
-              <Link href="/deals" className={buttonVariants({ variant: "outline" })}>
+              <Link
+                href="/deals"
+                className={buttonVariants({ variant: "outline" })}
+              >
                 Back to Deals
               </Link>
             </div>
@@ -232,23 +253,53 @@ export default function DealDetailPage() {
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card as="section" className="grid content-start gap-5 p-4 sm:p-5" aria-labelledby="deal-details-title">
-          <h2 id="deal-details-title" className="text-section-title font-semibold tracking-tight">
+        <Card
+          as="section"
+          className="grid content-start gap-5 p-4 sm:p-5"
+          aria-labelledby="deal-details-title"
+        >
+          <h2
+            id="deal-details-title"
+            className="text-section-title font-semibold tracking-tight"
+          >
             Deal details
           </h2>
           <dl className="grid gap-4 sm:grid-cols-2">
-            <DetailRow label="Amount" value={formatMoney(deal.amount, deal.currency)} />
+            <DetailRow
+              label="Amount"
+              value={formatMoney(deal.amount, deal.currency)}
+            />
             <DetailRow label="Currency" value={deal.currency} />
-            <DetailRow label="Stage" value={<DealStageBadge stage={deal.stage} />} />
-            <DetailRow label="Probability" value={<DealProbability deal={deal} />} />
+            <DetailRow
+              label="Stage"
+              value={<DealStageBadge stage={deal.stage} />}
+            />
+            <DetailRow
+              label="Probability"
+              value={<DealProbability deal={deal} />}
+            />
             <DetailRow
               label="Forecast category"
-              value={<ForecastCategoryBadge stage={deal.stage} category={deal.forecast_category} />}
+              value={
+                <ForecastCategoryBadge
+                  stage={deal.stage}
+                  category={deal.forecast_category}
+                />
+              }
             />
-            <DetailRow label="Expected close" value={formatDateOnly(deal.expected_close_date)} />
+            <DetailRow
+              label="Expected close"
+              value={formatDateOnly(deal.expected_close_date)}
+            />
             <DetailRow
               label="Closed"
-              value={deal.closed_at ? <RelativeTime value={deal.closed_at} /> : "Open"}
+              value={
+                deal.closed_at ? (
+                  <RelativeTime value={deal.closed_at} />
+                ) : (
+                  "Open"
+                )
+              }
               muted={!deal.closed_at}
             />
             <DetailRow
@@ -260,7 +311,10 @@ export default function DealDetailPage() {
               label="Lead"
               value={
                 leadHref && deal.lead_name ? (
-                  <Link href={leadHref} className="underline-offset-4 hover:underline">
+                  <Link
+                    href={leadHref}
+                    className="underline-offset-4 hover:underline"
+                  >
                     {deal.lead_name}
                   </Link>
                 ) : deal.lead_id ? (
@@ -273,12 +327,24 @@ export default function DealDetailPage() {
             />
             {deal.stage === "CLOSED_LOST" ? (
               <div className="sm:col-span-2">
-                <DetailRow label="Lost reason" value={deal.lost_reason ?? "—"} />
+                <DetailRow
+                  label="Lost reason"
+                  value={deal.lost_reason ?? "—"}
+                />
               </div>
             ) : null}
-            <DetailRow label="In stage since" value={<RelativeTime value={deal.stage_entered_at} />} />
-            <DetailRow label="Last updated" value={<RelativeTime value={deal.updated_at} />} />
-            <DetailRow label="Created" value={<RelativeTime value={deal.created_at} />} />
+            <DetailRow
+              label="In stage since"
+              value={<RelativeTime value={deal.stage_entered_at} />}
+            />
+            <DetailRow
+              label="Last updated"
+              value={<RelativeTime value={deal.updated_at} />}
+            />
+            <DetailRow
+              label="Created"
+              value={<RelativeTime value={deal.created_at} />}
+            />
             <DetailRow label="Revision" value={`#${deal.revision}`} muted />
           </dl>
           {stageChangeAllowed ? null : (
@@ -291,19 +357,31 @@ export default function DealDetailPage() {
           )}
           {deal.description ? (
             <div className="grid gap-1">
-              <h3 className="text-muted-foreground text-xs font-medium">Description</h3>
-              <p className="text-sm leading-6 whitespace-pre-line">{deal.description}</p>
+              <h3 className="text-muted-foreground text-xs font-medium">
+                Description
+              </h3>
+              <p className="text-sm leading-6 whitespace-pre-line">
+                {deal.description}
+              </p>
             </div>
           ) : null}
         </Card>
 
-        <Card as="section" className="grid content-start gap-4 p-4 sm:p-5" aria-labelledby="deal-history-title">
+        <Card
+          as="section"
+          className="grid content-start gap-4 p-4 sm:p-5"
+          aria-labelledby="deal-history-title"
+        >
           <div>
-            <h2 id="deal-history-title" className="text-section-title font-semibold tracking-tight">
+            <h2
+              id="deal-history-title"
+              className="text-section-title font-semibold tracking-tight"
+            >
               History
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Stage, amount, close-date, probability and forecast category changes, oldest first.
+              Stage, amount, close-date, probability and forecast category
+              changes, oldest first.
             </p>
           </div>
           {historyFailed ? (
@@ -334,6 +412,8 @@ export default function DealDetailPage() {
           )}
         </Card>
       </div>
+
+      <DealCrmProjection leadId={deal.lead_id} />
 
       {editOpen ? (
         <DealFormDialog

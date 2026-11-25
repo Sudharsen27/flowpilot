@@ -150,8 +150,11 @@ describe("Activity page", () => {
         expect.objectContaining({ q: "missing" }),
       ),
     );
+    const emptyState = await screen.findByRole("heading", {
+      name: "No matching activity",
+    });
+    expect(emptyState).toBeVisible();
     expect(screen.queryByRole("link", { name: "Open lead" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "No matching activity" })).toBeVisible();
     expect(
       screen.getAllByRole("button", { name: "Clear filters" }).length,
     ).toBeGreaterThan(0);

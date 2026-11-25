@@ -89,6 +89,7 @@ describe("Customer 360 profile Contact associations", () => {
       id: "company-1",
       name: "Acme CRM",
       website_domain: "acme.example",
+      archived_at: null,
     });
   });
 

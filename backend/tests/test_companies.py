@@ -524,3 +524,36 @@ def test_company_revision_archive_restore_and_contact_independence(
     )
     assert no_op_update.status_code == 200
     assert no_op_update.json()["revision"] == 3
+
+
+def test_archived_company_can_be_fetched_by_id_with_tenant_isolation(
+    client: TestClient, db: Session
+) -> None:
+    roles = _org_with_roles(client, db)
+    company = _create_company(client, roles["owner"], name="Archived Company").json()
+    company_path = f"/api/v1/companies/{company['id']}"
+
+    archived = client.post(
+        f"{company_path}/archive",
+        json={"expected_revision": 1},
+        headers=_headers(roles["owner"]),
+    )
+    assert archived.status_code == 200
+    archived_at = archived.json()["archived_at"]
+    assert archived_at is not None
+
+    fetched = client.get(company_path, headers=_headers(roles["owner"]))
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == company["id"]
+    assert fetched.json()["archived_at"] == archived_at
+
+    other_org = register_verified(
+        client,
+        email="archived-company-other@example.com",
+        organization_name="Other Archived Company Org",
+    )
+    cross_tenant = client.get(
+        company_path,
+        headers=_headers(other_org["access_token"]),
+    )
+    assert cross_tenant.status_code == 404

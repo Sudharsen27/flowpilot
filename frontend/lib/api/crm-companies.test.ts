@@ -14,6 +14,7 @@ describe("CRM Company API client", () => {
           id: "company/1",
           name: "Acme",
           website_domain: "acme.example",
+          archived_at: null,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),

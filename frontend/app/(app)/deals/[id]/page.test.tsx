@@ -13,6 +13,8 @@ import {
   updateDeal,
 } from "@/lib/api/deals";
 import { listOrganizationMembers } from "@/lib/api/organizations";
+import { getCrmCompany } from "@/lib/api/crm-companies";
+import { listCrmContacts } from "@/lib/api/crm-contacts";
 import type { Deal, DealHistoryEvent, MemberPublic } from "@/types/api";
 
 const authMock = vi.hoisted(() => ({ role: "OWNER" as string }));
@@ -39,18 +41,32 @@ vi.mock("@/lib/api/deals", async (importOriginal) => {
     correctWonDealAmount: vi.fn(),
   };
 });
-vi.mock("@/lib/api/organizations", () => ({ listOrganizationMembers: vi.fn() }));
+vi.mock("@/lib/api/organizations", () => ({
+  listOrganizationMembers: vi.fn(),
+}));
 vi.mock("@/lib/api/leads", () => ({ getLeads: vi.fn() }));
+vi.mock("@/lib/api/crm-companies", () => ({ getCrmCompany: vi.fn() }));
+vi.mock("@/lib/api/crm-contacts", () => ({ listCrmContacts: vi.fn() }));
 
 const getDealMock = vi.mocked(getDeal);
 const historyMock = vi.mocked(getDealHistory);
 const updateMock = vi.mocked(updateDeal);
 const stageMock = vi.mocked(changeDealStage);
 const correctMock = vi.mocked(correctWonDealAmount);
+const listCrmContactsMock = vi.mocked(listCrmContacts);
+const getCrmCompanyMock = vi.mocked(getCrmCompany);
 
 const members: MemberPublic[] = [
-  { membership_id: "m-1", role: "OWNER", user: { id: "user-owner", name: "Olivia Owner", email: "o@example.com" } },
-  { membership_id: "m-2", role: "MEMBER", user: { id: "user-member", name: "Max Member", email: "m@example.com" } },
+  {
+    membership_id: "m-1",
+    role: "OWNER",
+    user: { id: "user-owner", name: "Olivia Owner", email: "o@example.com" },
+  },
+  {
+    membership_id: "m-2",
+    role: "MEMBER",
+    user: { id: "user-member", name: "Max Member", email: "m@example.com" },
+  },
 ];
 
 function deal(overrides: Partial<Deal> = {}): Deal {
@@ -141,49 +157,113 @@ describe("Deal detail page", () => {
     vi.clearAllMocks();
     authMock.role = "OWNER";
     getDealMock.mockResolvedValue(deal());
-    historyMock.mockResolvedValue({ items: history, limit: 200, offset: 0, total: 3 });
+    historyMock.mockResolvedValue({
+      items: history,
+      limit: 200,
+      offset: 0,
+      total: 3,
+    });
     vi.mocked(listOrganizationMembers).mockResolvedValue(members);
+    listCrmContactsMock.mockResolvedValue({
+      items: [],
+      limit: 100,
+      offset: 0,
+      total: 0,
+    });
+    getCrmCompanyMock.mockResolvedValue({
+      id: "company-1",
+      name: "Acme CRM",
+      website_domain: "acme.example",
+      archived_at: null,
+    });
   });
 
   it("shows deal details and chronological history", async () => {
     renderPage();
-    expect(screen.getByText("Loading deal", { selector: ".sr-only" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { level: 1, name: "Acme expansion" })).toBeVisible();
+    expect(
+      screen.getByText("Loading deal", { selector: ".sr-only" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Acme expansion" }),
+    ).toBeVisible();
     const details = screen.getByRole("region", { name: "Deal details" });
     expect(within(details).getByText("₹1,25,000.50")).toBeInTheDocument();
     expect(within(details).getByText("65%")).toBeInTheDocument();
     expect(within(details).getByText("override")).toBeInTheDocument();
     expect(within(details).getByText("Dec 15, 2026")).toBeInTheDocument();
-    expect(within(details).getByRole("link", { name: "Ada Prospect" })).toHaveAttribute(
-      "href",
-      "/leads/lead-1",
-    );
+    expect(
+      within(details).getByRole("link", { name: "Ada Prospect" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
     expect(within(details).getByText("#3")).toBeInTheDocument();
-    const timeline = await screen.findByRole("list", { name: "Deal history, oldest first" });
-    const entries = within(timeline).getAllByRole("listitem").filter((item) => item.parentElement === timeline);
+    expect(
+      await screen.findByText("No CRM Contacts are associated with this Lead."),
+    ).toBeVisible();
+    expect(listCrmContactsMock).toHaveBeenCalledWith(
+      {
+        leadId: "lead-1",
+        includeArchived: true,
+        limit: 100,
+        offset: 0,
+      },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    const timeline = await screen.findByRole("list", {
+      name: "Deal history, oldest first",
+    });
+    const entries = within(timeline)
+      .getAllByRole("listitem")
+      .filter((item) => item.parentElement === timeline);
     expect(entries).toHaveLength(3);
-    expect(entries[0]).toHaveTextContent("Created in Qualification at ₹1,00,000.00, closing Dec 1, 2026.");
-    expect(entries[1]).toHaveTextContent("Amount changed from ₹1,00,000.00 to ₹1,25,000.50.");
-    expect(entries[1]).toHaveTextContent("Expected close moved from Dec 1, 2026 to Dec 15, 2026.");
+    expect(entries[0]).toHaveTextContent(
+      "Created in Qualification at ₹1,00,000.00, closing Dec 1, 2026.",
+    );
+    expect(entries[1]).toHaveTextContent(
+      "Amount changed from ₹1,00,000.00 to ₹1,25,000.50.",
+    );
+    expect(entries[1]).toHaveTextContent(
+      "Expected close moved from Dec 1, 2026 to Dec 15, 2026.",
+    );
     expect(entries[1]).toHaveTextContent("Reason: Scope grew");
     expect(entries[1]).toHaveTextContent("by a former member");
-    expect(entries[2]).toHaveTextContent("Stage moved from Qualification to Proposal.");
+    expect(entries[2]).toHaveTextContent(
+      "Stage moved from Qualification to Proposal.",
+    );
     expect(historyMock).toHaveBeenCalledWith("deal-1", { limit: 200 });
+  });
+
+  it("does not fetch CRM data for a Deal without an associated Lead", async () => {
+    getDealMock.mockResolvedValue(deal({ lead_id: null, lead_name: null }));
+
+    renderPage();
+
+    expect(
+      await screen.findByText("No Lead is associated with this Deal."),
+    ).toBeVisible();
+    expect(listCrmContactsMock).not.toHaveBeenCalled();
+    expect(getCrmCompanyMock).not.toHaveBeenCalled();
   });
 
   it("explains a missing deal and retries other failures", async () => {
     const user = userEvent.setup();
     getDealMock.mockRejectedValueOnce(new ApiError("Request failed: 404", 404));
     const { unmount } = renderPage();
-    expect(await screen.findByText("This deal could not be found.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("This deal could not be found."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
     unmount();
 
     getDealMock.mockRejectedValueOnce(new Error("network"));
     renderPage();
-    expect(await screen.findByText("Unable to load this deal")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Unable to load this deal"),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Acme expansion" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Acme expansion" }),
+    ).toBeVisible();
   });
 
   it("edits only changed fields with the current revision", async () => {
@@ -196,8 +276,13 @@ describe("Deal detail page", () => {
     const amount = within(dialog).getByLabelText(/Amount/);
     await user.clear(amount);
     await user.type(amount, "150000");
-    await user.type(within(dialog).getByLabelText("Reason for change"), "Bigger scope");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await user.type(
+      within(dialog).getByLabelText("Reason for change"),
+      "Bigger scope",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
     expect(updateMock).toHaveBeenCalledWith("deal-1", {
       expected_revision: 3,
       amount: "150000",
@@ -209,14 +294,23 @@ describe("Deal detail page", () => {
 
   it("shows the forecast category and changes only it", async () => {
     const user = userEvent.setup();
-    updateMock.mockResolvedValue(deal({ forecast_category: "BEST_CASE", revision: 4 }));
+    updateMock.mockResolvedValue(
+      deal({ forecast_category: "BEST_CASE", revision: 4 }),
+    );
     renderPage();
-    const label = await screen.findByText("Forecast category", { selector: "dt" });
+    const label = await screen.findByText("Forecast category", {
+      selector: "dt",
+    });
     expect(label.nextElementSibling).toHaveTextContent("Pipeline");
     await user.click(screen.getByRole("button", { name: "Edit" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
-    await user.selectOptions(within(dialog).getByLabelText("Forecast category"), "BEST_CASE");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await user.selectOptions(
+      within(dialog).getByLabelText("Forecast category"),
+      "BEST_CASE",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
     expect(updateMock).toHaveBeenCalledWith("deal-1", {
       expected_revision: 3,
       forecast_category: "BEST_CASE",
@@ -233,16 +327,25 @@ describe("Deal detail page", () => {
     const amount = within(dialog).getByLabelText(/Amount/);
     await user.clear(amount);
     await user.type(amount, "125,000.500");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
     // "125,000.500" has three decimals, so it is rejected locally instead.
-    expect(within(dialog).getByText("Use at most 2 decimal places.")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Use at most 2 decimal places."),
+    ).toBeInTheDocument();
     await user.clear(amount);
     await user.type(amount, "125000.5");
     const name = within(dialog).getByLabelText(/Deal name/);
     await user.clear(name);
     await user.type(name, "Renamed");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-    expect(updateMock).toHaveBeenCalledWith("deal-1", { expected_revision: 3, name: "Renamed" });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+    expect(updateMock).toHaveBeenCalledWith("deal-1", {
+      expected_revision: 3,
+      name: "Renamed",
+    });
   });
 
   it("reloads the latest deal on a revision conflict instead of overwriting it", async () => {
@@ -256,27 +359,41 @@ describe("Deal detail page", () => {
     renderPage();
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
-    getDealMock.mockResolvedValue(deal({ amount: "999.00", name: "Changed elsewhere", revision: 4 }));
+    getDealMock.mockResolvedValue(
+      deal({ amount: "999.00", name: "Changed elsewhere", revision: 4 }),
+    );
     const name = within(dialog).getByLabelText(/Deal name/);
     await user.clear(name);
     await user.type(name, "My rename");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
 
     expect(
-      await within(dialog).findByText(/Someone else changed this deal\. We loaded the latest version/),
+      await within(dialog).findByText(
+        /Someone else changed this deal\. We loaded the latest version/,
+      ),
     ).toBeInTheDocument();
-    expect(within(dialog).getByLabelText(/Deal name/)).toHaveValue("Changed elsewhere");
+    expect(within(dialog).getByLabelText(/Deal name/)).toHaveValue(
+      "Changed elsewhere",
+    );
     expect(within(dialog).getByLabelText(/Amount/)).toHaveValue("999.00");
     expect(updateMock).toHaveBeenCalledTimes(1);
     // The page behind the open modal is hidden from assistive tech but already refreshed.
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Changed elsewhere", hidden: true }),
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Changed elsewhere",
+        hidden: true,
+      }),
     ).toBeInTheDocument();
 
     updateMock.mockResolvedValueOnce(deal({ name: "My rename", revision: 5 }));
     await user.clear(within(dialog).getByLabelText(/Deal name/));
     await user.type(within(dialog).getByLabelText(/Deal name/), "My rename");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
     expect(updateMock).toHaveBeenLastCalledWith("deal-1", {
       expected_revision: 4,
       name: "My rename",
@@ -285,13 +402,24 @@ describe("Deal detail page", () => {
 
   it("lets owners reassign but shows members a read-only owner", async () => {
     const user = userEvent.setup();
-    updateMock.mockResolvedValue(deal({ owner_user_id: "user-member", owner_name: "Max Member", revision: 4 }));
+    updateMock.mockResolvedValue(
+      deal({
+        owner_user_id: "user-member",
+        owner_name: "Max Member",
+        revision: 4,
+      }),
+    );
     const { unmount } = renderPage();
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     let dialog = await screen.findByRole("dialog", { name: "Edit deal" });
     await screen.findByRole("option", { name: "Max Member" });
-    await user.selectOptions(within(dialog).getByLabelText("Owner"), "user-member");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await user.selectOptions(
+      within(dialog).getByLabelText("Owner"),
+      "user-member",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
     expect(updateMock).toHaveBeenCalledWith("deal-1", {
       expected_revision: 3,
       owner_user_id: "user-member",
@@ -303,22 +431,40 @@ describe("Deal detail page", () => {
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     dialog = await screen.findByRole("dialog", { name: "Edit deal" });
     expect(within(dialog).getByLabelText("Owner")).toBeDisabled();
-    expect(within(dialog).getByText("Only owners and admins can reassign deals.")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Only owners and admins can reassign deals."),
+    ).toBeInTheDocument();
   });
 
   it("moves between open stages with an optional new override", async () => {
     const user = userEvent.setup();
     stageMock.mockResolvedValue(
-      deal({ stage: "NEGOTIATION", probability: null, effective_probability: 75, probability_source: "STAGE_DEFAULT", revision: 4 }),
+      deal({
+        stage: "NEGOTIATION",
+        probability: null,
+        effective_probability: 75,
+        probability_source: "STAGE_DEFAULT",
+        revision: 4,
+      }),
     );
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Change stage" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Change stage" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: "Change stage" });
     const stageSelect = within(dialog).getByLabelText(/New stage/);
-    expect(within(stageSelect).queryByRole("option", { name: "Proposal" })).not.toBeInTheDocument();
+    expect(
+      within(stageSelect).queryByRole("option", { name: "Proposal" }),
+    ).not.toBeInTheDocument();
     await user.selectOptions(stageSelect, "NEGOTIATION");
-    expect(within(dialog).getByText(/Any existing override is cleared on a stage change/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Move to Negotiation" }));
+    expect(
+      within(dialog).getByText(
+        /Any existing override is cleared on a stage change/,
+      ),
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Move to Negotiation" }),
+    );
     expect(stageMock).toHaveBeenCalledWith("deal-1", {
       stage: "NEGOTIATION",
       expected_revision: 3,
@@ -334,38 +480,75 @@ describe("Deal detail page", () => {
 
   it("confirms closing as won and requires a reason to close as lost", async () => {
     const user = userEvent.setup();
-    stageMock.mockResolvedValue(deal({ stage: "CLOSED_LOST", lost_reason: "Budget cut", revision: 4 }));
+    stageMock.mockResolvedValue(
+      deal({ stage: "CLOSED_LOST", lost_reason: "Budget cut", revision: 4 }),
+    );
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Change stage" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Change stage" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: "Change stage" });
-    await user.selectOptions(within(dialog).getByLabelText(/New stage/), "CLOSED_WON");
-    expect(within(dialog).getByText(/Marking this deal as won closes it/)).toBeInTheDocument();
-    expect(within(dialog).queryByLabelText(/Probability override/)).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Mark as won" })).toBeInTheDocument();
+    await user.selectOptions(
+      within(dialog).getByLabelText(/New stage/),
+      "CLOSED_WON",
+    );
+    expect(
+      within(dialog).getByText(/Marking this deal as won closes it/),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByLabelText(/Probability override/),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Mark as won" }),
+    ).toBeInTheDocument();
 
-    await user.selectOptions(within(dialog).getByLabelText(/New stage/), "CLOSED_LOST");
-    await user.click(within(dialog).getByRole("button", { name: "Mark as lost" }));
-    expect(within(dialog).getByText("Explain why the deal was lost.")).toBeInTheDocument();
+    await user.selectOptions(
+      within(dialog).getByLabelText(/New stage/),
+      "CLOSED_LOST",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Mark as lost" }),
+    );
+    expect(
+      within(dialog).getByText("Explain why the deal was lost."),
+    ).toBeInTheDocument();
     expect(stageMock).not.toHaveBeenCalled();
     await user.type(within(dialog).getByLabelText(/Lost reason/), "Budget cut");
-    await user.click(within(dialog).getByRole("button", { name: "Mark as lost" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Mark as lost" }),
+    );
     expect(stageMock).toHaveBeenCalledWith(
       "deal-1",
-      expect.objectContaining({ stage: "CLOSED_LOST", lost_reason: "Budget cut", probability: null }),
+      expect.objectContaining({
+        stage: "CLOSED_LOST",
+        lost_reason: "Budget cut",
+        probability: null,
+      }),
     );
   });
 
   it("does not change the stage when the deal changed elsewhere", async () => {
     const user = userEvent.setup();
-    stageMock.mockRejectedValueOnce(new ApiError("Request failed: 409", 409, { current_revision: 4 }));
+    stageMock.mockRejectedValueOnce(
+      new ApiError("Request failed: 409", 409, { current_revision: 4 }),
+    );
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Change stage" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Change stage" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: "Change stage" });
     getDealMock.mockResolvedValue(deal({ stage: "NEGOTIATION", revision: 4 }));
-    await user.selectOptions(within(dialog).getByLabelText(/New stage/), "DISCOVERY");
-    await user.click(within(dialog).getByRole("button", { name: "Move to Discovery" }));
+    await user.selectOptions(
+      within(dialog).getByLabelText(/New stage/),
+      "DISCOVERY",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Move to Discovery" }),
+    );
     expect(
-      await within(dialog).findByText(/Someone else changed this deal, so the stage was not changed/),
+      await within(dialog).findByText(
+        /Someone else changed this deal, so the stage was not changed/,
+      ),
     ).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/New stage/)).toHaveValue("");
     expect(within(dialog).getByText(/is in Negotiation/)).toBeInTheDocument();
@@ -375,10 +558,16 @@ describe("Deal detail page", () => {
     const user = userEvent.setup();
     historyMock.mockRejectedValueOnce(new Error("network"));
     renderPage();
-    expect(await screen.findByText("History could not be loaded")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "Acme expansion" })).toBeVisible();
+    expect(
+      await screen.findByText("History could not be loaded"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Acme expansion" }),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Retry history" }));
-    expect(await screen.findByRole("list", { name: "Deal history, oldest first" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("list", { name: "Deal history, oldest first" }),
+    ).toBeInTheDocument();
   });
 
   describe("won deals", () => {
@@ -401,7 +590,9 @@ describe("Deal detail page", () => {
       const user = userEvent.setup();
       updateMock.mockResolvedValue({ ...won(), name: "Renamed", revision: 4 });
       renderPage();
-      const label = await screen.findByText("Forecast category", { selector: "dt" });
+      const label = await screen.findByText("Forecast category", {
+        selector: "dt",
+      });
       expect(label.nextElementSibling).toHaveTextContent("Closed");
       await user.click(screen.getByRole("button", { name: "Edit" }));
       const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
@@ -411,8 +602,13 @@ describe("Deal detail page", () => {
       const name = within(dialog).getByLabelText(/Deal name/);
       await user.clear(name);
       await user.type(name, "Renamed");
-      await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-      expect(updateMock).toHaveBeenCalledWith("deal-1", { expected_revision: 3, name: "Renamed" });
+      await user.click(
+        within(dialog).getByRole("button", { name: "Save changes" }),
+      );
+      expect(updateMock).toHaveBeenCalledWith("deal-1", {
+        expected_revision: 3,
+        name: "Renamed",
+      });
     });
 
     it.each(["OWNER", "ADMIN", "MEMBER"])(
@@ -420,7 +616,11 @@ describe("Deal detail page", () => {
       async (role) => {
         const user = userEvent.setup();
         authMock.role = role;
-        updateMock.mockResolvedValue({ ...won(), name: "Renamed", revision: 4 });
+        updateMock.mockResolvedValue({
+          ...won(),
+          name: "Renamed",
+          revision: 4,
+        });
         renderPage();
         await user.click(await screen.findByRole("button", { name: "Edit" }));
         const dialog = await screen.findByRole("dialog", { name: "Edit deal" });
@@ -436,8 +636,13 @@ describe("Deal detail page", () => {
         const name = within(dialog).getByLabelText(/Deal name/);
         await user.clear(name);
         await user.type(name, "Renamed");
-        await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-        expect(updateMock).toHaveBeenCalledWith("deal-1", { expected_revision: 3, name: "Renamed" });
+        await user.click(
+          within(dialog).getByRole("button", { name: "Save changes" }),
+        );
+        expect(updateMock).toHaveBeenCalledWith("deal-1", {
+          expected_revision: 3,
+          name: "Renamed",
+        });
       },
     );
 
@@ -446,31 +651,69 @@ describe("Deal detail page", () => {
       async (role) => {
         const user = userEvent.setup();
         authMock.role = role;
-        correctMock.mockResolvedValue({ ...won(), amount: "118500.00", revision: 4 });
+        correctMock.mockResolvedValue({
+          ...won(),
+          amount: "118500.00",
+          revision: 4,
+        });
         renderPage();
-        await user.click(await screen.findByRole("button", { name: "Correct amount" }));
-        const dialog = await screen.findByRole("dialog", { name: "Correct won amount" });
-        expect(within(dialog).getByText(/was won at ₹1,20,000.00/)).toBeInTheDocument();
-        const amount = within(dialog).getByLabelText(/Corrected amount \(INR\)/);
+        await user.click(
+          await screen.findByRole("button", { name: "Correct amount" }),
+        );
+        const dialog = await screen.findByRole("dialog", {
+          name: "Correct won amount",
+        });
+        expect(
+          within(dialog).getByText(/was won at ₹1,20,000.00/),
+        ).toBeInTheDocument();
+        const amount = within(dialog).getByLabelText(
+          /Corrected amount \(INR\)/,
+        );
         expect(amount).toHaveValue("120000.00");
 
-        await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
-        expect(within(dialog).getByText("Enter an amount different from the current amount.")).toBeInTheDocument();
-        expect(within(dialog).getByText("Explain why the amount is being corrected.")).toBeInTheDocument();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Record correction" }),
+        );
+        expect(
+          within(dialog).getByText(
+            "Enter an amount different from the current amount.",
+          ),
+        ).toBeInTheDocument();
+        expect(
+          within(dialog).getByText(
+            "Explain why the amount is being corrected.",
+          ),
+        ).toBeInTheDocument();
 
         await user.clear(amount);
         await user.type(amount, "12.345");
-        await user.type(within(dialog).getByLabelText(/Correction reason/), "   ");
-        await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
-        expect(within(dialog).getByText("Use at most 2 decimal places.")).toBeInTheDocument();
-        expect(within(dialog).getByText("Explain why the amount is being corrected.")).toBeInTheDocument();
+        await user.type(
+          within(dialog).getByLabelText(/Correction reason/),
+          "   ",
+        );
+        await user.click(
+          within(dialog).getByRole("button", { name: "Record correction" }),
+        );
+        expect(
+          within(dialog).getByText("Use at most 2 decimal places."),
+        ).toBeInTheDocument();
+        expect(
+          within(dialog).getByText(
+            "Explain why the amount is being corrected.",
+          ),
+        ).toBeInTheDocument();
         expect(correctMock).not.toHaveBeenCalled();
 
         await user.clear(amount);
         await user.type(amount, "1,18,500.00");
         await user.clear(within(dialog).getByLabelText(/Correction reason/));
-        await user.type(within(dialog).getByLabelText(/Correction reason/), "  Invoice discount  ");
-        await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+        await user.type(
+          within(dialog).getByLabelText(/Correction reason/),
+          "  Invoice discount  ",
+        );
+        await user.click(
+          within(dialog).getByRole("button", { name: "Record correction" }),
+        );
         expect(correctMock).toHaveBeenCalledWith("deal-1", {
           expected_revision: 3,
           amount: "118500.00",
@@ -487,8 +730,12 @@ describe("Deal detail page", () => {
       authMock.role = "MEMBER";
       renderPage();
       await screen.findByRole("heading", { level: 1, name: "Acme expansion" });
-      expect(screen.queryByRole("button", { name: "Correct amount" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Change stage" })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Correct amount" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Change stage" }),
+      ).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
       expect(screen.getByRole("note")).toHaveTextContent(
         "Only owners and admins can reopen or change a won deal.",
@@ -499,8 +746,12 @@ describe("Deal detail page", () => {
       getDealMock.mockResolvedValue(deal());
       renderPage();
       await screen.findByRole("heading", { level: 1, name: "Acme expansion" });
-      expect(screen.queryByRole("button", { name: "Correct amount" })).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Change stage" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Correct amount" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Change stage" }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole("note")).not.toBeInTheDocument();
     });
 
@@ -510,16 +761,31 @@ describe("Deal detail page", () => {
         new ApiError("Request failed: 409", 409, { current_revision: 4 }),
       );
       renderPage();
-      await user.click(await screen.findByRole("button", { name: "Correct amount" }));
-      const dialog = await screen.findByRole("dialog", { name: "Correct won amount" });
+      await user.click(
+        await screen.findByRole("button", { name: "Correct amount" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "Correct won amount",
+      });
       const amount = within(dialog).getByLabelText(/Corrected amount/);
       await user.clear(amount);
       await user.type(amount, "100000");
-      await user.type(within(dialog).getByLabelText(/Correction reason/), "Credit note");
-      getDealMock.mockResolvedValue({ ...won(), amount: "119000.00", revision: 4 });
-      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      await user.type(
+        within(dialog).getByLabelText(/Correction reason/),
+        "Credit note",
+      );
+      getDealMock.mockResolvedValue({
+        ...won(),
+        amount: "119000.00",
+        revision: 4,
+      });
+      await user.click(
+        within(dialog).getByRole("button", { name: "Record correction" }),
+      );
       expect(
-        await within(dialog).findByText(/Someone else changed this deal, so the correction was not saved/),
+        await within(dialog).findByText(
+          /Someone else changed this deal, so the correction was not saved/,
+        ),
       ).toBeInTheDocument();
       expect(amount).toHaveValue("119000.00");
 
@@ -530,9 +796,13 @@ describe("Deal detail page", () => {
       );
       await user.clear(amount);
       await user.type(amount, "100000");
-      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      await user.click(
+        within(dialog).getByRole("button", { name: "Record correction" }),
+      );
       expect(
-        await within(dialog).findByText("Only owners and admins can correct a won deal amount"),
+        await within(dialog).findByText(
+          "Only owners and admins can correct a won deal amount",
+        ),
       ).toBeInTheDocument();
       expect(correctMock).toHaveBeenLastCalledWith("deal-1", {
         expected_revision: 4,
@@ -542,12 +812,21 @@ describe("Deal detail page", () => {
 
       correctMock.mockRejectedValueOnce(
         new ApiError("Request failed: 422", 422, {
-          detail: [{ loc: ["body", "amount"], msg: "Input should be less than or equal to 999999999999.99" }],
+          detail: [
+            {
+              loc: ["body", "amount"],
+              msg: "Input should be less than or equal to 999999999999.99",
+            },
+          ],
         }),
       );
-      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      await user.click(
+        within(dialog).getByRole("button", { name: "Record correction" }),
+      );
       expect(
-        await within(dialog).findByText("Input should be less than or equal to 999999999999.99"),
+        await within(dialog).findByText(
+          "Input should be less than or equal to 999999999999.99",
+        ),
       ).toBeInTheDocument();
 
       correctMock.mockRejectedValueOnce(
@@ -555,9 +834,13 @@ describe("Deal detail page", () => {
           detail: "Only won deals use amount corrections; use PATCH",
         }),
       );
-      await user.click(within(dialog).getByRole("button", { name: "Record correction" }));
+      await user.click(
+        within(dialog).getByRole("button", { name: "Record correction" }),
+      );
       expect(
-        await within(dialog).findByText("Only won deals use amount corrections; use PATCH"),
+        await within(dialog).findByText(
+          "Only won deals use amount corrections; use PATCH",
+        ),
       ).toBeInTheDocument();
       expect(dialog).toBeInTheDocument();
     });
@@ -567,11 +850,22 @@ describe("Deal detail page", () => {
       authMock.role = role;
       stageMock.mockResolvedValue(deal({ stage: "NEGOTIATION", revision: 4 }));
       renderPage();
-      await user.click(await screen.findByRole("button", { name: "Change stage" }));
-      const dialog = await screen.findByRole("dialog", { name: "Change stage" });
-      await user.selectOptions(within(dialog).getByLabelText(/New stage/), "NEGOTIATION");
-      expect(within(dialog).getByText(/Reopening clears the close date/)).toBeInTheDocument();
-      await user.click(within(dialog).getByRole("button", { name: "Move to Negotiation" }));
+      await user.click(
+        await screen.findByRole("button", { name: "Change stage" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "Change stage",
+      });
+      await user.selectOptions(
+        within(dialog).getByLabelText(/New stage/),
+        "NEGOTIATION",
+      );
+      expect(
+        within(dialog).getByText(/Reopening clears the close date/),
+      ).toBeInTheDocument();
+      await user.click(
+        within(dialog).getByRole("button", { name: "Move to Negotiation" }),
+      );
       expect(stageMock).toHaveBeenCalledWith(
         "deal-1",
         expect.objectContaining({ stage: "NEGOTIATION", expected_revision: 3 }),
@@ -586,12 +880,23 @@ describe("Deal detail page", () => {
         }),
       );
       renderPage();
-      await user.click(await screen.findByRole("button", { name: "Change stage" }));
-      const dialog = await screen.findByRole("dialog", { name: "Change stage" });
-      await user.selectOptions(within(dialog).getByLabelText(/New stage/), "PROPOSAL");
-      await user.click(within(dialog).getByRole("button", { name: "Move to Proposal" }));
+      await user.click(
+        await screen.findByRole("button", { name: "Change stage" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "Change stage",
+      });
+      await user.selectOptions(
+        within(dialog).getByLabelText(/New stage/),
+        "PROPOSAL",
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: "Move to Proposal" }),
+      );
       expect(
-        await within(dialog).findByText("Only owners and admins can move a won deal to another stage"),
+        await within(dialog).findByText(
+          "Only owners and admins can move a won deal to another stage",
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -615,10 +920,16 @@ describe("Deal detail page", () => {
       total: 4,
     });
     renderPage();
-    const timeline = await screen.findByRole("list", { name: "Deal history, oldest first" });
-    const entries = within(timeline).getAllByRole("listitem").filter((item) => item.parentElement === timeline);
+    const timeline = await screen.findByRole("list", {
+      name: "Deal history, oldest first",
+    });
+    const entries = within(timeline)
+      .getAllByRole("listitem")
+      .filter((item) => item.parentElement === timeline);
     // Rows from before probability history keep rendering as before.
-    expect(entries[1]).toHaveTextContent("Amount changed from ₹1,00,000.00 to ₹1,25,000.50.");
+    expect(entries[1]).toHaveTextContent(
+      "Amount changed from ₹1,00,000.00 to ₹1,25,000.50.",
+    );
     expect(entries[3]).toHaveTextContent(
       "Probability changed from the stage default to 65% (override).",
     );

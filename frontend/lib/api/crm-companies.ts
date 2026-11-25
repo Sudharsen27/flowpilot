@@ -4,6 +4,7 @@ export type CrmCompanySummary = {
   id: string;
   name: string;
   website_domain: string | null;
+  archived_at: string | null;
 };
 
 export function getCrmCompany(

@@ -1,11 +1,25 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import PipelinePage from "@/app/(app)/deals/pipeline/page";
 import { ToastProvider } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
-import { changeDealStage, getDeal, getDealHistory, listDeals } from "@/lib/api/deals";
+import {
+  changeDealStage,
+  getDeal,
+  getDealHistory,
+  listDeals,
+} from "@/lib/api/deals";
+import { getCrmCompany } from "@/lib/api/crm-companies";
+import { listCrmContacts } from "@/lib/api/crm-contacts";
 import { getPipelineSummary } from "@/lib/api/pipeline";
 import type { Deal, DealStage, PipelineSummary } from "@/types/api";
 
@@ -20,6 +34,8 @@ vi.mock("@/lib/api/deals", async (importOriginal) => {
   };
 });
 vi.mock("@/lib/api/pipeline", () => ({ getPipelineSummary: vi.fn() }));
+vi.mock("@/lib/api/crm-companies", () => ({ getCrmCompany: vi.fn() }));
+vi.mock("@/lib/api/crm-contacts", () => ({ listCrmContacts: vi.fn() }));
 
 const authMock = vi.hoisted(() => ({ role: "OWNER" as string }));
 vi.mock("@/hooks/use-auth", () => ({
@@ -71,21 +87,64 @@ const summary: PipelineSummary = {
   lost: { count: 0, total_amount: "0.00" },
   overdue_open: { count: 1, total_amount: "1000.00" },
   by_stage: [
-    { stage: "QUALIFICATION", count: 1, total_amount: "125000.50", weighted_amount: "12500.05", default_probability: 10 },
-    { stage: "DISCOVERY", count: 1, total_amount: "1000.00", weighted_amount: "250.00", default_probability: 25 },
-    { stage: "PROPOSAL", count: 0, total_amount: "0.00", weighted_amount: "0.00", default_probability: 50 },
-    { stage: "NEGOTIATION", count: 0, total_amount: "0.00", weighted_amount: "0.00", default_probability: 75 },
-    { stage: "CLOSED_WON", count: 0, total_amount: "0.00", weighted_amount: "0.00", default_probability: 100 },
-    { stage: "CLOSED_LOST", count: 0, total_amount: "0.00", weighted_amount: "0.00", default_probability: 0 },
+    {
+      stage: "QUALIFICATION",
+      count: 1,
+      total_amount: "125000.50",
+      weighted_amount: "12500.05",
+      default_probability: 10,
+    },
+    {
+      stage: "DISCOVERY",
+      count: 1,
+      total_amount: "1000.00",
+      weighted_amount: "250.00",
+      default_probability: 25,
+    },
+    {
+      stage: "PROPOSAL",
+      count: 0,
+      total_amount: "0.00",
+      weighted_amount: "0.00",
+      default_probability: 50,
+    },
+    {
+      stage: "NEGOTIATION",
+      count: 0,
+      total_amount: "0.00",
+      weighted_amount: "0.00",
+      default_probability: 75,
+    },
+    {
+      stage: "CLOSED_WON",
+      count: 0,
+      total_amount: "0.00",
+      weighted_amount: "0.00",
+      default_probability: 100,
+    },
+    {
+      stage: "CLOSED_LOST",
+      count: 0,
+      total_amount: "0.00",
+      weighted_amount: "0.00",
+      default_probability: 0,
+    },
   ],
   won_by_month: [{ month: "2026-10-01", count: 0, total_amount: "0.00" }],
   excluded_other_currency_count: 0,
 };
 
-function boardData(byStage: Partial<Record<DealStage, { items: Deal[]; total?: number }>>) {
+function boardData(
+  byStage: Partial<Record<DealStage, { items: Deal[]; total?: number }>>,
+) {
   listMock.mockImplementation(async (params) => {
     const column = byStage[params?.stage as DealStage] ?? { items: [] };
-    return { items: column.items, limit: 50, offset: 0, total: column.total ?? column.items.length };
+    return {
+      items: column.items,
+      limit: 50,
+      offset: 0,
+      total: column.total ?? column.items.length,
+    };
   });
 }
 
@@ -106,25 +165,63 @@ describe("Pipeline board", () => {
     vi.clearAllMocks();
     authMock.role = "OWNER";
     vi.mocked(getPipelineSummary).mockResolvedValue(summary);
-    vi.mocked(getDealHistory).mockResolvedValue({ items: [], limit: 50, offset: 0, total: 0 });
+    vi.mocked(getDealHistory).mockResolvedValue({
+      items: [],
+      limit: 50,
+      offset: 0,
+      total: 0,
+    });
+    vi.mocked(listCrmContacts).mockResolvedValue({
+      items: [],
+      limit: 100,
+      offset: 0,
+      total: 0,
+    });
+    vi.mocked(getCrmCompany).mockResolvedValue({
+      id: "company-1",
+      name: "Acme CRM",
+      website_domain: "acme.example",
+      archived_at: null,
+    });
     boardData({
       QUALIFICATION: { items: [deal()] },
       DISCOVERY: {
-        items: [deal({ id: "deal-2", name: "Late pilot", stage: "DISCOVERY", amount: "1000.00", expected_close_date: "2020-01-01" })],
+        items: [
+          deal({
+            id: "deal-2",
+            name: "Late pilot",
+            stage: "DISCOVERY",
+            amount: "1000.00",
+            expected_close_date: "2020-01-01",
+          }),
+        ],
       },
     });
   });
 
   it("shows a column per stage with counts, exact totals and cards", async () => {
     renderPage();
-    const qualification = await screen.findByRole("region", { name: /^Qualification, 1 deal/ });
+    const qualification = await screen.findByRole("region", {
+      name: /^Qualification, 1 deal/,
+    });
     expect(within(qualification).getByText("₹1,25,000.50")).toBeInTheDocument();
-    expect(within(qualification).getByTitle("₹1,25,000.50")).toBeInTheDocument();
+    expect(
+      within(qualification).getByTitle("₹1,25,000.50"),
+    ).toBeInTheDocument();
     expect(within(qualification).getByText("Olivia Owner")).toBeInTheDocument();
-    for (const name of [/^Proposal, 0 deals/, /^Negotiation, 0 deals/, /^Closed won, 0 deals/, /^Closed lost, 0 deals/]) {
-      expect(within(column(name)).getByText("No deals in this stage")).toBeInTheDocument();
+    for (const name of [
+      /^Proposal, 0 deals/,
+      /^Negotiation, 0 deals/,
+      /^Closed won, 0 deals/,
+      /^Closed lost, 0 deals/,
+    ]) {
+      expect(
+        within(column(name)).getByText("No deals in this stage"),
+      ).toBeInTheDocument();
     }
-    expect(within(column(/^Discovery/)).getByText(/Overdue ·/)).toBeInTheDocument();
+    expect(
+      within(column(/^Discovery/)).getByText(/Overdue ·/),
+    ).toBeInTheDocument();
     expect(listMock).toHaveBeenCalledWith({ stage: "PROPOSAL", limit: 50 });
     expect(getPipelineSummary).toHaveBeenCalledWith(1);
   });
@@ -133,11 +230,20 @@ describe("Pipeline board", () => {
     boardData({
       QUALIFICATION: { items: [deal({ forecast_category: "COMMIT" })] },
       CLOSED_WON: {
-        items: [deal({ id: "deal-won", name: "Won", stage: "CLOSED_WON", forecast_category: null })],
+        items: [
+          deal({
+            id: "deal-won",
+            name: "Won",
+            stage: "CLOSED_WON",
+            forecast_category: null,
+          }),
+        ],
       },
     });
     renderPage();
-    const qualification = await screen.findByRole("region", { name: /^Qualification, 1 deal/ });
+    const qualification = await screen.findByRole("region", {
+      name: /^Qualification, 1 deal/,
+    });
     expect(within(qualification).getByText("Commit")).toBeInTheDocument();
     // The Closed won column already says the outcome; no badge repeats it.
     const won = screen.getByRole("region", { name: /^Closed won, 1 deal/ });
@@ -163,31 +269,53 @@ describe("Pipeline board", () => {
     stageMock.mockReturnValue(new Promise((done) => (resolve = done)));
     renderPage();
     await screen.findByRole("region", { name: /^Closed lost, 1 deal/ });
-    await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Qualification" }));
-    const qualification = await screen.findByRole("region", { name: /^Qualification, 1 deal/ });
-    const badge = qualification.querySelector("[data-slot=forecast-category-badge]");
+    await user.click(
+      screen.getByRole("button", { name: "Move Acme expansion" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Qualification" }),
+    );
+    const qualification = await screen.findByRole("region", {
+      name: /^Qualification, 1 deal/,
+    });
+    const badge = qualification.querySelector(
+      "[data-slot=forecast-category-badge]",
+    );
     expect(badge).toHaveTextContent("Pipeline");
     expect(within(qualification).queryByText("—")).not.toBeInTheDocument();
-    await act(async () => resolve(deal({ forecast_category: "PIPELINE", revision: 3 })));
+    await act(async () =>
+      resolve(deal({ forecast_category: "PIPELINE", revision: 3 })),
+    );
   });
 
   it("shows the forecast category in the deal drawer", async () => {
     const user = userEvent.setup();
-    boardData({ QUALIFICATION: { items: [deal({ forecast_category: "BEST_CASE" })] } });
+    boardData({
+      QUALIFICATION: { items: [deal({ forecast_category: "BEST_CASE" })] },
+    });
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Acme expansion" }));
-    const drawer = await screen.findByRole("dialog", { name: "Acme expansion" });
-    const label = within(drawer).getByText("Forecast category", { selector: "dt" });
+    await user.click(
+      await screen.findByRole("button", { name: "Acme expansion" }),
+    );
+    const drawer = await screen.findByRole("dialog", {
+      name: "Acme expansion",
+    });
+    const label = within(drawer).getByText("Forecast category", {
+      selector: "dt",
+    });
     expect(label.nextElementSibling).toHaveTextContent("Best case");
   });
 
   it("moves a deal to an open stage with its current revision", async () => {
     const user = userEvent.setup();
-    stageMock.mockResolvedValue(deal({ stage: "PROPOSAL", revision: 3, effective_probability: 50 }));
+    stageMock.mockResolvedValue(
+      deal({ stage: "PROPOSAL", revision: 3, effective_probability: 50 }),
+    );
     renderPage();
     await screen.findByRole("region", { name: /^Qualification/ });
-    await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
+    await user.click(
+      screen.getByRole("button", { name: "Move Acme expansion" }),
+    );
     await user.click(await screen.findByRole("menuitem", { name: "Proposal" }));
     expect(stageMock).toHaveBeenCalledWith("deal-1", {
       stage: "PROPOSAL",
@@ -196,40 +324,66 @@ describe("Pipeline board", () => {
       lost_reason: null,
       change_reason: null,
     });
-    expect(await within(column(/^Proposal/)).findByText("Acme expansion")).toBeInTheDocument();
-    expect(within(column(/^Qualification/)).queryByText("Acme expansion")).not.toBeInTheDocument();
+    expect(
+      await within(column(/^Proposal/)).findByText("Acme expansion"),
+    ).toBeInTheDocument();
+    expect(
+      within(column(/^Qualification/)).queryByText("Acme expansion"),
+    ).not.toBeInTheDocument();
     expect(await screen.findByText("Moved to Proposal")).toBeInTheDocument();
   });
 
   it("reverts and reloads when the deal changed elsewhere", async () => {
     const user = userEvent.setup();
-    stageMock.mockRejectedValue(new ApiError("Request failed: 409", 409, { current_revision: 3 }));
+    stageMock.mockRejectedValue(
+      new ApiError("Request failed: 409", 409, { current_revision: 3 }),
+    );
     renderPage();
     await screen.findByRole("region", { name: /^Qualification/ });
     const loads = listMock.mock.calls.length;
-    await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Negotiation" }));
-    expect((await screen.findAllByText("This deal changed elsewhere")).length).toBeGreaterThan(0);
-    await waitFor(() => expect(listMock.mock.calls.length).toBeGreaterThan(loads));
-    expect(within(column(/^Qualification/)).getByText("Acme expansion")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Move Acme expansion" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Negotiation" }),
+    );
+    expect(
+      (await screen.findAllByText("This deal changed elsewhere")).length,
+    ).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(listMock.mock.calls.length).toBeGreaterThan(loads),
+    );
+    expect(
+      within(column(/^Qualification/)).getByText("Acme expansion"),
+    ).toBeInTheDocument();
   });
 
   it("asks for confirmation before closing a deal", async () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findByRole("region", { name: /^Qualification/ });
-    await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Closed won" }));
+    await user.click(
+      screen.getByRole("button", { name: "Move Acme expansion" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Closed won" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: "Change stage" });
-    expect(within(dialog).getByLabelText(/New stage/)).toHaveValue("CLOSED_WON");
-    expect(within(dialog).getByRole("button", { name: "Mark as won" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/New stage/)).toHaveValue(
+      "CLOSED_WON",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Mark as won" }),
+    ).toBeInTheDocument();
     expect(stageMock).not.toHaveBeenCalled();
   });
 
   it("moves a deal by drag and drop", async () => {
     stageMock.mockResolvedValue(deal({ stage: "DISCOVERY", revision: 3 }));
     renderPage();
-    const card = (await screen.findByRole("button", { name: "Acme expansion" })).closest("li")!;
+    const card = (
+      await screen.findByRole("button", { name: "Acme expansion" })
+    ).closest("li")!;
     const data = new Map<string, string>();
     const dataTransfer = {
       setData: (type: string, value: string) => data.set(type, value),
@@ -245,36 +399,73 @@ describe("Pipeline board", () => {
     await act(async () => {
       fireEvent.drop(target, { dataTransfer });
     });
-    expect(stageMock).toHaveBeenCalledWith("deal-1", expect.objectContaining({ stage: "DISCOVERY", expected_revision: 2 }));
+    expect(stageMock).toHaveBeenCalledWith(
+      "deal-1",
+      expect.objectContaining({ stage: "DISCOVERY", expected_revision: 2 }),
+    );
   });
 
   it("opens a deal drawer with history and a link to the full page", async () => {
     const user = userEvent.setup();
+    boardData({
+      QUALIFICATION: {
+        items: [deal({ lead_id: "lead-1", lead_name: "Ada Prospect" })],
+      },
+    });
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Acme expansion" }));
-    const drawer = await screen.findByRole("dialog", { name: "Acme expansion" });
-    expect(within(drawer).getByText(/₹1,25,000.50 · closes Dec 15, 2099/)).toBeInTheDocument();
-    expect(within(drawer).getByRole("link", { name: /Open deal/ })).toHaveAttribute("href", "/deals/deal-1");
-    expect(await within(drawer).findByText("No changes have been recorded yet.")).toBeInTheDocument();
+    await screen.findByRole("region", { name: /^Qualification/ });
+    expect(listCrmContacts).not.toHaveBeenCalled();
+    await user.click(
+      await screen.findByRole("button", { name: "Acme expansion" }),
+    );
+    const drawer = await screen.findByRole("dialog", {
+      name: "Acme expansion",
+    });
+    expect(
+      within(drawer).getByText(/₹1,25,000.50 · closes Dec 15, 2099/),
+    ).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("link", { name: /Open deal/ }),
+    ).toHaveAttribute("href", "/deals/deal-1");
+    expect(
+      await within(drawer).findByText("No changes have been recorded yet."),
+    ).toBeInTheDocument();
     expect(getDealHistory).toHaveBeenCalledWith("deal-1", { limit: 50 });
+    expect(
+      await within(drawer).findByText(
+        "No CRM Contacts are associated with this Lead.",
+      ),
+    ).toBeVisible();
+    expect(listCrmContacts).toHaveBeenCalledWith(
+      {
+        leadId: "lead-1",
+        includeArchived: true,
+        limit: 100,
+        offset: 0,
+      },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("links to the full list when a column has more deals than it shows", async () => {
     boardData({ QUALIFICATION: { items: [deal()], total: 75 } });
     renderPage();
-    expect(await screen.findByRole("link", { name: "View all 75 in the list" })).toHaveAttribute(
-      "href",
-      "/deals?stage=QUALIFICATION",
-    );
+    expect(
+      await screen.findByRole("link", { name: "View all 75 in the list" }),
+    ).toHaveAttribute("href", "/deals?stage=QUALIFICATION");
   });
 
   it("shows an error and retries", async () => {
     const user = userEvent.setup();
     listMock.mockRejectedValueOnce(new Error("network"));
     renderPage();
-    expect(await screen.findByText("The pipeline could not be loaded")).toBeInTheDocument();
+    expect(
+      await screen.findByText("The pipeline could not be loaded"),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("region", { name: /^Qualification/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: /^Qualification/ }),
+    ).toBeInTheDocument();
     expect(vi.mocked(getDeal)).not.toHaveBeenCalled();
   });
 
@@ -300,33 +491,60 @@ describe("Pipeline board", () => {
     }
 
     beforeEach(() => {
-      boardData({ QUALIFICATION: { items: [deal()] }, CLOSED_WON: { items: [won] } });
+      boardData({
+        QUALIFICATION: { items: [deal()] },
+        CLOSED_WON: { items: [won] },
+      });
     });
 
     it.each(["OWNER", "ADMIN"])("lets %s move a won deal", async (role) => {
       const user = userEvent.setup();
       authMock.role = role;
-      stageMock.mockResolvedValue({ ...won, stage: "NEGOTIATION", closed_at: null, revision: 3 });
+      stageMock.mockResolvedValue({
+        ...won,
+        stage: "NEGOTIATION",
+        closed_at: null,
+        revision: 3,
+      });
       renderPage();
       await screen.findByRole("region", { name: /^Closed won/ });
-      const card = screen.getByRole("button", { name: "Signed renewal" }).closest("li")!;
+      const card = screen
+        .getByRole("button", { name: "Signed renewal" })
+        .closest("li")!;
       expect(card).toHaveAttribute("draggable", "true");
-      expect(screen.queryByText(/Only owners and admins can move won deals/)).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Move Signed renewal" }));
-      await user.click(await screen.findByRole("menuitem", { name: "Negotiation" }));
-      expect(stageMock).toHaveBeenCalledWith("deal-won", expect.objectContaining({ stage: "NEGOTIATION" }));
+      expect(
+        screen.queryByText(/Only owners and admins can move won deals/),
+      ).not.toBeInTheDocument();
+      await user.click(
+        screen.getByRole("button", { name: "Move Signed renewal" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Negotiation" }),
+      );
+      expect(stageMock).toHaveBeenCalledWith(
+        "deal-won",
+        expect.objectContaining({ stage: "NEGOTIATION" }),
+      );
     });
 
     it("gives members no way to move a won deal, by menu or drag and drop", async () => {
       authMock.role = "MEMBER";
       renderPage();
       await screen.findByRole("region", { name: /^Closed won/ });
-      expect(screen.getByText(/Only owners and admins can move won deals/)).toBeInTheDocument();
-      const card = screen.getByRole("button", { name: "Signed renewal" }).closest("li")!;
-      expect(card).toHaveAttribute("draggable", "false");
-      expect(screen.queryByRole("button", { name: "Move Signed renewal" })).not.toBeInTheDocument();
       expect(
-        within(card).getByRole("img", { name: "Only owners and admins can reopen or change a won deal." }),
+        screen.getByText(/Only owners and admins can move won deals/),
+      ).toBeInTheDocument();
+      const card = screen
+        .getByRole("button", { name: "Signed renewal" })
+        .closest("li")!;
+      expect(card).toHaveAttribute("draggable", "false");
+      expect(
+        screen.queryByRole("button", { name: "Move Signed renewal" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(card).getByRole("img", {
+          name: "Only owners and admins can reopen or change a won deal.",
+        }),
       ).toBeInTheDocument();
 
       // Even a forged drop (e.g. dragged in from elsewhere) never reaches the API.
@@ -338,8 +556,12 @@ describe("Pipeline board", () => {
         fireEvent.drop(target, { dataTransfer });
       });
       expect(stageMock).not.toHaveBeenCalled();
-      expect((await screen.findAllByText("This deal cannot be moved")).length).toBeGreaterThan(0);
-      expect(within(column(/^Closed won/)).getByText("Signed renewal")).toBeInTheDocument();
+      expect(
+        (await screen.findAllByText("This deal cannot be moved")).length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(column(/^Closed won/)).getByText("Signed renewal"),
+      ).toBeInTheDocument();
     });
 
     it("still lets members move open deals, including closing them", async () => {
@@ -348,12 +570,22 @@ describe("Pipeline board", () => {
       stageMock.mockResolvedValue(deal({ stage: "DISCOVERY", revision: 3 }));
       renderPage();
       await screen.findByRole("region", { name: /^Qualification/ });
-      const card = screen.getByRole("button", { name: "Acme expansion" }).closest("li")!;
+      const card = screen
+        .getByRole("button", { name: "Acme expansion" })
+        .closest("li")!;
       expect(card).toHaveAttribute("draggable", "true");
-      await user.click(screen.getByRole("button", { name: "Move Acme expansion" }));
-      await user.click(await screen.findByRole("menuitem", { name: "Closed won" }));
-      const dialog = await screen.findByRole("dialog", { name: "Change stage" });
-      expect(within(dialog).getByRole("button", { name: "Mark as won" })).toBeInTheDocument();
+      await user.click(
+        screen.getByRole("button", { name: "Move Acme expansion" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Closed won" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "Change stage",
+      });
+      expect(
+        within(dialog).getByRole("button", { name: "Mark as won" }),
+      ).toBeInTheDocument();
       expect(within(dialog).getByRole("note")).toHaveTextContent(
         "Only owners and admins can reopen or change a won deal",
       );
@@ -368,13 +600,22 @@ describe("Pipeline board", () => {
       );
       renderPage();
       await screen.findByRole("region", { name: /^Closed won/ });
-      await user.click(screen.getByRole("button", { name: "Move Signed renewal" }));
-      await user.click(await screen.findByRole("menuitem", { name: "Proposal" }));
+      await user.click(
+        screen.getByRole("button", { name: "Move Signed renewal" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Proposal" }),
+      );
       expect(
-        (await screen.findAllByText("Only owners and admins can move a won deal to another stage"))
-          .length,
+        (
+          await screen.findAllByText(
+            "Only owners and admins can move a won deal to another stage",
+          )
+        ).length,
       ).toBeGreaterThan(0);
-      expect(within(column(/^Closed won/)).getByText("Signed renewal")).toBeInTheDocument();
+      expect(
+        within(column(/^Closed won/)).getByText("Signed renewal"),
+      ).toBeInTheDocument();
     });
   });
 });
