@@ -1,9 +1,11 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, exists, func, insert, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.contact import Contact, ContactStatus
+from app.models.contact_lead import contact_leads
+from app.models.lead import Lead
 
 
 def _search_pattern(search: str) -> str:
@@ -55,6 +57,86 @@ class ContactRepository:
             is not None
         )
 
+    def is_linked_to_lead(self, organization_id: str, contact_id: str, lead_id: str) -> bool:
+        return bool(
+            self.session.scalar(
+                select(
+                    exists().where(
+                        contact_leads.c.organization_id == organization_id,
+                        contact_leads.c.contact_id == contact_id,
+                        contact_leads.c.lead_id == lead_id,
+                    )
+                )
+            )
+        )
+
+    def link_to_lead(self, organization_id: str, contact_id: str, lead_id: str) -> bool:
+        if self.is_linked_to_lead(organization_id, contact_id, lead_id):
+            return False
+
+        source = (
+            select(Contact.organization_id, Contact.id, Lead.id)
+            .join(Lead, Lead.organization_id == Contact.organization_id)
+            .where(
+                Contact.organization_id == organization_id,
+                Contact.id == contact_id,
+                Lead.id == lead_id,
+            )
+        )
+        self.session.execute(
+            insert(contact_leads).from_select(
+                ["organization_id", "contact_id", "lead_id"],
+                source,
+            )
+        )
+        return self.is_linked_to_lead(organization_id, contact_id, lead_id)
+
+    def unlink_from_lead(self, organization_id: str, contact_id: str, lead_id: str) -> bool:
+        if not self.is_linked_to_lead(organization_id, contact_id, lead_id):
+            return False
+        self.session.execute(
+            delete(contact_leads).where(
+                contact_leads.c.organization_id == organization_id,
+                contact_leads.c.contact_id == contact_id,
+                contact_leads.c.lead_id == lead_id,
+            )
+        )
+        return True
+
+    def list_leads_for_contact(self, organization_id: str, contact_id: str) -> list[Lead]:
+        return list(
+            self.session.scalars(
+                select(Lead)
+                .join(
+                    contact_leads,
+                    (contact_leads.c.organization_id == Lead.organization_id)
+                    & (contact_leads.c.lead_id == Lead.id),
+                )
+                .where(
+                    contact_leads.c.organization_id == organization_id,
+                    contact_leads.c.contact_id == contact_id,
+                )
+                .order_by(Lead.created_at.desc(), Lead.id.desc())
+            )
+        )
+
+    def list_contacts_for_lead(self, organization_id: str, lead_id: str) -> list[Contact]:
+        return list(
+            self.session.scalars(
+                select(Contact)
+                .join(
+                    contact_leads,
+                    (contact_leads.c.organization_id == Contact.organization_id)
+                    & (contact_leads.c.contact_id == Contact.id),
+                )
+                .where(
+                    contact_leads.c.organization_id == organization_id,
+                    contact_leads.c.lead_id == lead_id,
+                )
+                .order_by(Contact.created_at.desc(), Contact.id.desc())
+            )
+        )
+
     def list_for_organization(
         self,
         organization_id: str,
@@ -63,6 +145,7 @@ class ContactRepository:
         company_id: str | None,
         status: ContactStatus | None,
         owner_user_id: str | None,
+        lead_id: str | None = None,
         include_archived: bool = False,
         limit: int,
         offset: int,
@@ -76,6 +159,14 @@ class ContactRepository:
             conditions.append(Contact.status == status)
         if owner_user_id is not None:
             conditions.append(Contact.owner_user_id == owner_user_id)
+        if lead_id is not None:
+            conditions.append(
+                exists().where(
+                    contact_leads.c.organization_id == organization_id,
+                    contact_leads.c.contact_id == Contact.id,
+                    contact_leads.c.lead_id == lead_id,
+                )
+            )
         if search:
             pattern = _search_pattern(search)
             conditions.append(

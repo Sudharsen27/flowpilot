@@ -405,5 +405,5 @@ def test_alembic_head_includes_google_oauth() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "050_follow_up_sequence"
+    assert script.get_current_head() == "051_contact_lead_associations"
     assert script.get_revision("030_user_google_oauth") is not None

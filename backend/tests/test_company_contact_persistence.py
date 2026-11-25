@@ -2,12 +2,14 @@ from datetime import datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.company import Company, CompanyLifecycleStatus, CompanySource
 from app.models.contact import Contact, ContactSource, ContactStatus
+from app.models.contact_lead import contact_leads
+from app.models.lead import Lead
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.user import User
@@ -293,3 +295,82 @@ def test_company_domain_and_contact_email_are_not_unique(db: Session) -> None:
     db.flush()
 
     assert db.scalar(select(Company.id).where(Company.name == "Acme North")) is not None
+
+
+def test_contact_lead_relationships_are_many_to_many_and_tenant_scoped(db: Session) -> None:
+    organization, _ = _tenant(db, "Contact leads")
+    other_organization, _ = _tenant(db, "Other contact leads")
+    contact_one = Contact(organization_id=organization.id, display_name="Contact One")
+    contact_two = Contact(organization_id=organization.id, display_name="Contact Two")
+    foreign_contact = Contact(
+        organization_id=other_organization.id,
+        display_name="Foreign Contact",
+    )
+    lead_one = Lead(organization_id=organization.id, name="Lead One")
+    lead_two = Lead(organization_id=organization.id, name="Lead Two")
+    foreign_lead = Lead(organization_id=other_organization.id, name="Foreign Lead")
+    db.add_all(
+        [
+            contact_one,
+            contact_two,
+            foreign_contact,
+            lead_one,
+            lead_two,
+            foreign_lead,
+        ]
+    )
+    db.flush()
+
+    repository = ContactRepository(db)
+    assert repository.link_to_lead(organization.id, contact_one.id, lead_one.id)
+    assert repository.link_to_lead(organization.id, contact_one.id, lead_two.id)
+    assert repository.link_to_lead(organization.id, contact_two.id, lead_one.id)
+    assert not repository.link_to_lead(organization.id, contact_one.id, foreign_lead.id)
+    assert not repository.link_to_lead(organization.id, foreign_contact.id, lead_one.id)
+    assert not repository.link_to_lead(organization.id, contact_one.id, lead_one.id)
+
+    assert {lead.id for lead in repository.list_leads_for_contact(
+        organization.id, contact_one.id
+    )} == {lead_one.id, lead_two.id}
+    assert {contact.id for contact in repository.list_contacts_for_lead(
+        organization.id, lead_one.id
+    )} == {contact_one.id, contact_two.id}
+    assert {lead.id for lead in contact_one.leads} == {lead_one.id, lead_two.id}
+    assert {contact.id for contact in lead_one.contacts} == {contact_one.id, contact_two.id}
+
+    contacts, total = repository.list_for_organization(
+        organization.id,
+        search=None,
+        company_id=None,
+        status=None,
+        owner_user_id=None,
+        lead_id=lead_one.id,
+        limit=10,
+        offset=0,
+    )
+    assert total == 2
+    assert {contact.id for contact in contacts} == {contact_one.id, contact_two.id}
+
+    assert repository.unlink_from_lead(organization.id, contact_one.id, lead_one.id)
+    assert not repository.unlink_from_lead(organization.id, contact_one.id, lead_one.id)
+
+
+def test_contact_lead_associations_reject_duplicate_rows(db: Session) -> None:
+    organization, _ = _tenant(db, "Contact lead uniqueness")
+    contact = Contact(organization_id=organization.id, display_name="Unique Contact")
+    lead = Lead(organization_id=organization.id, name="Unique Lead")
+    db.add_all([contact, lead])
+    db.flush()
+    assert ContactRepository(db).link_to_lead(organization.id, contact.id, lead.id)
+    db.commit()
+
+    with pytest.raises(IntegrityError):
+        db.execute(
+            insert(contact_leads).values(
+                organization_id=organization.id,
+                contact_id=contact.id,
+                lead_id=lead.id,
+            )
+        )
+        db.flush()
+    db.rollback()

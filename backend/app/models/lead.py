@@ -18,7 +18,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.contact import Contact
     from app.models.organization import Organization
+
+from app.models.contact_lead import contact_leads
 
 
 class LeadStatus(StrEnum):
@@ -119,3 +122,16 @@ class Lead(Base):
     )
 
     organization: Mapped["Organization"] = relationship()
+    contacts: Mapped[list["Contact"]] = relationship(
+        secondary=contact_leads,
+        primaryjoin=(
+            "and_(Lead.organization_id == foreign(contact_leads.c.organization_id), "
+            "Lead.id == foreign(contact_leads.c.lead_id))"
+        ),
+        secondaryjoin=(
+            "and_(Contact.organization_id == foreign(contact_leads.c.organization_id), "
+            "Contact.id == foreign(contact_leads.c.contact_id))"
+        ),
+        back_populates="leads",
+        viewonly=True,
+    )

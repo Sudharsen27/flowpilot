@@ -9,16 +9,19 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, insert, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
 from app.models.company import Company
 from app.models.contact import Contact
+from app.models.contact_lead import contact_leads
+from app.models.lead import Lead
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.user import User
+from app.repositories.contact_repository import ContactRepository
 from tests.postgres_guard import postgres_test_url, requires_postgres
 
 pytestmark = requires_postgres
@@ -111,7 +114,7 @@ def _org_with_owner(session: Session, label: str) -> tuple[Organization, User]:
 
 def test_company_contact_migration_upgrade_and_downgrade(schema: str) -> None:
     _alembic(schema, "upgrade", "047_growth_p2_mvps")
-    _alembic(schema, "upgrade", "048_company_contact_foundation")
+    _alembic(schema, "upgrade", "051_contact_lead_associations")
 
     engine = create_engine(
         postgres_test_url(),
@@ -119,11 +122,11 @@ def test_company_contact_migration_upgrade_and_downgrade(schema: str) -> None:
     )
     try:
         inspector = inspect(engine)
-        assert {"companies", "contacts"} <= set(inspector.get_table_names())
+        assert {"companies", "contacts", "contact_leads"} <= set(inspector.get_table_names())
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-                == "048_company_contact_foundation"
+                == "051_contact_lead_associations"
             )
 
         company_checks = {
@@ -178,10 +181,42 @@ def test_company_contact_migration_upgrade_and_downgrade(schema: str) -> None:
             "ix_contacts_organization_phone",
         } <= contact_indexes
 
-        _alembic(schema, "downgrade", "047_growth_p2_mvps")
-        assert not {"companies", "contacts"} & set(inspect(engine).get_table_names())
-        _alembic(schema, "upgrade", "048_company_contact_foundation")
+        association_fks = {
+            constraint["name"]: constraint
+            for constraint in inspector.get_foreign_keys("contact_leads")
+        }
+        assert {
+            "fk_contact_leads_organization",
+            "fk_contact_leads_contact_organization",
+            "fk_contact_leads_lead_organization",
+        } <= set(association_fks)
+        assert association_fks["fk_contact_leads_contact_organization"][
+            "constrained_columns"
+        ] == ["organization_id", "contact_id"]
+        assert association_fks["fk_contact_leads_lead_organization"][
+            "constrained_columns"
+        ] == ["organization_id", "lead_id"]
+        assert inspector.get_pk_constraint("contact_leads")["constrained_columns"] == [
+            "organization_id",
+            "contact_id",
+            "lead_id",
+        ]
+        assert "ix_contact_leads_organization_lead_contact" in {
+            index["name"] for index in inspector.get_indexes("contact_leads")
+        }
+
+        _alembic(schema, "downgrade", "050_follow_up_sequence")
+        assert "contact_leads" not in set(inspect(engine).get_table_names())
         assert {"companies", "contacts"} <= set(inspect(engine).get_table_names())
+        _alembic(schema, "upgrade", "051_contact_lead_associations")
+        assert "contact_leads" in set(inspect(engine).get_table_names())
+
+        _alembic(schema, "downgrade", "047_growth_p2_mvps")
+        assert not {"companies", "contacts", "contact_leads"} & set(
+            inspect(engine).get_table_names()
+        )
+        _alembic(schema, "upgrade", "051_contact_lead_associations")
+        assert {"companies", "contacts", "contact_leads"} <= set(inspect(engine).get_table_names())
     finally:
         engine.dispose()
 
@@ -276,3 +311,58 @@ def test_company_domain_and_contact_email_are_non_unique(pg_session: Session) ->
         ]
     )
     pg_session.commit()
+
+
+def test_contact_lead_associations_are_unique_and_tenant_scoped(pg_session: Session) -> None:
+    organization_a, _ = _org_with_owner(pg_session, "Contact Lead Alpha")
+    organization_b, _ = _org_with_owner(pg_session, "Contact Lead Beta")
+    contact_a = Contact(organization_id=organization_a.id, display_name="Contact A")
+    contact_a_two = Contact(organization_id=organization_a.id, display_name="Contact A Two")
+    contact_b = Contact(organization_id=organization_b.id, display_name="Contact B")
+    lead_a = Lead(organization_id=organization_a.id, name="Lead A")
+    lead_a_two = Lead(organization_id=organization_a.id, name="Lead A Two")
+    lead_b = Lead(organization_id=organization_b.id, name="Lead B")
+    pg_session.add_all([contact_a, contact_a_two, contact_b, lead_a, lead_a_two, lead_b])
+    pg_session.commit()
+
+    repository = ContactRepository(pg_session)
+    assert repository.link_to_lead(organization_a.id, contact_a.id, lead_a.id)
+    assert repository.link_to_lead(organization_a.id, contact_a.id, lead_a_two.id)
+    assert repository.link_to_lead(organization_a.id, contact_a_two.id, lead_a.id)
+    assert repository.link_to_lead(organization_a.id, contact_b.id, lead_a.id) is False
+    assert repository.link_to_lead(organization_a.id, contact_a.id, lead_b.id) is False
+    assert repository.link_to_lead(organization_b.id, contact_b.id, lead_b.id)
+    pg_session.commit()
+
+    with pytest.raises(IntegrityError):
+        pg_session.execute(
+            insert(contact_leads).values(
+                organization_id=organization_a.id,
+                contact_id=contact_b.id,
+                lead_id=lead_a.id,
+            )
+        )
+        pg_session.commit()
+    pg_session.rollback()
+
+    with pytest.raises(IntegrityError):
+        pg_session.execute(
+            insert(contact_leads).values(
+                organization_id=organization_a.id,
+                contact_id=contact_a.id,
+                lead_id=lead_b.id,
+            )
+        )
+        pg_session.commit()
+    pg_session.rollback()
+
+    with pytest.raises(IntegrityError):
+        pg_session.execute(
+            insert(contact_leads).values(
+                organization_id=organization_a.id,
+                contact_id=contact_a.id,
+                lead_id=lead_a.id,
+            )
+        )
+        pg_session.commit()
+    pg_session.rollback()

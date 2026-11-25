@@ -21,8 +21,11 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.company import Company
+    from app.models.lead import Lead
     from app.models.organization import Organization
     from app.models.user import User
+
+from app.models.contact_lead import contact_leads
 
 
 class ContactStatus(StrEnum):
@@ -164,6 +167,19 @@ class Contact(Base):
             "and_(Contact.organization_id == foreign(Company.organization_id), "
             "Contact.company_id == foreign(Company.id))"
         ),
+        viewonly=True,
+    )
+    leads: Mapped[list["Lead"]] = relationship(
+        secondary=contact_leads,
+        primaryjoin=(
+            "and_(Contact.organization_id == foreign(contact_leads.c.organization_id), "
+            "Contact.id == foreign(contact_leads.c.contact_id))"
+        ),
+        secondaryjoin=(
+            "and_(Lead.organization_id == foreign(contact_leads.c.organization_id), "
+            "Lead.id == foreign(contact_leads.c.lead_id))"
+        ),
+        back_populates="contacts",
         viewonly=True,
     )
     owner: Mapped["User | None"] = relationship(
