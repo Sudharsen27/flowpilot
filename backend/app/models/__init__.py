@@ -12,7 +12,9 @@ from app.models.activity_event import (
 from app.models.agent import Agent, AgentStatus, AgentType
 from app.models.agent_execution import AgentExecution, AgentExecutionStatus
 from app.models.auth_token import AuthToken, AuthTokenPurpose
+from app.models.company import Company, CompanyLifecycleStatus, CompanySource
 from app.models.company_prospect import CompanyProspect, CompanyProspectStatus, EvidenceQuality
+from app.models.contact import Contact, ContactSource, ContactStatus
 from app.models.deal import Deal, DealStage, DealStageEvent
 from app.models.forecast_snapshot import ForecastSnapshot, ForecastSnapshotPeriod
 from app.models.ideal_customer_profile import IdealCustomerProfile
@@ -51,6 +53,12 @@ __all__ = [
     "AgentStatus",
     "AgentType",
     "CompanyProspect",
+    "Company",
+    "CompanyLifecycleStatus",
+    "CompanySource",
+    "Contact",
+    "ContactSource",
+    "ContactStatus",
     "Deal",
     "DealStage",
     "DealStageEvent",

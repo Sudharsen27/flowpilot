@@ -1,11 +1,13 @@
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ForbiddenError, NotFoundError, UnprocessableError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.agent import EXECUTABLE_AGENT_STATUSES, AgentStatus, AgentType
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.user import User
 from app.repositories.agent_repository import AgentRepository
+from app.repositories.company_repository import CompanyRepository
+from app.repositories.contact_repository import ContactRepository
 from app.repositories.membership_repository import MembershipRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.auth_service import AuthResult, AuthService
@@ -19,6 +21,10 @@ CANNOT_REMOVE_OWNER = "Owner membership cannot be removed."
 ONLY_OWNER_CAN_TRANSFER = "Only the owner can transfer ownership."
 CANNOT_TRANSFER_TO_SELF = "Choose another member to become the owner."
 CANNOT_TRANSFER_TO_OWNER = "That member is already the owner."
+MEMBERSHIP_HAS_OWNED_RECORDS = (
+    "Cannot remove this membership while it owns Companies or Contacts. "
+    "Reassign or unassign ownership first."
+)
 
 
 class OrganizationService:
@@ -27,6 +33,8 @@ class OrganizationService:
         self.organizations = OrganizationRepository(session)
         self.memberships = MembershipRepository(session)
         self.agents = AgentRepository(session)
+        self.companies = CompanyRepository(session)
+        self.contacts = ContactRepository(session)
 
     def get_current(self, organization_id: str) -> Organization:
         organization = self.organizations.get_by_id(organization_id)
@@ -96,6 +104,7 @@ class OrganizationService:
                 raise ForbiddenError("Not allowed to remove this membership")
         else:
             raise ForbiddenError("Not allowed to remove members")
+        self._ensure_no_owned_records(organization_id, target.user_id)
         self.memberships.delete(target)
         self.session.commit()
 
@@ -143,6 +152,7 @@ class OrganizationService:
             raise NotFoundError("Membership not found")
         if actor.role == MembershipRole.OWNER.value:
             raise UnprocessableError(OWNER_CANNOT_LEAVE)
+        self._ensure_no_owned_records(organization_id, actor.user_id)
         self.memberships.delete(actor)
         self.session.commit()
         remaining = self.memberships.list_for_user(user.id)
@@ -154,6 +164,12 @@ class OrganizationService:
             user,
             next_membership.organization_id,
         )
+
+    def _ensure_no_owned_records(self, organization_id: str, user_id: str) -> None:
+        if self.companies.has_owned_by(organization_id, user_id) or self.contacts.has_owned_by(
+            organization_id, user_id
+        ):
+            raise ConflictError(MEMBERSHIP_HAS_OWNED_RECORDS)
 
     def update_website_capture_settings(
         self,

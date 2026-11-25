@@ -407,6 +407,48 @@ def test_matched_reply_uses_body_text_and_does_not_start_a_sales_run(
     assert inbox_item["preview"] == REPLY
 
 
+@pytest.mark.parametrize(
+    "timestamp_offset",
+    [timedelta(0), timedelta(seconds=1)],
+    ids=["timestamp-tie", "newer-generic-activity"],
+)
+def test_inbox_preview_uses_inbound_reply_independent_of_generic_activity(
+    client: TestClient,
+    db: Session,
+    timestamp_offset: timedelta,
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    organization_id = created["organization"]["id"]
+    lead = _create(client, token, email="ada@customer.example", enquiry=ENQUIRY).json()
+    inbound = _email(db, organization_id, lead_id=lead["id"])
+    _override_provider(client, FakeStructuredProvider())
+
+    response = _qualify(client, token, lead["id"], inbound.id)
+    assert response.status_code == 200
+    qualification_activity = _qualified_activities(db, organization_id)[0]
+    db.add(
+        ActivityEvent(
+            id="ffffffff-ffff-ffff-ffff-ffffffffffff",
+            organization_id=organization_id,
+            type=ActivityEventType.SYSTEM_EVENT,
+            actor_type=ActivityActorType.SYSTEM,
+            entity_type=ActivityEntityType.LEAD,
+            entity_id=lead["id"],
+            lead_id=lead["id"],
+            title="Unrelated system activity",
+            summary="An unrelated activity must not replace the message preview.",
+            dedupe_key=f"test:generic_activity:{lead['id']}",
+            occurred_at=qualification_activity.occurred_at + timestamp_offset,
+        )
+    )
+    db.commit()
+
+    listed = client.get("/api/v1/inbox", headers=_headers(token)).json()
+    inbox_item = next(item for item in listed["items"] if item["lead_id"] == lead["id"])
+    assert inbox_item["preview"] == REPLY
+
+
 def test_unmatched_and_other_lead_emails_are_rejected(
     client: TestClient,
     db: Session,

@@ -105,7 +105,11 @@ def test_rules_start_off_and_owner_can_manage(client: TestClient, db: Session) -
     assert stale.json()["revision"] == 2
 
     listed = client.get(BASE, headers=_headers(token))
-    assert [item["id"] for item in listed.json()] == [rule["id"], default.json()["id"]]
+    expected_rules = sorted(
+        (rule, default.json()),
+        key=lambda item: (datetime.fromisoformat(item["created_at"]), item["id"]),
+    )
+    assert [item["id"] for item in listed.json()] == [item["id"] for item in expected_rules]
 
     assert client.delete(f"{BASE}/{rule['id']}", headers=_headers(token)).status_code == 204
     assert client.get(f"{BASE}/{rule['id']}", headers=_headers(token)).status_code == 404

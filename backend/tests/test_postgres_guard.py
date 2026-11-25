@@ -2,8 +2,11 @@ import pytest
 
 from tests.postgres_guard import _enforce_required_postgres, resolve_test_database_url
 
-LOCAL = "postgresql+psycopg://app:app@localhost:5432/app"
-REMOTE = "postgresql://u:p@ep-example.us-east-2.aws.neon.tech/neondb?sslmode=require"
+LOCAL = "postgresql+psycopg://app:app@localhost:5432/flowpilot_pg_tests"
+REMOTE = (
+    "postgresql://u:p@ep-example.us-east-2.aws.neon.tech/"
+    "flowpilot_pg_tests?sslmode=require"
+)
 
 
 def test_unset_url_is_skipped_even_when_database_url_is_set() -> None:
@@ -14,7 +17,11 @@ def test_unset_url_is_skipped_even_when_database_url_is_set() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    [LOCAL, "postgresql://app@127.0.0.1/app", "postgresql+psycopg://app@[::1]:5432/app"],
+    [
+        LOCAL,
+        "postgresql://app@127.0.0.1/flowpilot_pg_tests",
+        "postgresql+psycopg://app@[::1]:5432/flowpilot_pg_tests",
+    ],
 )
 def test_loopback_url_is_accepted(value: str) -> None:
     url, reason = resolve_test_database_url({"TEST_DATABASE_URL": value})
@@ -70,6 +77,14 @@ def test_non_postgres_url_is_rejected(value: str) -> None:
     assert reason
 
 
+def test_non_dedicated_loopback_database_is_rejected() -> None:
+    url, reason = resolve_test_database_url(
+        {"TEST_DATABASE_URL": "postgresql+psycopg://app@localhost:5432/app"}
+    )
+    assert url is None
+    assert reason == "TEST_DATABASE_URL must use the flowpilot_pg_tests database"
+
+
 @pytest.mark.parametrize(
     "reason",
     [
@@ -77,6 +92,7 @@ def test_non_postgres_url_is_rejected(value: str) -> None:
         "TEST_DATABASE_URL is not a valid database URL",
         "TEST_DATABASE_URL is not a PostgreSQL URL",
         "TEST_DATABASE_URL must use a loopback host in required mode",
+        "TEST_DATABASE_URL must use the flowpilot_pg_tests database",
         "PostgreSQL at TEST_DATABASE_URL is not reachable",
     ],
 )

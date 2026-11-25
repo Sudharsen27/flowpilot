@@ -222,6 +222,7 @@ def test_latest_sales_run_summary_omits_bodies(
         due_at=now + timedelta(days=2),
         body_text=FOLLOW_UP_BODY,
         notes="internal notes",
+        sequence=1,
     )
     db.add(follow_up)
     db.flush()

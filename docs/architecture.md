@@ -1,12 +1,20 @@
 # Architecture
 
 Living record of decisions for FlowPilot. Update this file when a decision changes.
+Sections labeled with a Phase or Slice preserve implementation details from that
+stage. Statements about what was not yet available describe that historical
+scope; the current-state sections below describe the present implementation.
+For a concise feature-status summary, see [roadmap.md](roadmap.md).
 
 ## Product
 
-Business operating platform: connect tools, give AI controlled capabilities, automate work, require approval for sensitive actions, and audit everything.
-
-V1 is lead and customer automation. Other agent types reuse the same runtime later.
+FlowPilot is a multi-tenant business platform centered on lead and customer
+operations. The current product includes lead CRM and Sales Agent workflows,
+Company Prospect discovery, deals and forecasting, Activity, Inbox, a
+draft-centric Approval Center, Analytics, Knowledge, workflow rules, and
+outgoing webhooks. AI-generated customer responses require human review before
+an explicit send. Generic webhooks and provider-backed services do not imply
+native integrations with third-party CRMs or communication platforms.
 
 ## Prospect Discovery (Phase 1)
 
@@ -84,9 +92,9 @@ Example response:
 
 The response contains `source: "SYNTHETIC"`, business-shaped fixture results marked `synthetic: true` and `verification_status: "SYNTHETIC_UNVERIFIED"`, deterministic filter-match explanations, `has_more`, and an opaque `next_cursor`. Cursors are HMAC-SHA256 signed using a purpose-derived key from the configured `SECRET_KEY`; they bind the normalized filters, page size, and authenticated organization, expire after 15 minutes by default (`PROSPECT_DISCOVERY_CURSOR_TTL_SECONDS`), and are rejected if malformed, altered, expired, or replayed for different filters, page sizes, or another organization. No provider offset or upstream token is exposed. `PROSPECT_DISCOVERY_MAX_PAGE_SIZE` configures the maximum page size (default 25).
 
-The only adapter is an in-memory fixed synthetic dataset. It performs no network requests and writes no discovery result to the database, CompanyProspect, Lead, activity, workflow, webhook, AI, email, or outreach system. Per-organization request and returned-result budgets default to 30 requests and 250 results per hour (`PROSPECT_DISCOVERY_RATE_LIMIT_MAX`, `PROSPECT_DISCOVERY_RESULT_LIMIT`, and `PROSPECT_DISCOVERY_USAGE_WINDOW_SECONDS`). These counters use a locked in-process sliding window, scoped by organization, and are **not shared across API workers or instances**; deployments requiring globally enforced quotas must provision shared-state infrastructure before relying on these values as a distributed limit.
+The only adapter wired to this synthetic `/search` endpoint is an in-memory fixed dataset. It performs no network requests and writes no discovery result to the database, CompanyProspect, Lead, activity, workflow, webhook, AI, email, or outreach system. Per-organization request and returned-result budgets default to 30 requests and 250 results per hour (`PROSPECT_DISCOVERY_RATE_LIMIT_MAX`, `PROSPECT_DISCOVERY_RESULT_LIMIT`, and `PROSPECT_DISCOVERY_USAGE_WINDOW_SECONDS`). These counters use a locked in-process sliding window, scoped by organization, and are **not shared across API workers or instances**; deployments requiring globally enforced quotas must provision shared-state infrastructure before relying on these values as a distributed limit.
 
-No real business-data provider is enabled in discovery. Licensing approval is not inferred from a setting. A future licensed adapter must implement the provider-independent service interface, be activated only after licensing and security approval are explicitly verified, and continue to use the same authenticated tenant scope, signed pagination, usage controls, and human-reviewed flow. Provider discovery must remain separate from CRM persistence and must not trigger import, lead creation, outreach, or automation.
+No real business-data provider is wired to the synthetic `/search` endpoint. The separately described government search route does not change or select that endpoint's data source. Licensing approval is not inferred from a setting. Any future provider wired into `/search` must implement the provider-independent service interface, be activated only after licensing and security approval are explicitly verified, and continue to use the same authenticated tenant scope, signed pagination, usage controls, and human-reviewed flow. Provider discovery must remain separate from CRM persistence and must not trigger import, lead creation, outreach, or automation.
 
 ### Phase 6.2: Government company-data provider foundation
 
@@ -98,13 +106,13 @@ Live adapter creation is disabled by default. The server-only `ROC_DATA_GOV_IN_A
 
 This integration does not change discovery authentication, RBAC, tenant isolation, synthetic search behavior, or Phase 5 import restrictions. It does not create leads or company prospects, send email, trigger automations, enrich contacts, scrape other sources, or require a migration.
 
-The authenticated frontend route `/prospect-discovery` presents this endpoint as a read-only Discovery Workspace. It uses the existing bearer-token API client and only sends the supported search fields. The response's signed cursor is passed through unchanged. Synthetic badges and filter explanations are not ICP fit scores. Formal fit scoring is currently available only at `POST /api/v1/company-prospects/{prospect_id}/fit-score` for an already persisted CompanyProspect; there is no ephemeral discovery-result scoring API. The workspace therefore does not create temporary CRM rows or calculate a score in the browser. Search results remain ephemeral, and the workspace provides no enabled import, save, lifecycle, or outreach action.
+The authenticated frontend route `/prospect-discovery` presents this endpoint as a read-only Discovery Workspace. It uses the browser API client and session cookie, and only sends the supported search fields. The response's signed cursor is passed through unchanged. Synthetic badges and filter explanations are not ICP fit scores. Formal fit scoring is currently available only at `POST /api/v1/company-prospects/{prospect_id}/fit-score` for an already persisted CompanyProspect; there is no ephemeral discovery-result scoring API. The workspace therefore does not create temporary CRM rows or calculate a score in the browser. Search results remain ephemeral, and the workspace provides no enabled import, save, lifecycle, or outreach action.
 
 ### Human-approved CompanyProspect import foundation (Slice 5)
 
-`POST /api/v1/prospect-discovery/company-prospects/import` is authenticated and organization-scoped, requires `X-Prospect-Import-Confirmed: true`, and is limited to `OWNER` and `ADMIN` memberships. The typed request bounds batches to 1–100 and validates each candidate with the existing CompanyProspect name/domain schema. Client-provided source and verification labels are claims only; they do not establish import eligibility. The endpoint currently returns `409 Conflict` with a per-item `REJECTED / SOURCE_NOT_APPROVED` outcome for every item because discovery has only synthetic, unverified fixtures and no explicitly approved import source. A forged “real” provider or “verified” label does not change that result. It does not call a provider, create CompanyProspect/Lead/Contact/Deal rows, or trigger automation.
+`POST /api/v1/prospect-discovery/company-prospects/import` is authenticated and organization-scoped, requires `X-Prospect-Import-Confirmed: true`, and is limited to `OWNER` and `ADMIN` memberships. The typed request bounds batches to 1–100 and validates each candidate with the existing CompanyProspect name/domain schema. Import requires `PROSPECT_DISCOVERY_APPROVED_IMPORT_SOURCE` to be set and the request's `source` to match it exactly. When the setting is unset (the code default) or does not match, the endpoint returns `409 Conflict` with a per-item `REJECTED / SOURCE_NOT_APPROVED` outcome. The setting is an explicit gate, not independent proof of source provenance or licensing; client-provided source and verification labels alone do not establish eligibility. The current synthetic and government search routes remain separate from this import route.
 
-The Discovery Workspace presents import as unavailable and renders only a disabled action. It does not submit current result data to the import endpoint. CompanyProspect persistence's existing organization-scoped domain normalization, unique index, and `IntegrityError` conflict handling remain in `CompanyProspectService.create`; these are not invoked for discovery results while no trusted eligible source exists. No import success is represented. No migration was necessary. Rejected attempts are returned as safe API outcomes but are not persisted as Activity events: the existing activity entity schema has no CompanyProspect/import entity, and adding an inaccurate event type would require a separate schema/migration decision. Persisted successful imports and their audit semantics must be added only alongside a separately approved, server-trusted data source.
+With an approved source configured, matching confirmed items are created through `CompanyProspectService.create`, which applies the existing organization-scoped domain uniqueness checks and records the normal Company Prospect creation Activity event. The current Discovery Workspace still presents import as unavailable and does not submit search results to this endpoint. Rejected attempts are returned as safe API outcomes and are not persisted as Activity events. No migration was necessary for the import foundation.
 
 ## System shape
 
@@ -130,7 +138,7 @@ AI Runtime
     → AI Runtime
 ```
 
-Only tools registered in `ToolRegistry` may run. Arguments are validated against the tool’s Pydantic schema before `execute()`. The model never writes to the database; tools run through `ToolExecutionService` with server-side tenant context. CRM, WhatsApp, calendar, Slack, webhooks, and other business integrations remain deferred. Approved lead-response **email** sending is a separate human-triggered API (Phase 4E), not a tool.
+Only tools registered in `ToolRegistry` may run. Arguments are validated against the tool’s Pydantic schema before `execute()`. The model never writes to the database; tools run through `ToolExecutionService` with server-side tenant context. FlowPilot's own lead CRM is implemented. External connections are limited to provider-backed services and generic outgoing webhooks; a Slack Incoming Webhook formatter does not provide a native Slack integration. Native third-party CRM, WhatsApp, calendar, and Slack OAuth connectors remain deferred. Approved lead-response **email** sending is a separate human-triggered API (Phase 4E), not a tool.
 
 The model never writes to the database. Tools call application services.
 
@@ -158,8 +166,9 @@ Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `
 - `SECRET_KEY` may use a development default only when `ENVIRONMENT` is `development` or `test`. Other environments require a unique secret of at least 32 characters.
 - Dependencies: `get_current_user`, `get_current_membership`, `get_current_organization`.
 - The frontend waits for `/api/v1/users/me` before rendering product routes. Guests are redirected to `/login`; authenticated users are redirected away from login and registration.
-- Frontend session state preserves the current user, organization, and membership. Roles inform presentation only; the backend remains authoritative for authorization.
-- Browser localStorage is retained only as a development foundation. Production authentication requires a safer session mechanism, such as secure httpOnly cookies, before release.
+- The frontend keeps the current user, organization, membership, and verification state in memory and restores it through `/api/v1/users/me`. The API also returns an access token for non-browser clients; the browser credential is the `flowpilot_session` HTTP-only cookie and is not stored in localStorage.
+- The cookie is host-only, uses `Secure` in production, and defaults to `SameSite=None` in production and `SameSite=Lax` otherwise; `SESSION_COOKIE_SAMESITE` can override the default. Cookie-authenticated unsafe methods require the fixed `X-FlowPilot-Request: 1` CSRF header. Bearer-token clients are supported separately.
+- localStorage is used for UI preferences such as theme and sidebar state, not for the browser authentication token.
 
 ### Repository conventions
 
@@ -169,7 +178,7 @@ Roles: `OWNER`, `ADMIN`, `MEMBER`. Registration creates an organization and an `
 
 ## Safety
 
-Each registered tool declares name, description, input/output schemas, and risk (`LOW` / `MEDIUM` / `HIGH`). `DefaultToolPolicy` allows `LOW` tools and returns `REQUIRE_APPROVAL` for `MEDIUM` and `HIGH`. Tools are not executed on `REQUIRE_APPROVAL` or `DENY`. A full Approvals backend is not in this slice; the decision is recorded on `ToolInvocation`. Policy cannot be bypassed by the model.
+Each registered tool declares name, description, input/output schemas, and risk (`LOW` / `MEDIUM` / `HIGH`). `DefaultToolPolicy` allows `LOW` tools and returns `REQUIRE_APPROVAL` for `MEDIUM` and `HIGH`. Tools are not executed on `REQUIRE_APPROVAL` or `DENY`; the decision is recorded on `ToolInvocation`. The current Approval Center is for lead-response drafts, not tool invocations. There is no general tool-approval resolution and execution-resume flow. Policy cannot be bypassed by the model.
 
 ## AI runtime (Phase 3A)
 
@@ -377,7 +386,41 @@ Three stacked queues, each from existing list APIs (default 20, max 50):
 
 Queue rows omit enquiry, draft body, follow-up body, and provider payloads. Review, send, cancel, and follow-up manage reuse the existing draft dialog, send/cancel confirmations, and follow-up dialog. Mutations are not optimistic; lists refetch after the server response. Organization comes from the JWT. Cross-tenant ids remain 404. Phase 5F added no new AI call and no Activity table. Phase 6A later added `ActivityEvent` as a separate organization timeline.
 
-Command Center Recent activity reads `GET /api/v1/activity`. Inbox, Approvals, Analytics, and conversation history remain placeholders.
+Command Center Recent activity reads `GET /api/v1/activity`. At the time of
+Phase 5F, Inbox, Approvals, Analytics, and conversation history were
+placeholders. They have since been implemented as described below.
+
+## Current Inbox, Approvals, and Analytics
+
+These are separate, organization-scoped workspaces; none replaces the Activity
+timeline or the Sales Agent operations queue above.
+
+### Inbox
+
+`GET /api/v1/inbox` returns a paginated lead-conversation index with filters for
+search, lead status, human-attention requirement, approval requirement,
+conversation state, email status, Sales Run status, follow-up status, and lead
+source. `GET /api/v1/inbox/{lead_id}` returns the conversation detail. This is
+a read model over FlowPilot lead and Sales Agent records, not a general-purpose
+mailbox or third-party email synchronization service. Mutations use the
+existing lead, response-draft, Sales Run, and follow-up APIs.
+
+### Approvals
+
+`GET /api/v1/approvals` is a draft-centric queue for completed lead-response
+drafts, grouped by pending, approved, or rejected review status. Review,
+editing, approval, rejection, and sending use the existing lead response-draft
+and send APIs; approval is not delivery. The queue does not resolve
+`ToolInvocation` records that have a `REQUIRE_APPROVAL` decision.
+
+### Analytics
+
+`GET /api/v1/analytics/summary` provides read-only, organization-scoped
+reporting for 7-, 30-, or 90-day ranges, optionally filtered by lead source.
+It summarizes persisted lead creation, qualification, draft, approval, email,
+reply, human-handoff, and follow-up records, with daily counts and
+qualification outcomes. This is product activity reporting, not a general
+report builder or an execution-trace observability system.
 
 ## Lead workspace (Phase 5G)
 
@@ -524,9 +567,12 @@ Limitation: a crash after the provider accepts a message and before `SENT` is co
 
 Create/list/get/patch plus explicit complete/cancel. `due_at` is timezone-aware UTC. List order is `due_at ASC`, `id ASC` (default 20, max 50). Optional `email_send_id` must be a `SENT` send for the same org and lead. Optimistic `revision` / `expected_revision` returns 409 on stale lifecycle actions. Timestamps on the row remain the source trail. Phase 6A records schedule/reschedule/complete/cancel as Activity events without storing follow-up body.
 
-Due follow-ups are **not** executed automatically. No cron, workers, agent runs, or Resend calls from this domain. Storing `body_text` does not schedule or send mail.
+Creating a follow-up only schedules it; it does not itself execute or send it.
+Automatic execution was added in the later Phase 4G as a separate worker for
+due EMAIL follow-ups. That worker is disabled by default and is described
+below.
 
-`LeadFollowUpExecution` (`lead_follow_ups` vs `lead_follow_up_executions`) is a separate tenant-owned attempt row. Status: `PENDING` → `RUNNING` → `SENT` or `FAILED`. `LeadFollowUp` status is unchanged. Snapshots (`recipient_email`, `sender_email`, `subject`, `body_text`) are frozen per attempt. Unique `(follow_up_id, attempt)`; at most one `PENDING`/`RUNNING` execution per follow-up. Future provider idempotency key shape: `follow-up:{follow_up_id}:attempt:{attempt}`. Claiming uses `SELECT … FOR UPDATE SKIP LOCKED` on PostgreSQL, then commits before any provider call. This is not exactly-once delivery. There is no worker, polling, or send in this slice.
+`LeadFollowUpExecution` (`lead_follow_ups` vs `lead_follow_up_executions`) is a separate tenant-owned attempt row. Status: `PENDING` → `RUNNING` → `SENT` or `FAILED`. `LeadFollowUp` status is unchanged. Snapshots (`recipient_email`, `sender_email`, `subject`, `body_text`) are frozen per attempt. Unique `(follow_up_id, attempt)`; at most one `PENDING`/`RUNNING` execution per follow-up. The Phase 4G worker uses provider idempotency key `follow-up:{follow_up_id}:attempt:{attempt}`. Claiming uses `SELECT … FOR UPDATE SKIP LOCKED` on PostgreSQL, then commits before any provider call. This is not exactly-once delivery. Phase 4F itself had no worker or polling; see the subsequent Phase 4G worker below.
 
 ## Pipeline metrics and forecast (Phase 8, Slice 3)
 
@@ -540,7 +586,7 @@ Deal history (migration `035_deal_history_probability`) records `previous_probab
 
 Open deals carry a `forecast_category`: `PIPELINE`, `BEST_CASE` or `COMMIT`, the seller's confidence, independent of stage and probability. "Closed" is derived from the stage and never stored: a won deal counts as closed revenue and a lost deal is in no category. New open deals default to `PIPELINE`; moving between open stages keeps the category; closing clears it; reopening starts at `PIPELINE` unless the stage request names one. Every role can set it on an open deal through the revision-checked `PATCH /api/v1/deals/{id}` (an explicit null, or any category on a closed deal, is a 422). `deal_stage_events` records `previous_forecast_category` / `new_forecast_category`.
 
-Migration `036_deal_forecast_category` is the expand step of an expand-and-contract change: it adds the nullable column, backfills open deals to `PIPELINE` and checks the allowed values, but does not enforce "open deals have a category, closed deals have none", so the previous release keeps working during a rolling deploy. Reads go through `effective_forecast_category()` (an open NULL reads as `PIPELINE`) and writes repair stale rows. The contract step (migration 037: backfill open NULLs, clear closed rows, add the open-only CHECK) runs only once the 4C release is serving in production.
+Migration `036_deal_forecast_category` added the nullable column, backfilled open deals to `PIPELINE`, and checked allowed values, but did not enforce "open deals have a category, closed deals have none." The planned contract migration `037` has not been added and remains reserved; the current schema therefore retains this compatibility shape. Reads go through `effective_forecast_category()` (an open NULL reads as `PIPELINE`) and writes repair stale rows. The earlier plan to run the contract step after the Phase 8 Slice 4C release is historical, not a record of a migration that has shipped.
 
 `GET /api/v1/pipeline/forecast` adds `category_totals` (one entry per category, fixed order, including empty ones) to every open bucket, and `commit_scenario_amount` = won in horizon + in-horizon `COMMIT` amount, `best_case_scenario_amount` = that + in-horizon `BEST_CASE` amount. Scenarios use full unweighted amounts, are cumulative, and are separate from the probability-weighted projection; category totals regroup the same per-deal cents, so every bucket's categories add up exactly to it.
 
@@ -564,11 +610,11 @@ Forecast accuracy compares what was forecast with what was later won, so forecas
 
 Capture is idempotent per organization, UTC day and granularity: a unique constraint allows one snapshot, a repeat returns the stored one unchanged (even if deals changed since), and a concurrent capture that loses the insert race returns the winner's. Snapshots are append-only and never updated. Each period row repeats its snapshot's `organization_id` under a composite foreign key, so a period cannot belong to another organization's snapshot; deleting an organization deletes its snapshots. Capture only reads deals and targets.
 
-Migration `038_forecast_snapshots` adds both tables and changes nothing existing. It revises `036` directly: `037` stays reserved for the 4C contract step, which will revise `038` when it ships, keeping one Alembic head. The daily worker (4E-2, below) captures snapshots; the accuracy API (4E-3, below) reads them.
+Migration `038_forecast_snapshots` adds both tables and changes nothing existing. It revises `036` directly because `037` was reserved for the forecast-category contract step. That contract revision is not present in the current migration chain; any future revision must extend the current Alembic head to preserve a single head. The daily worker (4E-2, below) captures snapshots; the accuracy API (4E-3, below) reads them.
 
 ## Forecast snapshot worker (Phase 8, Slice 4E-2)
 
-`ForecastSnapshotWorker` runs in `python -m app.worker`, behind `FORECAST_SNAPSHOT_WORKER_ENABLED` (off by default), alone or in the combined loop with the other workers, or once per process through the one-off runner below. The API never starts it. There is no scheduler and no wall-clock trigger: each check asks which organizations have no monthly snapshot for today (UTC) and captures them with `ForecastSnapshotService.capture()`, so it catches up by itself after downtime or a restart. No new dependency, lock or migration is involved.
+`ForecastSnapshotWorker` runs in `python -m app.worker`, behind `FORECAST_SNAPSHOT_WORKER_ENABLED` (off by default), alone or in the combined loop with the other workers. The API never starts it. The worker itself has no wall-clock trigger: each poll asks which organizations have no monthly snapshot for today (UTC) and captures them with `ForecastSnapshotService.capture()`, so it catches up after downtime or a restart. A separate scheduled GitHub Actions workflow also invokes the one-off runner described below. No new dependency, lock or migration is involved.
 
 - **One timestamp per batch.** Each batch takes one UTC `capture_at` and uses it for the snapshot day, the lookup and every capture, so a batch that runs past midnight files every snapshot under the day it started.
 - **Lookup.** An anti-join of `organizations` against today's `forecast_snapshots` (`FORECAST_SNAPSHOT_WORKER_BATCH_SIZE`, default 100, in id order). It locks no rows. Organization ids come only from the database, and each capture uses its own session, closed afterwards.
@@ -598,37 +644,73 @@ The authenticated route `/forecast/accuracy`, linked from the Forecast page (no 
 
 ## LLM providers
 
-`AIProvider` (text generation) is the current runtime interface. `EmbeddingProvider` is optional for knowledge retrieval (`EMBEDDING_PROVIDER_ENABLED`); when unset, `context_for_ai` keeps lexical overlap. Embeddings are stored as JSON float arrays on knowledge rows (portable; not requiring pgvector for the MVP).
+Text generation uses the `AIProvider` interface, with OpenAI and Groq
+implementations selected through `AI_PROVIDER` and their corresponding model
+and credential settings.
+
+Knowledge retrieval can use the optional `EmbeddingProvider`
+(`EMBEDDING_PROVIDER_ENABLED`, off by default). Embeddings are stored as JSON
+float arrays on knowledge rows. When embedding retrieval is disabled or
+unavailable, retrieval falls back to lexical token overlap. This implementation
+does not require pgvector.
 
 ## Workflows
 
-Versioned graphs (nodes, edges, trigger) plus execution records in Postgres. V1 will interpret graphs in-process. A durable orchestrator can replace the runner later without rewriting the domain model.
+Workflows are organization-scoped rules and run records stored in PostgreSQL,
+not versioned graphs. Rules support the `LEAD_CREATED`,
+`INBOUND_REPLY_RECEIVED`, and `HUMAN_ATTENTION_REQUIRED` triggers, with
+trigger-validated `ANALYZE_LEAD`, `DRAFT_RESPONSE`, and `CREATE_FOLLOW_UP`
+actions. The polling worker claims queued runs and executes the supported
+action in-process. The workflow worker is separate from the API and disabled
+by default. Workflow actions do not send email.
 
 ## Knowledge
 
-Ingest → extract → chunk → embed → pgvector → retrieve → context. Users see Knowledge, not vector internals.
+Knowledge is managed as organization-scoped text entries with category,
+active/archive status, and revision history. Active entries marked for AI use
+are selected as context within fixed entry and character budgets. Retrieval
+uses lexical overlap unless optional embeddings are available; embedding
+vectors are JSON values on the entries and are ranked in the application.
+There is no document upload, extraction, chunking, or pgvector-backed pipeline.
 
 ## Observability
 
-Metrics come from real execution traces (latency, tokens, cost, approvals, outcomes). No placeholder analytics.
+The Analytics summary is derived from persisted lead, qualification, draft,
+email, reply, handoff, and follow-up records. It is not a distributed tracing
+or execution-metrics system and does not provide latency, token, or cost
+telemetry.
 
 ## Local infrastructure
 
-`infra/docker-compose.yml` runs PostgreSQL 16 with pgvector, and Redis. Application containers are not part of the foundation scaffold.
+`infra/docker-compose.yml` runs PostgreSQL 16 with the pgvector extension and
+Redis. The current Knowledge retrieval implementation stores embeddings as
+JSON and does not use pgvector. Redis is available in local Compose but is not
+the production worker queue; application containers are not part of this
+infrastructure scaffold.
 
 ## Phase 1 (tenant and identity)
 
 PostgreSQL/SQLAlchemy/Alembic, Organization/User/Membership, Argon2 passwords, JWT auth, tenant-safe membership lookups, register/login/me/current-org APIs, and tests including tenant isolation. No agents, leads, RAG, or workflows.
 
-## Phase 2, Slice 1 (authenticated app shell)
+## Phase 2, Slice 1 (historical authenticated app shell implementation)
 
-Product routes are guarded by a client-side authentication boundary that waits for session restoration before rendering the shell. Login and registration are guest-only routes. The session preserves user, organization, and membership context; logout clears both in-memory and stored authentication state before redirecting to login. This remains a development-only localStorage session architecture.
+Product routes are guarded by a client-side authentication boundary that waits
+for session restoration before rendering the shell. Login and registration
+are guest-only routes. This phase initially used a localStorage-based session
+foundation. The current browser session instead uses the HTTP-only
+`flowpilot_session` cookie described under **Authentication** above; this
+phase-specific account of the initial implementation is not the current
+authentication design.
 
-## Phase 2, Slice 3 (global application chrome)
+## Phase 2, Slice 3 (historical global application chrome implementation)
 
 Every authenticated route uses one `AppShell`: a persistent grouped sidebar on desktop, the existing focus-managed navigation drawer below desktop, an authenticated top bar, and a shared responsive `PageContainer`. Navigation metadata and nested-route active matching live in `lib/navigation.ts`.
 
-The top bar reads the current organization, user, and membership role from `AuthProvider`. Its user menu delegates logout to the existing auth mechanism. Global search is an honest UI entry point only; product search, notifications, organization switching, and business data remain outside the shell.
+The top bar reads the current organization, user, and membership role from
+`AuthProvider`. The user menu supports organization switching and logout. The
+top bar's command launcher filters page destinations; it does not search leads
+or conversations. A theme toggle is also available in the top bar. The shell
+does not provide a notification center.
 
 ## Phase 3A (AI runtime foundation)
 
@@ -672,7 +754,10 @@ Humans send an approved draft by email. Sending is an explicit external side eff
 
 ## Phase 4F (lead follow-up scheduling)
 
-Humans create, list, reschedule, complete, and cancel follow-ups. Overdue is derived. EMAIL follow-ups require stored `body_text`. Due follow-ups are not sent or executed automatically.
+At the end of Phase 4F, humans could create, list, reschedule, complete, and
+cancel follow-ups. Overdue was derived, EMAIL follow-ups required stored
+`body_text`, and the follow-up itself did not trigger a send. Phase 4G later
+added the separate execution worker described above.
 
 ## Phase 4G (automated follow-up execution)
 
@@ -701,7 +786,17 @@ LeadFollowUp (PENDING, EMAIL_FOLLOW_UP, due_at <= now)
 
 ## Design system (Phase 5A)
 
-FlowPilot UI uses Tailwind v4 tokens in `frontend/app/globals.css`, shadcn/ui, and Lucide. Domain statuses map through `frontend/lib/status.ts` onto one `StatusBadge` semantic language; wrappers keep domain labels. AI origin is marked with `AiBadge` (Generated / Suggested / Analysis / Processing / Agent), not glow or decorative effects. Confirm destructive or irreversible actions with `ConfirmDialog`. Dark-mode tokens exist for future theming; there is no theme toggle yet.
+The Phase 5A design system established Tailwind v4 tokens, shadcn/ui, and
+Lucide. Domain statuses map through `frontend/lib/status.ts` onto one
+`StatusBadge` semantic language; wrappers keep domain labels. AI origin is
+marked with `AiBadge` (Generated / Suggested / Analysis / Processing / Agent),
+and destructive or irreversible actions use `ConfirmDialog`.
+
+The current app shell includes a `ThemeToggle`. The initial theme is selected
+from the saved `flowpilot-theme` preference or the operating-system preference;
+the toggle updates the document theme and persists the preference in
+localStorage. The earlier statement that no theme toggle existed described the
+Phase 5A state only.
 
 ## Phase 6A (organization activity)
 
@@ -710,3 +805,11 @@ See **Organization activity (Phase 6A)** above. Activity is a user-facing operat
 ## Phase 6E.3.2 (lead-linked execution outcomes)
 
 See **Lead-linked execution outcomes (Phase 6E.3.2)** above. Lead-scoped reads compose existing `AgentExecution` rows. They do not start a run or create a second activity stream.
+
+## Companies API (Phase 10, Slice 3)
+
+The authenticated `/api/v1/companies` API creates, lists, reads, updates, archives, and restores tenant-scoped Companies. Organization identity comes only from the authenticated membership. OWNER and ADMIN can manage any Company in their organization; MEMBER can view all and edit only Companies they own. Members own their newly created Companies; manager-created Companies default to the creator unless an owner is supplied. Owner assignments must reference a membership in the same organization. `source` is server-controlled and new API-created Companies use `MANUAL`.
+
+Company updates and archive/restore actions require `expected_revision` and lock the organization-scoped row. A stale revision returns `409` with `current_revision`; unchanged operations are idempotent and do not increment the revision. Archiving sets `archived_at` without deleting the Company or changing linked Contacts. Normal lists exclude archived rows; `include_archived=true` includes both archived and active rows. Archived Companies cannot be changed through PATCH until restored.
+
+Company listing supports escaped case-insensitive search over name and website domain, lifecycle and owner filters, and bounded `limit`/`offset` pagination ordered by `created_at DESC, id DESC`. Duplicate website domains are allowed. Company lifecycle values use the existing enum without additional transition restrictions. Contact CRUD, Company activity history, and physical deletion are not part of this slice; no database migration is required.

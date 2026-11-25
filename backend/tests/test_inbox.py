@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +13,9 @@ from app.models.activity_event import (
     ActivityEntityType,
     ActivityEventType,
 )
+from app.models.inbound_email import InboundEmail, InboundEmailStatus
 from app.models.lead import Lead, LeadSource, LeadStatus
+from app.models.lead_follow_up import LeadFollowUp
 from app.models.lead_follow_up_execution import LeadFollowUpExecutionStatus
 from app.services.activity_service import ActivityService
 from app.services.lead_follow_up_execution_service import LeadFollowUpExecutionService
@@ -869,11 +871,13 @@ def test_inbox_closed_via_completed_sales_run_and_pending_follow_up_blocks(
 
     older = _create_follow_up(client, token, lead["id"], notes="older pending")
     newer = _create_follow_up(client, token, lead["id"], notes="newer pending")
-    client.post(
+    completed_follow_up = client.post(
         f"/api/v1/leads/{lead['id']}/follow-ups/{newer['id']}/complete",
         json={"expected_revision": newer["revision"]},
         headers=_headers(token),
     )
+    assert completed_follow_up.status_code == 200, completed_follow_up.text
+    assert completed_follow_up.json()["status"] == "COMPLETED"
     blocked = next(
         item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
     )
@@ -893,6 +897,45 @@ def test_inbox_closed_via_completed_sales_run_and_pending_follow_up_blocks(
         if item["lead_id"] == unqualified["id"]
     )
     assert unqualified_item["conversation_state"] == "CLOSED"
+
+
+def test_inbox_latest_follow_up_uses_sequence_when_created_at_matches(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    lead = _create(client, token, email="sequence@example.com", name="Sequence Lead").json()
+    generated_ids = iter(
+        (
+            UUID("ffffffff-ffff-4fff-8fff-ffffffffffff"),
+            UUID("00000000-0000-4000-8000-000000000001"),
+        )
+    )
+    monkeypatch.setattr("app.models.lead_follow_up.uuid4", lambda: next(generated_ids))
+
+    older = _create_follow_up(client, token, lead["id"], notes="older")
+    newer = _create_follow_up(client, token, lead["id"], notes="newer")
+    assert older["id"] > newer["id"]
+
+    tied_created_at = datetime(2026, 11, 25, 10, 0, tzinfo=UTC)
+    for follow_up_id in (older["id"], newer["id"]):
+        row = db.get(LeadFollowUp, follow_up_id)
+        assert row is not None
+        row.created_at = tied_created_at
+    db.commit()
+
+    completed = client.post(
+        f"/api/v1/leads/{lead['id']}/follow-ups/{newer['id']}/complete",
+        json={"expected_revision": newer["revision"]},
+        headers=_headers(token),
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "COMPLETED"
+
+    inbox_item = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert inbox_item["latest_follow_up_status"] == "COMPLETED"
 
 
 def test_inbox_preview_priority_and_truncation(
@@ -939,6 +982,50 @@ def test_inbox_preview_priority_and_truncation(
     assert with_send["preview"] == with_draft["preview"]
     assert "sk-" not in (with_send["preview"] or "")
     assert "ProviderError" not in (with_send["preview"] or "")
+
+
+def test_inbox_preview_uses_newer_sent_message_after_inbound_reply(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _email_settings(monkeypatch)
+    auth = _auth(client, email="preview-order@example.com")
+    organization_id = auth["organization"]["id"]
+    lead = _create(
+        client,
+        auth["access_token"],
+        email="customer@example.com",
+        enquiry=ENQUIRY,
+    ).json()
+    db.add(
+        InboundEmail(
+            organization_id=organization_id,
+            lead_id=lead["id"],
+            provider="resend",
+            provider_email_id="preview-order-inbound",
+            from_email="customer@example.com",
+            to_addresses="[]",
+            cc_addresses="[]",
+            bcc_addresses="[]",
+            subject="Re: Your enquiry",
+            body_text="Older inbound reply.",
+            status=InboundEmailStatus.RECEIVED,
+            received_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+    )
+    db.commit()
+
+    sent = _approve_and_send(client, auth["access_token"], lead)
+    inbox_item = next(
+        item
+        for item in _inbox(client, auth["access_token"]).json()["items"]
+        if item["lead_id"] == lead["id"]
+    )
+
+    assert sent["status"] == "SENT"
+    assert inbox_item["preview"].startswith(sent["body_text"][:40])
+    assert inbox_item["preview"] != "Older inbound reply."
 
 
 def test_inbox_counts_respect_search_filter(client: TestClient) -> None:

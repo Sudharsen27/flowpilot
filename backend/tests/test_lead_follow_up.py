@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -7,9 +8,10 @@ from sqlalchemy.orm import Session
 from app.models.activity_event import ActivityActorType, ActivityEvent, ActivityEventType
 from app.models.agent_execution import AgentExecution
 from app.models.lead import Lead
-from app.models.lead_follow_up import LeadFollowUp
+from app.models.lead_follow_up import LeadFollowUp, LeadFollowUpStatus, LeadFollowUpType
 from app.models.membership import MembershipRole
 from app.models.tool_invocation import ToolInvocation
+from app.repositories.lead_follow_up_repository import LeadFollowUpRepository
 from tests.test_agent_api import _add_org_member
 from tests.test_agent_runtime import _headers
 from tests.test_lead_email_send import (
@@ -44,6 +46,40 @@ def _create_follow_up(
     response = client.post(_path(lead_id), json=body, headers=_headers(token))
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_repository_retries_sequence_conflict(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = _auth(client)
+    organization_id = created["organization"]["id"]
+    lead = _create(client, created["access_token"]).json()
+    _create_follow_up(client, created["access_token"], lead["id"])
+
+    repository = LeadFollowUpRepository(db)
+    calls = {"count": 0}
+    real_next = repository._next_sequence
+
+    def collide_once(org_id: str, lead_id: str) -> int:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return 1
+        return real_next(org_id, lead_id)
+
+    monkeypatch.setattr(repository, "_next_sequence", collide_once)
+    follow_up = LeadFollowUp(
+        organization_id=organization_id,
+        lead_id=lead["id"],
+        type=LeadFollowUpType.MANUAL_FOLLOW_UP,
+        status=LeadFollowUpStatus.PENDING,
+        due_at=datetime.now(UTC) + timedelta(days=1),
+        sequence=0,
+    )
+    repository.add(follow_up)
+    db.commit()
+
+    assert calls["count"] == 2
+    assert follow_up.sequence == 2
 
 
 def test_unauthenticated_follow_ups_are_rejected(client: TestClient) -> None:

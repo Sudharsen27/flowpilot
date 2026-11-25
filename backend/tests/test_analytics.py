@@ -144,6 +144,7 @@ def _seed_activity(db: Session, lead: Lead, *, at: datetime = NOW) -> None:
             status=LeadFollowUpStatus.COMPLETED,
             due_at=at,
             completed_at=at,
+            sequence=1,
         )
     )
 

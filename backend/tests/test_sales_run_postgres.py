@@ -390,6 +390,7 @@ def test_follow_up_id_unique_across_sales_runs(
             due_at=now + timedelta(days=3),
             body_text="Checking in.",
             revision=1,
+            sequence=1,
         )
         session.add(follow_up)
         session.flush()

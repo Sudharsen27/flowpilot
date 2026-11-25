@@ -40,6 +40,12 @@ class LeadFollowUp(Base):
     __tablename__ = "lead_follow_ups"
     __table_args__ = (
         UniqueConstraint("organization_id", "id", name="uq_lead_follow_ups_organization_id"),
+        UniqueConstraint(
+            "organization_id",
+            "lead_id",
+            "sequence",
+            name="uq_lead_follow_ups_organization_lead_sequence",
+        ),
         ForeignKeyConstraint(
             ["organization_id", "lead_id"],
             ["leads.organization_id", "leads.id"],
@@ -61,6 +67,7 @@ class LeadFollowUp(Base):
             name="ck_lead_follow_ups_type",
         ),
         CheckConstraint("revision >= 1", name="ck_lead_follow_ups_revision"),
+        CheckConstraint("sequence >= 1", name="ck_lead_follow_ups_sequence_positive"),
         Index(
             "ix_lead_follow_ups_organization_id_lead_id_due_at_id",
             "organization_id",
@@ -108,6 +115,7 @@ class LeadFollowUp(Base):
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     body_text: Mapped[str | None] = mapped_column(String(8000), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

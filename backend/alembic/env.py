@@ -15,7 +15,13 @@ from app.models import (
     AuthPasswordResetEvent,
     AuthToken,
     AuthVerificationEvent,
+    Company,
+    CompanyLifecycleStatus,
     CompanyProspect,
+    CompanySource,
+    Contact,
+    ContactSource,
+    ContactStatus,
     IdealCustomerProfile,
     InboundEmail,
     Lead,
@@ -38,9 +44,15 @@ assert (
     and AuthPasswordResetEvent
     and AuthToken
     and AuthVerificationEvent
+    and Company
+    and CompanyLifecycleStatus
+    and CompanySource
     and Agent
     and AgentExecution
     and CompanyProspect
+    and Contact
+    and ContactSource
+    and ContactStatus
     and InboundEmail
     and IdealCustomerProfile
     and Lead

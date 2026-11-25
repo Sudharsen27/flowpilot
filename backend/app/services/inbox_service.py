@@ -420,12 +420,7 @@ class InboxService:
         follow_ups = self.follow_ups.latest_for_leads(organization_id, lead_ids)
         pending_follow_ups = self.follow_ups.pending_lead_ids(organization_id, lead_ids)
         activities = self.events.latest_for_leads(organization_id, lead_ids)
-        reply_ids = [
-            email_id
-            for activity in activities.values()
-            if (email_id := _inbound_email_id(activity)) is not None
-        ]
-        reply_emails = self.inbound_emails.get_by_ids(organization_id, reply_ids)
+        latest_replies = self.inbound_emails.latest_with_body_for_leads(organization_id, lead_ids)
 
         run_send_ids = [row.email_send_id for row in runs.values() if row.email_send_id]
         run_follow_ids = [row.follow_up_id for row in runs.values() if row.follow_up_id]
@@ -473,7 +468,7 @@ class InboxService:
                     ActivityEventType(activity.type) if activity is not None else None
                 ),
                 last_activity_title=activity.title if activity is not None else None,
-                preview=self._item_preview(lead, draft, send, activity, reply_emails),
+                preview=self._item_preview(lead, draft, send, latest_replies.get(lead.id)),
                 latest_draft=_draft_summary(draft),
                 latest_email_status=(
                     LeadEmailSendStatus(send.status).value if send is not None else None
@@ -489,18 +484,18 @@ class InboxService:
         lead: Lead,
         draft: LeadResponseDraft | None,
         send: LeadEmailSend | None,
-        activity: ActivityEvent | None,
-        reply_emails: dict[str, InboundEmail],
+        inbound: InboundEmail | None,
     ) -> str | None:
-        if activity is not None:
-            email_id = _inbound_email_id(activity)
-            inbound = reply_emails.get(email_id) if email_id is not None else None
+        if inbound is not None and inbound.lead_id == lead.id and inbound.body_text:
             if (
-                inbound is not None
-                and inbound.lead_id == lead.id
-                and inbound.body_text
+                send is not None
+                and send.status == LeadEmailSendStatus.SENT
+                and send.body_text
+                and send.completed_at is not None
+                and send.completed_at > inbound.received_at
             ):
-                return _preview(inbound.body_text)
+                return _preview(send.body_text)
+            return _preview(inbound.body_text)
         if send is not None and send.body_text:
             return _preview(send.body_text)
         if draft is not None and draft.current_response:

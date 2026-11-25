@@ -92,6 +92,7 @@ def _seed_due_follow_up(
             due_at=PAST,
             body_text="Checking in on your enquiry.",
             revision=1,
+            sequence=1,
         )
         session.add(follow_up)
         session.commit()

@@ -6,6 +6,7 @@ from app.api.v1.agents import router as agents_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.approvals import router as approvals_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.companies import router as companies_router
 from app.api.v1.company_prospects import router as company_prospects_router
 from app.api.v1.contact import router as contact_router
 from app.api.v1.deals import router as deals_router
@@ -40,6 +41,7 @@ api_router.include_router(inbox_router)
 api_router.include_router(approvals_router)
 api_router.include_router(public_enquiries_router)
 api_router.include_router(contact_router)
+api_router.include_router(companies_router)
 api_router.include_router(company_prospects_router)
 api_router.include_router(deals_router)
 api_router.include_router(sales_targets_router)

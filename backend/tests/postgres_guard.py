@@ -48,6 +48,8 @@ def resolve_test_database_url(environ: Mapping[str, str]) -> tuple[str | None, s
             f"{TEST_DATABASE_URL_ENV} is not a loopback host; "
             f"set {ALLOW_REMOTE_TEST_DATABASE_ENV}=1 to use a remote test database"
         )
+    if parsed.database != "flowpilot_pg_tests":
+        return None, f"{TEST_DATABASE_URL_ENV} must use the flowpilot_pg_tests database"
     return url, ""
 
 

@@ -2,10 +2,13 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password
+from app.models.company import Company
+from app.models.contact import Contact
 from app.models.membership import Membership, MembershipRole
 from app.models.user import User
 from app.services.organization_service import (
@@ -13,6 +16,7 @@ from app.services.organization_service import (
     CANNOT_REMOVE_OWNER,
     CANNOT_REMOVE_SELF,
     CANNOT_TRANSFER_TO_SELF,
+    MEMBERSHIP_HAS_OWNED_RECORDS,
     ONLY_OWNER_CAN_TRANSFER,
     OWNER_CANNOT_LEAVE,
 )
@@ -34,6 +38,32 @@ def _member_id(client: TestClient, token: str, email: str) -> str:
         if row["user"]["email"] == email:
             return row["membership_id"]
     raise AssertionError(f"member {email} not found")
+
+
+def _add_owned_record(
+    db: Session,
+    *,
+    organization_id: str,
+    user_id: str,
+    record_type: str,
+) -> None:
+    if record_type == "company":
+        db.add(
+            Company(
+                organization_id=organization_id,
+                owner_user_id=user_id,
+                name="Owned Company",
+            )
+        )
+    else:
+        db.add(
+            Contact(
+                organization_id=organization_id,
+                owner_user_id=user_id,
+                display_name="Owned Contact",
+            )
+        )
+    db.commit()
 
 
 def _add_existing_user_to_org(
@@ -211,11 +241,68 @@ def test_owner_and_admin_remove_rules(client: TestClient, db: Session) -> None:
     )
 
 
+@pytest.mark.parametrize("record_type", ("company", "contact"))
+def test_admin_cannot_remove_member_who_owns_records(
+    client: TestClient,
+    db: Session,
+    record_type: str,
+) -> None:
+    owner = register_verified(client)
+    organization_id = owner["organization"]["id"]
+    admin_token = _add_org_member(
+        db, organization_id, email="ownership-admin@example.com", role=MembershipRole.ADMIN
+    )
+    _add_org_member(
+        db, organization_id, email="record-owner@example.com", role=MembershipRole.MEMBER
+    )
+    membership_id = _member_id(client, owner["access_token"], "record-owner@example.com")
+    member = db.query(Membership).filter_by(id=membership_id).one()
+    _add_owned_record(
+        db,
+        organization_id=organization_id,
+        user_id=member.user_id,
+        record_type=record_type,
+    )
+
+    response = client.delete(f"{MEMBERS}/{membership_id}", headers=_headers(admin_token))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == MEMBERSHIP_HAS_OWNED_RECORDS
+    assert db.query(Membership).filter_by(id=membership_id).one() is not None
+
+
 def test_owner_cannot_leave(client: TestClient) -> None:
     owner = register_verified(client)
     response = client.post(LEAVE, headers=_headers(owner["access_token"]))
     assert response.status_code == 422
     assert response.json()["detail"] == OWNER_CANNOT_LEAVE
+
+
+@pytest.mark.parametrize("record_type", ("company", "contact"))
+def test_member_cannot_leave_while_owning_records(
+    client: TestClient,
+    db: Session,
+    record_type: str,
+) -> None:
+    owner = register_verified(client)
+    organization_id = owner["organization"]["id"]
+    member_token = _add_org_member(
+        db, organization_id, email="leaving-member@example.com", role=MembershipRole.MEMBER
+    )
+    membership_id = _member_id(client, owner["access_token"], "leaving-member@example.com")
+    member = db.query(Membership).filter_by(id=membership_id).one()
+    _add_owned_record(
+        db,
+        organization_id=organization_id,
+        user_id=member.user_id,
+        record_type=record_type,
+    )
+
+    response = client.post(LEAVE, headers=_headers(member_token))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == MEMBERSHIP_HAS_OWNED_RECORDS
+    assert db.query(Membership).filter_by(id=membership_id).one() is not None
 
 
 def test_leave_last_organization_clears_session(client: TestClient, db: Session) -> None:
