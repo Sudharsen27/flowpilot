@@ -306,8 +306,18 @@ def test_contact_lead_relationships_are_many_to_many_and_tenant_scoped(db: Sessi
         organization_id=other_organization.id,
         display_name="Foreign Contact",
     )
-    lead_one = Lead(organization_id=organization.id, name="Lead One")
-    lead_two = Lead(organization_id=organization.id, name="Lead Two")
+    lead_one = Lead(
+        id="00000000-0000-0000-0000-000000000001",
+        organization_id=organization.id,
+        name="Lead One",
+        created_at=datetime(2026, 1, 1),
+    )
+    lead_two = Lead(
+        id="00000000-0000-0000-0000-000000000002",
+        organization_id=organization.id,
+        name="Lead Two",
+        created_at=datetime(2026, 1, 1),
+    )
     foreign_lead = Lead(organization_id=other_organization.id, name="Foreign Lead")
     db.add_all(
         [
@@ -329,9 +339,38 @@ def test_contact_lead_relationships_are_many_to_many_and_tenant_scoped(db: Sessi
     assert not repository.link_to_lead(organization.id, foreign_contact.id, lead_one.id)
     assert not repository.link_to_lead(organization.id, contact_one.id, lead_one.id)
 
-    assert {lead.id for lead in repository.list_leads_for_contact(
-        organization.id, contact_one.id
-    )} == {lead_one.id, lead_two.id}
+    lead_page, lead_total = repository.list_leads_for_contact(
+        organization.id,
+        contact_one.id,
+        limit=1,
+        offset=0,
+    )
+    assert lead_total == 2
+    assert [lead.id for lead in lead_page] == [lead_two.id]
+    second_lead_page, second_lead_total = repository.list_leads_for_contact(
+        organization.id,
+        contact_one.id,
+        limit=1,
+        offset=1,
+    )
+    assert second_lead_total == 2
+    assert [lead.id for lead in second_lead_page] == [lead_one.id]
+    foreign_lead_page, foreign_lead_total = repository.list_leads_for_contact(
+        organization.id,
+        foreign_contact.id,
+        limit=10,
+        offset=0,
+    )
+    assert foreign_lead_page == []
+    assert foreign_lead_total == 0
+    other_tenant_page, other_tenant_total = repository.list_leads_for_contact(
+        other_organization.id,
+        contact_one.id,
+        limit=10,
+        offset=0,
+    )
+    assert other_tenant_page == []
+    assert other_tenant_total == 0
     assert {contact.id for contact in repository.list_contacts_for_lead(
         organization.id, lead_one.id
     )} == {contact_one.id, contact_two.id}

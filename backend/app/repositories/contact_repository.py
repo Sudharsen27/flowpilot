@@ -103,8 +103,25 @@ class ContactRepository:
         )
         return True
 
-    def list_leads_for_contact(self, organization_id: str, contact_id: str) -> list[Lead]:
-        return list(
+    def list_leads_for_contact(
+        self,
+        organization_id: str,
+        contact_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Lead], int]:
+        conditions = [
+            contact_leads.c.organization_id == organization_id,
+            contact_leads.c.contact_id == contact_id,
+        ]
+        total = int(
+            self.session.scalar(
+                select(func.count()).select_from(contact_leads).where(*conditions)
+            )
+            or 0
+        )
+        leads = list(
             self.session.scalars(
                 select(Lead)
                 .join(
@@ -113,12 +130,15 @@ class ContactRepository:
                     & (contact_leads.c.lead_id == Lead.id),
                 )
                 .where(
-                    contact_leads.c.organization_id == organization_id,
-                    contact_leads.c.contact_id == contact_id,
+                    *conditions,
+                    Lead.organization_id == organization_id,
                 )
                 .order_by(Lead.created_at.desc(), Lead.id.desc())
+                .limit(limit)
+                .offset(offset)
             )
         )
+        return leads, total
 
     def list_contacts_for_lead(self, organization_id: str, lead_id: str) -> list[Contact]:
         return list(
