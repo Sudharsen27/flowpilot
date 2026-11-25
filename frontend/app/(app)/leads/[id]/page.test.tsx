@@ -6,6 +6,8 @@ import LeadWorkspacePage from "@/app/(app)/leads/[id]/page";
 import { ApiError } from "@/lib/api/client";
 import { getAgents } from "@/lib/api/agents";
 import { getInboxConversation } from "@/lib/api/inbox";
+import { getCrmCompany } from "@/lib/api/crm-companies";
+import { listCrmContacts } from "@/lib/api/crm-contacts";
 import {
   getLead,
   getLeadFollowUps,
@@ -46,6 +48,15 @@ vi.mock("@/lib/api/inbox", () => ({
   getInboxConversation: vi.fn(),
 }));
 
+vi.mock("@/lib/api/crm-contacts", () => ({
+  listCrmContacts: vi.fn(),
+  updateCrmContactLeadLink: vi.fn(),
+}));
+
+vi.mock("@/lib/api/crm-companies", () => ({
+  getCrmCompany: vi.fn(),
+}));
+
 vi.mock("@/lib/api/leads", () => ({
   getLead: vi.fn(),
   resolveHumanAttention: vi.fn(),
@@ -84,6 +95,8 @@ const getLeadQualificationMock = vi.mocked(getLeadQualification);
 const qualifyLeadMock = vi.mocked(qualifyLead);
 const getLeadFollowUpMock = vi.mocked(getLeadFollowUp);
 const getInboxConversationMock = vi.mocked(getInboxConversation);
+const listCrmContactsMock = vi.mocked(listCrmContacts);
+const getCrmCompanyMock = vi.mocked(getCrmCompany);
 
 const lead: Lead = {
   id: "lead-1",
@@ -206,10 +219,18 @@ describe("Lead workspace", () => {
     qualifyLeadMock.mockReset();
     getLeadFollowUpMock.mockReset();
     getInboxConversationMock.mockReset();
+    listCrmContactsMock.mockReset();
+    getCrmCompanyMock.mockReset();
     getLeadMock.mockResolvedValue(lead);
     getAgentsMock.mockResolvedValue([salesAgent]);
     getSalesRunMock.mockResolvedValue(run());
     getInboxConversationMock.mockResolvedValue(emptyConversation());
+    listCrmContactsMock.mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      total: 0,
+    });
     listLeadSalesRunsMock.mockResolvedValue({
       items: [],
       limit: 20,

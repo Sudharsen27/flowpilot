@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Inbox, Mail, Phone, UserRound } from "lucide-react";
 
 import { DetailRow } from "@/components/data-display/detail-row";
+import { CrmContactAssociations } from "@/components/leads/crm-contact-associations";
 import { LeadStatusBadge } from "@/components/leads/lead-status-badge";
 import { LeadFitScorePanel } from "@/components/leads/lead-fit-score";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -139,6 +140,8 @@ export function Customer360Profile({
           />
         </dl>
       </div>
+
+      <CrmContactAssociations key={lead.id} leadId={lead.id} />
 
       <div className="border-border border-t pt-5">
         <h3 className="text-sm font-medium">What they want</h3>
