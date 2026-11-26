@@ -124,6 +124,29 @@ def _assert_contact_activity(
     assert event.dedupe_key == f"contact:{contact.id}:{action}:r{contact.revision}"
 
 
+def _assert_contact_lead_activity(
+    event: ActivityEvent,
+    *,
+    contact: Contact,
+    lead_id: str,
+    actor_user_id: str,
+    action: str,
+    revision: int,
+) -> None:
+    linked = action == "LINKED"
+    assert event.organization_id == contact.organization_id
+    assert event.type == ActivityEventType.HUMAN_ACTION
+    assert event.actor_type == ActivityActorType.USER
+    assert event.actor_user_id == actor_user_id
+    assert event.entity_type == ActivityEntityType.CONTACT
+    assert event.entity_id == contact.id
+    assert event.lead_id == lead_id
+    assert event.title == ("Contact linked to Lead" if linked else "Contact unlinked from Lead")
+    assert event.summary == "A contact and lead association was changed."
+    assert event.status == action
+    assert event.dedupe_key == f"contact:{contact.id}:{action}:{lead_id}:r{revision}"
+
+
 def test_create_defaults_owner_and_allows_duplicate_emails(db: Session) -> None:
     tenant = _tenant(db, "Contact create")
     service = ContactService(db)
@@ -668,6 +691,17 @@ def test_lead_associations_are_tenant_scoped_revisioned_and_idempotent(db: Sessi
     )
     assert linked.linked is True
     assert linked.revision == 2
+    contact_events = _contact_activity_events(db, organization.id, contact.id)
+    assert len(contact_events) == 2
+    link_event = next(event for event in contact_events if event.status == "LINKED")
+    _assert_contact_lead_activity(
+        link_event,
+        contact=contact,
+        lead_id=lead.id,
+        actor_user_id=member.user_id,
+        action="LINKED",
+        revision=2,
+    )
 
     repeated_link = service.set_lead_link(
         member,
@@ -676,6 +710,7 @@ def test_lead_associations_are_tenant_scoped_revisioned_and_idempotent(db: Sessi
     )
     assert repeated_link.revision == 2
     assert service.list_leads(member, contact.id).total == 1
+    assert len(_contact_activity_events(db, organization.id, contact.id)) == 2
 
     with pytest.raises(ConflictError):
         service.set_lead_link(
@@ -699,6 +734,8 @@ def test_lead_associations_are_tenant_scoped_revisioned_and_idempotent(db: Sessi
                 linked=True,
             ),
         )
+    assert len(_contact_activity_events(db, organization.id, contact.id)) == 2
+    assert len(_contact_activity_events(db, organization.id, another_contact.id)) == 1
 
     unlinked = service.set_lead_link(
         member,
@@ -707,6 +744,17 @@ def test_lead_associations_are_tenant_scoped_revisioned_and_idempotent(db: Sessi
     )
     assert unlinked.linked is False
     assert unlinked.revision == 3
+    contact_events = _contact_activity_events(db, organization.id, contact.id)
+    assert len(contact_events) == 3
+    unlink_event = next(event for event in contact_events if event.status == "UNLINKED")
+    _assert_contact_lead_activity(
+        unlink_event,
+        contact=contact,
+        lead_id=lead.id,
+        actor_user_id=member.user_id,
+        action="UNLINKED",
+        revision=3,
+    )
 
     repeated_unlink = service.set_lead_link(
         member,
@@ -715,9 +763,68 @@ def test_lead_associations_are_tenant_scoped_revisioned_and_idempotent(db: Sessi
     )
     assert repeated_unlink.revision == 3
     assert service.list_leads(member, contact.id).total == 0
+    assert len(_contact_activity_events(db, organization.id, contact.id)) == 3
 
     with pytest.raises(NotFoundError):
         service.list_leads(owner, str(uuid4()))
+
+
+def test_contact_lead_activity_failure_rolls_back_association_changes(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tenant = _tenant(db, "Contact lead activity rollback")
+    owner = _membership(tenant, "OWNER")
+    organization = _organization(tenant)
+    service = ContactService(db)
+    contact = _create_contact(service, owner, "Private contact")
+    lead = Lead(organization_id=organization.id, name="Private lead")
+    db.add(lead)
+    db.commit()
+    original_record = ActivityService.record
+
+    def record_then_fail(activity_service: ActivityService, **kwargs: Any) -> ActivityEvent:
+        original_record(activity_service, **kwargs)
+        raise RuntimeError("Injected Activity recording failure")
+
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    with pytest.raises(RuntimeError, match="Injected Activity recording failure"):
+        service.set_lead_link(
+            owner,
+            contact.id,
+            ContactLeadLinkRequest(expected_revision=1, lead_id=lead.id, linked=True),
+        )
+
+    db.expire_all()
+    stored = service.get(owner, contact.id)
+    assert stored.revision == 1
+    assert not service.contacts.is_linked_to_lead(organization.id, contact.id, lead.id)
+    events = _contact_activity_events(db, organization.id, contact.id)
+    assert len(events) == 1
+    assert events[0].status == "CREATED"
+
+    monkeypatch.setattr(ActivityService, "record", original_record)
+    linked = service.set_lead_link(
+        owner,
+        contact.id,
+        ContactLeadLinkRequest(expected_revision=1, lead_id=lead.id, linked=True),
+    )
+    assert linked.revision == 2
+
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    with pytest.raises(RuntimeError, match="Injected Activity recording failure"):
+        service.set_lead_link(
+            owner,
+            contact.id,
+            ContactLeadLinkRequest(expected_revision=2, lead_id=lead.id, linked=False),
+        )
+
+    db.expire_all()
+    stored = service.get(owner, contact.id)
+    assert stored.revision == 2
+    assert service.contacts.is_linked_to_lead(organization.id, contact.id, lead.id)
+    events = _contact_activity_events(db, organization.id, contact.id)
+    assert len(events) == 2
+    assert {event.status for event in events} == {"CREATED", "LINKED"}
 
 
 def test_linked_lead_listing_uses_bounded_pagination(db: Session) -> None:

@@ -279,6 +279,12 @@ class ContactService:
 
             contact.revision += 1
             contact.updated_at = datetime.now(UTC)
+            self._record_lead_association_activity(
+                contact,
+                membership.user_id,
+                payload.lead_id,
+                linked=payload.linked,
+            )
             self.session.commit()
             self.session.refresh(contact)
         except Exception:
@@ -339,6 +345,30 @@ class ContactService:
             entity_id=contact.id,
             status=action,
             dedupe_key=f"contact:{contact.id}:{action}:r{contact.revision}",
+        )
+
+    def _record_lead_association_activity(
+        self,
+        contact: Contact,
+        actor_user_id: str,
+        lead_id: str,
+        *,
+        linked: bool,
+    ) -> None:
+        action = "LINKED" if linked else "UNLINKED"
+        title = "Contact linked to Lead" if linked else "Contact unlinked from Lead"
+        ActivityService(self.session).record(
+            organization_id=contact.organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            actor_user_id=actor_user_id,
+            title=title,
+            summary="A contact and lead association was changed.",
+            entity_type=ActivityEntityType.CONTACT,
+            entity_id=contact.id,
+            lead_id=lead_id,
+            status=action,
+            dedupe_key=f"contact:{contact.id}:{action}:{lead_id}:r{contact.revision}",
         )
 
     def _get_for_update(self, organization_id: str, contact_id: str) -> Contact:

@@ -11,6 +11,7 @@ from app.core.exceptions import ProviderError
 from app.models.activity_event import (
     ActivityActorType,
     ActivityEntityType,
+    ActivityEvent,
     ActivityEventType,
 )
 from app.models.inbound_email import InboundEmail, InboundEmailStatus
@@ -439,6 +440,78 @@ def test_inbox_pagination_and_ordering(client: TestClient, db: Session) -> None:
     assert any(item["lead_id"] == first["id"] for item in page_two["items"])
     stamps = [item["last_activity_at"] for item in page["items"]]
     assert stamps == sorted(stamps, reverse=True)
+
+
+def test_contact_association_activity_does_not_replace_inbox_lead_activity(
+    client: TestClient, db: Session
+) -> None:
+    created = _auth(client)
+    token = created["access_token"]
+    organization_id = created["organization"]["id"]
+    lead = _create(client, token, name="Inbox Activity Lead").json()
+    lead_event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.organization_id == organization_id,
+            ActivityEvent.entity_type == ActivityEntityType.LEAD,
+            ActivityEvent.entity_id == lead["id"],
+        )
+    )
+    assert lead_event is not None
+    lead_event.occurred_at = datetime(2020, 1, 1, tzinfo=UTC)
+    db.commit()
+
+    baseline_item = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert baseline_item["last_activity_title"] == "Lead created"
+    baseline_conversation = _detail(client, token, lead["id"]).json()
+    assert any(item["kind"] == "LEAD_CREATED" for item in baseline_conversation["items"])
+
+    contact_response = client.post(
+        "/api/v1/contacts",
+        json={
+            "display_name": "Private Inbox Contact",
+            "email": "private-inbox-contact@example.com",
+            "phone": "+1-555-0301",
+        },
+        headers=_headers(token),
+    )
+    assert contact_response.status_code == 201
+    contact_id = contact_response.json()["id"]
+    linked = client.patch(
+        f"/api/v1/contacts/{contact_id}/leads",
+        json={"expected_revision": 1, "lead_id": lead["id"], "linked": True},
+        headers=_headers(token),
+    )
+    assert linked.status_code == 200
+
+    association_event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.organization_id == organization_id,
+            ActivityEvent.entity_type == ActivityEntityType.CONTACT,
+            ActivityEvent.entity_id == contact_id,
+            ActivityEvent.lead_id == lead["id"],
+            ActivityEvent.status == "LINKED",
+        )
+    )
+    assert association_event is not None
+    assert association_event.occurred_at.replace(tzinfo=UTC) > lead_event.occurred_at.replace(
+        tzinfo=UTC
+    )
+
+    current_item = next(
+        item for item in _inbox(client, token).json()["items"] if item["lead_id"] == lead["id"]
+    )
+    assert current_item["last_activity_title"] == baseline_item["last_activity_title"]
+    assert current_item["last_activity_type"] == baseline_item["last_activity_type"]
+    assert current_item["last_activity_at"] == baseline_item["last_activity_at"]
+
+    current_conversation = _detail(client, token, lead["id"]).json()
+    assert current_conversation["items"] == baseline_conversation["items"]
+    assert current_conversation["total_items"] == baseline_conversation["total_items"]
+    assert all(
+        item["title"] != "Contact linked to Lead" for item in current_conversation["items"]
+    )
 
 
 def test_inbox_state_counts_and_needs_approval_count(client: TestClient) -> None:

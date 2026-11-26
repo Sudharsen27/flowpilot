@@ -207,6 +207,7 @@ class ActivityEventRepository:
                 .where(
                     ActivityEvent.organization_id == organization_id,
                     ActivityEvent.lead_id.in_(lead_ids),
+                    ActivityEvent.entity_type != ActivityEntityType.CONTACT,
                 )
                 .order_by(
                     ActivityEvent.occurred_at.desc(),
