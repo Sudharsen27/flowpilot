@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.company import Company
 from app.models.contact import Contact, ContactSource, ContactStatus
 from app.models.lead import Lead
@@ -25,6 +26,7 @@ from app.schemas.contacts import (
     LinkedLeadListResponse,
     LinkedLeadSummary,
 )
+from app.services.activity_service import ActivityService
 
 STALE_CONTACT_DETAIL = "This contact changed. Refresh and review the latest version."
 ARCHIVED_CONTACT_DETAIL = "Archived contacts cannot be edited. Restore the contact first."
@@ -78,6 +80,8 @@ class ContactService:
         )
         try:
             self.contacts.add(contact)
+            self.session.flush()
+            self._record_lifecycle_activity(contact, membership.user_id, "CREATED")
             self.session.commit()
             self.session.refresh(contact)
         except Exception:
@@ -167,6 +171,7 @@ class ContactService:
 
             contact.revision += 1
             contact.updated_at = datetime.now(UTC)
+            self._record_lifecycle_activity(contact, membership.user_id, "UPDATED")
             self.session.commit()
             self.session.refresh(contact)
         except Exception:
@@ -310,12 +315,31 @@ class ContactService:
             contact.archived_at = datetime.now(UTC) if archived else None
             contact.revision += 1
             contact.updated_at = datetime.now(UTC)
+            self._record_lifecycle_activity(
+                contact,
+                membership.user_id,
+                "ARCHIVED" if archived else "RESTORED",
+            )
             self.session.commit()
             self.session.refresh(contact)
         except Exception:
             self.session.rollback()
             raise
         return contact
+
+    def _record_lifecycle_activity(self, contact: Contact, actor_user_id: str, action: str) -> None:
+        ActivityService(self.session).record(
+            organization_id=contact.organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            actor_user_id=actor_user_id,
+            title=f"Contact {action.lower()}",
+            summary="A contact record was changed.",
+            entity_type=ActivityEntityType.CONTACT,
+            entity_id=contact.id,
+            status=action,
+            dedupe_key=f"contact:{contact.id}:{action}:r{contact.revision}",
+        )
 
     def _get_for_update(self, organization_id: str, contact_id: str) -> Contact:
         contact = self.contacts.get_by_id(organization_id, contact_id, for_update=True)

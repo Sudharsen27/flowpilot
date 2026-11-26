@@ -6,6 +6,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
+from app.models.activity_event import (
+    ActivityActorType,
+    ActivityEntityType,
+    ActivityEvent,
+    ActivityEventType,
+)
 from app.models.company import Company
 from app.models.contact import Contact, ContactSource, ContactStatus
 from app.models.lead import Lead
@@ -18,6 +24,7 @@ from app.schemas.contacts import (
     ContactLeadLinkRequest,
     ContactUpdate,
 )
+from app.services.activity_service import ActivityService
 from app.services.company_service import CompanyService
 from app.services.contact_service import ContactService
 
@@ -84,6 +91,39 @@ def _create_contact(
     )
 
 
+def _contact_activity_events(
+    session: Session, organization_id: str, contact_id: str
+) -> list[ActivityEvent]:
+    return list(
+        session.query(ActivityEvent)
+        .filter_by(
+            organization_id=organization_id,
+            entity_type=ActivityEntityType.CONTACT,
+            entity_id=contact_id,
+        )
+        .all()
+    )
+
+
+def _assert_contact_activity(
+    event: ActivityEvent,
+    *,
+    contact: Contact,
+    actor_user_id: str,
+    action: str,
+) -> None:
+    assert event.organization_id == contact.organization_id
+    assert event.type == ActivityEventType.HUMAN_ACTION
+    assert event.actor_type == ActivityActorType.USER
+    assert event.actor_user_id == actor_user_id
+    assert event.entity_type == ActivityEntityType.CONTACT
+    assert event.entity_id == contact.id
+    assert event.title == f"Contact {action.lower()}"
+    assert event.summary == "A contact record was changed."
+    assert event.status == action
+    assert event.dedupe_key == f"contact:{contact.id}:{action}:r{contact.revision}"
+
+
 def test_create_defaults_owner_and_allows_duplicate_emails(db: Session) -> None:
     tenant = _tenant(db, "Contact create")
     service = ContactService(db)
@@ -108,6 +148,201 @@ def test_create_defaults_owner_and_allows_duplicate_emails(db: Session) -> None:
     assert first.status == ContactStatus.ACTIVE
     assert second.email == first.email
     assert second.owner_user_id == _membership(tenant, "ADMIN").user_id
+
+
+def test_contact_lifecycle_mutations_record_private_safe_activity_events(db: Session) -> None:
+    tenant = _tenant(db, "Contact activity")
+    owner = _membership(tenant, "OWNER")
+    service = ContactService(db)
+    private_values = (
+        "Private Contact Name",
+        "private-contact@example.com",
+        "+1-555-0101",
+        "Private contact description",
+        "Updated Private Contact Name",
+        "updated-private-contact@example.com",
+        "+1-555-0102",
+        "Updated private contact description",
+    )
+
+    contact = service.create(
+        owner,
+        ContactCreate(
+            display_name=private_values[0],
+            email=private_values[1],
+            phone=private_values[2],
+            description=private_values[3],
+        ),
+    )
+    organization_id = _organization(tenant).id
+    events = _contact_activity_events(db, organization_id, contact.id)
+    assert len(events) == 1
+    _assert_contact_activity(
+        events[0],
+        contact=contact,
+        actor_user_id=owner.user_id,
+        action="CREATED",
+    )
+
+    updated = service.update(
+        owner,
+        contact.id,
+        ContactUpdate(
+            expected_revision=1,
+            display_name=private_values[4],
+            email=private_values[5],
+            phone=private_values[6],
+            description=private_values[7],
+        ),
+    )
+    events = _contact_activity_events(db, organization_id, contact.id)
+    assert len(events) == 2
+    updated_event = next(event for event in events if event.status == "UPDATED")
+    _assert_contact_activity(
+        updated_event,
+        contact=updated,
+        actor_user_id=owner.user_id,
+        action="UPDATED",
+    )
+
+    no_op = service.update(
+        owner,
+        contact.id,
+        ContactUpdate(
+            expected_revision=2,
+            display_name=private_values[4],
+            email=private_values[5],
+            phone=private_values[6],
+            description=private_values[7],
+        ),
+    )
+    assert no_op.revision == 2
+    assert len(_contact_activity_events(db, organization_id, contact.id)) == 2
+
+    archived = service.archive(owner, contact.id, expected_revision=2)
+    events = _contact_activity_events(db, organization_id, contact.id)
+    assert len(events) == 3
+    archived_event = next(event for event in events if event.status == "ARCHIVED")
+    _assert_contact_activity(
+        archived_event,
+        contact=archived,
+        actor_user_id=owner.user_id,
+        action="ARCHIVED",
+    )
+
+    repeated_archive = service.archive(owner, contact.id, expected_revision=3)
+    assert repeated_archive.revision == 3
+    assert len(_contact_activity_events(db, organization_id, contact.id)) == 3
+
+    restored = service.restore(owner, contact.id, expected_revision=3)
+    events = _contact_activity_events(db, organization_id, contact.id)
+    assert len(events) == 4
+    restored_event = next(event for event in events if event.status == "RESTORED")
+    _assert_contact_activity(
+        restored_event,
+        contact=restored,
+        actor_user_id=owner.user_id,
+        action="RESTORED",
+    )
+
+    repeated_restore = service.restore(owner, contact.id, expected_revision=4)
+    assert repeated_restore.revision == 4
+    final_events = _contact_activity_events(db, organization_id, contact.id)
+    assert len(final_events) == 4
+    for event in final_events:
+        assert all(value not in event.title + event.summary for value in private_values)
+    assert {event.status for event in final_events} == {
+        "CREATED",
+        "UPDATED",
+        "ARCHIVED",
+        "RESTORED",
+    }
+
+
+def test_failed_contact_mutations_do_not_record_activity(db: Session) -> None:
+    tenant = _tenant(db, "Contact activity failures")
+    foreign_tenant = _tenant(db, "Foreign contact activity failures")
+    owner = _membership(tenant, "OWNER")
+    member = _membership(tenant, "MEMBER")
+    other_member = _membership(tenant, "OTHER_MEMBER")
+    foreign_owner = _membership(foreign_tenant, "OWNER")
+    service = ContactService(db)
+    contact = _create_contact(service, member, "Member-owned")
+    foreign_contact = _create_contact(service, foreign_owner, "Foreign contact")
+
+    with pytest.raises(ForbiddenError):
+        service.update(
+            other_member,
+            contact.id,
+            ContactUpdate(expected_revision=1, display_name="Unauthorized"),
+        )
+    with pytest.raises(ConflictError):
+        service.update(
+            owner,
+            contact.id,
+            ContactUpdate(expected_revision=2, display_name="Stale"),
+        )
+    with pytest.raises(NotFoundError):
+        service.update(
+            owner,
+            foreign_contact.id,
+            ContactUpdate(expected_revision=1, display_name="Cross-tenant"),
+        )
+
+    assert len(_contact_activity_events(db, _organization(tenant).id, contact.id)) == 1
+    assert (
+        len(
+            _contact_activity_events(
+                db,
+                _organization(foreign_tenant).id,
+                foreign_contact.id,
+            )
+        )
+        == 1
+    )
+
+
+def test_contact_activity_failure_rolls_back_contact_mutation(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tenant = _tenant(db, "Contact activity rollback")
+    owner = _membership(tenant, "OWNER")
+    service = ContactService(db)
+    original_record = ActivityService.record
+
+    def record_then_fail(activity_service: ActivityService, **kwargs: Any) -> ActivityEvent:
+        original_record(activity_service, **kwargs)
+        raise RuntimeError("Injected Activity recording failure")
+
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    with pytest.raises(RuntimeError, match="Injected Activity recording failure"):
+        service.create(
+            owner,
+            ContactCreate(
+                display_name="Uncommitted contact",
+                email="uncommitted@example.com",
+            ),
+        )
+    assert db.query(Contact).filter_by(organization_id=_organization(tenant).id).count() == 0
+    assert db.query(ActivityEvent).filter_by(organization_id=_organization(tenant).id).count() == 0
+
+    monkeypatch.setattr(ActivityService, "record", original_record)
+    contact = _create_contact(service, owner, "Existing contact")
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    with pytest.raises(RuntimeError, match="Injected Activity recording failure"):
+        service.update(
+            owner,
+            contact.id,
+            ContactUpdate(expected_revision=1, display_name="Uncommitted update"),
+        )
+
+    db.expire_all()
+    unchanged = service.get(owner, contact.id)
+    assert unchanged.display_name == "Existing contact"
+    assert unchanged.revision == 1
+    events = _contact_activity_events(db, _organization(tenant).id, contact.id)
+    assert len(events) == 1
+    assert events[0].status == "CREATED"
 
 
 def test_create_owner_permissions_and_same_tenant_references(db: Session) -> None:
