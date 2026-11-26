@@ -21,18 +21,26 @@ describe("Activity API client", () => {
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );
-    await listActivity({
-      type: "AI_ACTION",
-      entity_type: "LEAD",
-      q: "qualified / lead",
-      limit: 20,
-      offset: 20,
-    });
+    const controller = new AbortController();
+
+    await listActivity(
+      {
+        type: "AI_ACTION",
+        entity_type: "CONTACT",
+        entity_id: "contact/1",
+        q: "qualified / lead",
+        limit: 20,
+        offset: 20,
+      },
+      { signal: controller.signal },
+    );
+
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/activity?type=AI_ACTION&entity_type=LEAD&q=qualified+%2F+lead&limit=20&offset=20",
+      "http://localhost:8000/api/v1/activity?type=AI_ACTION&entity_type=CONTACT&entity_id=contact%2F1&q=qualified+%2F+lead&limit=20&offset=20",
       expect.objectContaining({
         method: "GET",
         credentials: "include",
+        signal: controller.signal,
         headers: expect.not.objectContaining({
           Authorization: expect.anything(),
         }),
@@ -47,10 +55,16 @@ describe("Activity API client", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
-    await getActivity("event/1");
+    const controller = new AbortController();
+
+    await getActivity("event/1", { signal: controller.signal });
+
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/api/v1/activity/event%2F1",
-      expect.objectContaining({ method: "GET" }),
+      expect.objectContaining({
+        method: "GET",
+        signal: controller.signal,
+      }),
     );
   });
 });

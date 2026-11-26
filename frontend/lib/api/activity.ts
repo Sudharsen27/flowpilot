@@ -32,13 +32,23 @@ function listQuery(params: ActivityListParams = {}) {
   return query.size > 0 ? `?${query.toString()}` : "";
 }
 
-export function listActivity(params: ActivityListParams = {}) {
-  return apiGet<ActivityListResponse>(`/api/v1/activity${listQuery(params)}`);
+export function listActivity(
+  params: ActivityListParams = {},
+  options: { signal?: AbortSignal } = {},
+) {
+  return apiGet<ActivityListResponse>(
+    `/api/v1/activity${listQuery(params)}`,
+    options,
+  );
 }
 
-export function getActivity(activityId: string) {
+export function getActivity(
+  activityId: string,
+  options: { signal?: AbortSignal } = {},
+) {
   return apiGet<ActivityEvent>(
     `/api/v1/activity/${encodeURIComponent(activityId)}`,
+    options,
   );
 }
 
