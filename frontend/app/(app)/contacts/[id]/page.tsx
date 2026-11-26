@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
+import { EntityActivityTimeline } from "@/components/activity/entity-activity-timeline";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -322,6 +323,8 @@ export default function ContactDetailPage() {
           />
         </dl>
       </section>
+
+      <EntityActivityTimeline entityType="CONTACT" entityId={contactId} />
     </div>
   );
 }

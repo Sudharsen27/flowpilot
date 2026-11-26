@@ -21,6 +21,22 @@ vi.mock("@/lib/api/crm-companies", () => ({
   getCrmCompany: vi.fn(),
 }));
 
+vi.mock("@/components/activity/entity-activity-timeline", () => ({
+  EntityActivityTimeline: ({
+    entityType,
+    entityId,
+  }: {
+    entityType: string;
+    entityId: string;
+  }) => (
+    <div
+      data-testid="entity-activity-timeline"
+      data-entity-type={entityType}
+      data-entity-id={entityId}
+    />
+  ),
+}));
+
 const getContactMock = vi.mocked(getCrmContact);
 const getCompanyMock = vi.mocked(getCrmCompany);
 
@@ -95,6 +111,7 @@ describe("ContactDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: "Loading Contact" }),
     ).toBeVisible();
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
     await act(async () => resolveContact(contact()));
 
     expect(
@@ -112,6 +129,14 @@ describe("ContactDetailPage", () => {
     ).toHaveAttribute("href", "/companies/company-1");
     expect(screen.getByText("user-1")).toBeVisible();
     expect(screen.getAllByText("Active")).toHaveLength(2);
+    expect(screen.getByTestId("entity-activity-timeline")).toHaveAttribute(
+      "data-entity-type",
+      "CONTACT",
+    );
+    expect(screen.getByTestId("entity-activity-timeline")).toHaveAttribute(
+      "data-entity-id",
+      "contact-1",
+    );
     expect(getContactMock).toHaveBeenCalledWith(
       "contact-1",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -135,6 +160,7 @@ describe("ContactDetailPage", () => {
         "The Contact may have been removed or may not be available in your organization.",
       ),
     ).toBeVisible();
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
   });
 
   it("shows a retryable state for API errors", async () => {
@@ -148,6 +174,7 @@ describe("ContactDetailPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Contact unavailable" }),
     ).toBeVisible();
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(getContactMock).toHaveBeenCalledTimes(2));
     expect(
@@ -204,6 +231,7 @@ describe("ContactDetailPage", () => {
 
     route.id = "contact-2";
     view.rerender(<ContactDetailPage />);
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
     await act(async () =>
       resolveSecond(
         contact({ id: "contact-2", display_name: "Katherine Johnson" }),
@@ -213,6 +241,10 @@ describe("ContactDetailPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Katherine Johnson" }),
     ).toBeVisible();
+    expect(screen.getByTestId("entity-activity-timeline")).toHaveAttribute(
+      "data-entity-id",
+      "contact-2",
+    );
     await act(async () => resolveFirst(contact()));
     expect(screen.queryByRole("heading", { name: "Grace Hopper" })).toBeNull();
     expect(

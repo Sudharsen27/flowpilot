@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { DetailRow } from "@/components/data-display/detail-row";
 import { StatePanel } from "@/components/data-display/state-panel";
+import { EntityActivityTimeline } from "@/components/activity/entity-activity-timeline";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -235,6 +236,8 @@ export default function CompanyDetailPage() {
           />
         </dl>
       </section>
+
+      <EntityActivityTimeline entityType="COMPANY" entityId={companyId} />
     </div>
   );
 }

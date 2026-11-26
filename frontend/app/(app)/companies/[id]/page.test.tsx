@@ -16,6 +16,22 @@ vi.mock("@/lib/api/crm-companies", () => ({
   getCrmCompany: vi.fn(),
 }));
 
+vi.mock("@/components/activity/entity-activity-timeline", () => ({
+  EntityActivityTimeline: ({
+    entityType,
+    entityId,
+  }: {
+    entityType: string;
+    entityId: string;
+  }) => (
+    <div
+      data-testid="entity-activity-timeline"
+      data-entity-type={entityType}
+      data-entity-id={entityId}
+    />
+  ),
+}));
+
 const getCompanyMock = vi.mocked(getCrmCompany);
 
 function company(overrides: Partial<CrmCompanyDetail> = {}): CrmCompanyDetail {
@@ -66,6 +82,7 @@ describe("CompanyDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: "Loading Company" }),
     ).toBeVisible();
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
     await act(async () => resolveCompany(company()));
 
     expect(
@@ -73,6 +90,14 @@ describe("CompanyDetailPage", () => {
     ).toBeVisible();
     expect(screen.getByText("acme.example")).toBeVisible();
     expect(screen.getAllByText("Customer")).toHaveLength(2);
+    expect(screen.getByTestId("entity-activity-timeline")).toHaveAttribute(
+      "data-entity-type",
+      "COMPANY",
+    );
+    expect(screen.getByTestId("entity-activity-timeline")).toHaveAttribute(
+      "data-entity-id",
+      "company-1",
+    );
     expect(screen.getByText("user-1")).toBeVisible();
     expect(screen.getByText("Software")).toBeVisible();
     expect(getCompanyMock).toHaveBeenCalledWith(
@@ -94,6 +119,7 @@ describe("CompanyDetailPage", () => {
         "The Company may have been removed or may not be available in your organization.",
       ),
     ).toBeVisible();
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
   });
 
   it("shows a retryable state for API errors", async () => {
@@ -107,6 +133,7 @@ describe("CompanyDetailPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Company unavailable" }),
     ).toBeVisible();
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(getCompanyMock).toHaveBeenCalledTimes(2));
     expect(
@@ -163,6 +190,7 @@ describe("CompanyDetailPage", () => {
 
     route.id = "company-2";
     view.rerender(<CompanyDetailPage />);
+    expect(screen.queryByTestId("entity-activity-timeline")).toBeNull();
     await act(async () =>
       resolveSecond(company({ id: "company-2", name: "Globex" })),
     );
@@ -170,6 +198,10 @@ describe("CompanyDetailPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Globex" }),
     ).toBeVisible();
+    expect(screen.getByTestId("entity-activity-timeline")).toHaveAttribute(
+      "data-entity-id",
+      "company-2",
+    );
     await act(async () => resolveFirst(company()));
     expect(screen.queryByRole("heading", { name: "Acme CRM" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Globex" })).toBeVisible();
