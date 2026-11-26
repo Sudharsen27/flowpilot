@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
+from app.models.activity_event import ActivityActorType, ActivityEntityType, ActivityEventType
 from app.models.company import Company, CompanyLifecycleStatus, CompanySource
 from app.models.membership import MembershipRole
 from app.repositories.company_repository import CompanyRepository
@@ -13,6 +14,7 @@ from app.schemas.company import (
     CompanyPublic,
     CompanyUpdate,
 )
+from app.services.activity_service import ActivityService
 
 COMPANY_LIST_DEFAULT_LIMIT = 20
 COMPANY_LIST_MAX_LIMIT = 100
@@ -67,6 +69,8 @@ class CompanyService:
         )
         try:
             self.companies.add(company)
+            self.session.flush()
+            self._record_lifecycle_activity(company, actor_user_id, "CREATED")
             self.session.commit()
             self.session.refresh(company)
         except Exception:
@@ -149,6 +153,7 @@ class CompanyService:
 
             company.revision += 1
             company.updated_at = datetime.now(UTC)
+            self._record_lifecycle_activity(company, actor_user_id, "UPDATED")
             self.session.commit()
             self.session.refresh(company)
         except Exception:
@@ -162,12 +167,14 @@ class CompanyService:
         company_id: str,
         *,
         role: str,
+        actor_user_id: str,
         expected_revision: int,
     ) -> Company:
         return self._set_archived(
             organization_id,
             company_id,
             role=role,
+            actor_user_id=actor_user_id,
             expected_revision=expected_revision,
             archived=True,
         )
@@ -178,12 +185,14 @@ class CompanyService:
         company_id: str,
         *,
         role: str,
+        actor_user_id: str,
         expected_revision: int,
     ) -> Company:
         return self._set_archived(
             organization_id,
             company_id,
             role=role,
+            actor_user_id=actor_user_id,
             expected_revision=expected_revision,
             archived=False,
         )
@@ -194,6 +203,7 @@ class CompanyService:
         company_id: str,
         *,
         role: str,
+        actor_user_id: str,
         expected_revision: int,
         archived: bool,
     ) -> Company:
@@ -212,12 +222,33 @@ class CompanyService:
             company.archived_at = datetime.now(UTC) if archived else None
             company.revision += 1
             company.updated_at = datetime.now(UTC)
+            self._record_lifecycle_activity(
+                company,
+                actor_user_id,
+                "ARCHIVED" if archived else "RESTORED",
+            )
             self.session.commit()
             self.session.refresh(company)
         except Exception:
             self.session.rollback()
             raise
         return company
+
+    def _record_lifecycle_activity(
+        self, company: Company, actor_user_id: str, action: str
+    ) -> None:
+        ActivityService(self.session).record(
+            organization_id=company.organization_id,
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.USER,
+            actor_user_id=actor_user_id,
+            title=f"Company {action.lower()}",
+            summary="A company record was changed.",
+            entity_type=ActivityEntityType.COMPANY,
+            entity_id=company.id,
+            status=action,
+            dedupe_key=f"company:{company.id}:{action}:r{company.revision}",
+        )
 
     def _get_for_update(self, organization_id: str, company_id: str) -> Company:
         company = self.companies.get_by_id(organization_id, company_id, for_update=True)

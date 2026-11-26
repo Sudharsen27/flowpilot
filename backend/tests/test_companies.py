@@ -1,13 +1,21 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.activity_event import (
+    ActivityActorType,
+    ActivityEntityType,
+    ActivityEvent,
+    ActivityEventType,
+)
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.membership import MembershipRole
+from app.services.activity_service import ActivityService
 from tests.conftest import register_verified
 from tests.test_agent_api import _add_org_member
 
@@ -57,6 +65,41 @@ def _org_with_roles(client: TestClient, db: Session) -> dict[str, Any]:
         "member": member,
         "member_id": member_id,
     }
+
+
+def _company_activity_events(
+    db: Session, organization_id: str, company_id: str
+) -> list[ActivityEvent]:
+    return list(
+        db.scalars(
+            select(ActivityEvent).where(
+                ActivityEvent.organization_id == organization_id,
+                ActivityEvent.entity_type == ActivityEntityType.COMPANY,
+                ActivityEvent.entity_id == company_id,
+            )
+        )
+    )
+
+
+def _assert_company_activity(
+    event: ActivityEvent,
+    *,
+    organization_id: str,
+    company_id: str,
+    actor_user_id: str,
+    action: str,
+    revision: int,
+) -> None:
+    assert event.organization_id == organization_id
+    assert event.type == ActivityEventType.HUMAN_ACTION
+    assert event.actor_type == ActivityActorType.USER
+    assert event.actor_user_id == actor_user_id
+    assert event.entity_type == ActivityEntityType.COMPANY
+    assert event.entity_id == company_id
+    assert event.title == f"Company {action.lower()}"
+    assert event.summary == "A company record was changed."
+    assert event.status == action
+    assert event.dedupe_key == f"company:{company_id}:{action}:r{revision}"
 
 
 def test_company_authentication_crud_and_server_controlled_fields(client: TestClient) -> None:
@@ -113,6 +156,279 @@ def test_company_authentication_crud_and_server_controlled_fields(client: TestCl
     assert updated.json()["description"] == "Updated"
     assert updated.json()["revision"] == 2
     assert updated.json()["source"] == "MANUAL"
+
+
+def test_company_lifecycle_mutations_record_private_safe_activity_events(
+    client: TestClient, db: Session
+) -> None:
+    roles = _org_with_roles(client, db)
+    private_values = (
+        "Private Company Name",
+        "private-domain.example",
+        "Private Company Description",
+        "Private address line",
+        "private-company@example.com",
+        "+1-555-0201",
+        "Updated Private Company Name",
+        "updated-private-domain.example",
+        "Updated Private Company Description",
+        "Updated private address line",
+        "updated-private-company@example.com",
+        "+1-555-0202",
+    )
+    created = _create_company(
+        client,
+        roles["owner"],
+        name=private_values[0],
+        website_domain=private_values[1],
+        description=private_values[2],
+        address_line1=private_values[3],
+        email=private_values[4],
+        phone=private_values[5],
+    )
+    assert created.status_code == 201
+    company_id = created.json()["id"]
+    organization_id = roles["organization_id"]
+    events = _company_activity_events(db, organization_id, company_id)
+    assert len(events) == 1
+    _assert_company_activity(
+        events[0],
+        organization_id=organization_id,
+        company_id=company_id,
+        actor_user_id=roles["owner_id"],
+        action="CREATED",
+        revision=1,
+    )
+
+    company_path = f"/api/v1/companies/{company_id}"
+    updated = client.patch(
+        company_path,
+        json={
+            "expected_revision": 1,
+            "name": private_values[6],
+            "website_domain": private_values[7],
+            "description": private_values[8],
+            "address_line1": private_values[9],
+            "email": private_values[10],
+            "phone": private_values[11],
+        },
+        headers=_headers(roles["admin"]),
+    )
+    assert updated.status_code == 200
+    events = _company_activity_events(db, organization_id, company_id)
+    assert len(events) == 2
+    updated_event = next(event for event in events if event.status == "UPDATED")
+    _assert_company_activity(
+        updated_event,
+        organization_id=organization_id,
+        company_id=company_id,
+        actor_user_id=roles["admin_id"],
+        action="UPDATED",
+        revision=2,
+    )
+
+    no_op = client.patch(
+        company_path,
+        json={"expected_revision": 2, "name": private_values[6]},
+        headers=_headers(roles["admin"]),
+    )
+    assert no_op.status_code == 200
+    assert len(_company_activity_events(db, organization_id, company_id)) == 2
+
+    archived = client.post(
+        f"{company_path}/archive",
+        json={"expected_revision": 2},
+        headers=_headers(roles["owner"]),
+    )
+    assert archived.status_code == 200
+    events = _company_activity_events(db, organization_id, company_id)
+    assert len(events) == 3
+    archived_event = next(event for event in events if event.status == "ARCHIVED")
+    _assert_company_activity(
+        archived_event,
+        organization_id=organization_id,
+        company_id=company_id,
+        actor_user_id=roles["owner_id"],
+        action="ARCHIVED",
+        revision=3,
+    )
+
+    repeated_archive = client.post(
+        f"{company_path}/archive",
+        json={"expected_revision": 3},
+        headers=_headers(roles["admin"]),
+    )
+    assert repeated_archive.status_code == 200
+    assert len(_company_activity_events(db, organization_id, company_id)) == 3
+
+    restored = client.post(
+        f"{company_path}/restore",
+        json={"expected_revision": 3},
+        headers=_headers(roles["admin"]),
+    )
+    assert restored.status_code == 200
+    events = _company_activity_events(db, organization_id, company_id)
+    assert len(events) == 4
+    restored_event = next(event for event in events if event.status == "RESTORED")
+    _assert_company_activity(
+        restored_event,
+        organization_id=organization_id,
+        company_id=company_id,
+        actor_user_id=roles["admin_id"],
+        action="RESTORED",
+        revision=4,
+    )
+
+    repeated_restore = client.post(
+        f"{company_path}/restore",
+        json={"expected_revision": 4},
+        headers=_headers(roles["owner"]),
+    )
+    assert repeated_restore.status_code == 200
+    final_events = _company_activity_events(db, organization_id, company_id)
+    assert len(final_events) == 4
+    for event in final_events:
+        assert all(value not in event.title + event.summary for value in private_values)
+    assert {event.status for event in final_events} == {
+        "CREATED",
+        "UPDATED",
+        "ARCHIVED",
+        "RESTORED",
+    }
+
+
+def test_failed_company_mutations_do_not_record_activity(
+    client: TestClient, db: Session
+) -> None:
+    roles = _org_with_roles(client, db)
+    other_org = register_verified(
+        client,
+        email="company-activity-foreign@example.com",
+        organization_name="Foreign Company Activity",
+    )
+    company = _create_company(client, roles["owner"], name="Private Company").json()
+    company_path = f"/api/v1/companies/{company['id']}"
+
+    forbidden = client.patch(
+        company_path,
+        json={"expected_revision": 1, "name": "Unauthorized"},
+        headers=_headers(roles["member"]),
+    )
+    assert forbidden.status_code == 403
+    stale = client.patch(
+        company_path,
+        json={"expected_revision": 2, "name": "Stale"},
+        headers=_headers(roles["owner"]),
+    )
+    assert stale.status_code == 409
+    for action in ("", "/archive", "/restore"):
+        response = (
+            client.patch(
+                f"{company_path}{action}",
+                json={"expected_revision": 1, "name": "Cross-tenant"},
+                headers=_headers(other_org["access_token"]),
+            )
+            if not action
+            else client.post(
+                f"{company_path}{action}",
+                json={"expected_revision": 1},
+                headers=_headers(other_org["access_token"]),
+            )
+        )
+        assert response.status_code == 404
+
+    assert len(
+        _company_activity_events(db, roles["organization_id"], company["id"])
+    ) == 1
+    assert (
+        len(
+            _company_activity_events(
+                db,
+                other_org["organization"]["id"],
+                company["id"],
+            )
+        )
+        == 0
+    )
+
+
+def test_company_activity_failure_rolls_back_company_mutations(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    roles = _org_with_roles(client, db)
+    organization_id = roles["organization_id"]
+    original_record = ActivityService.record
+
+    def record_then_fail(activity_service: ActivityService, **kwargs: Any) -> ActivityEvent:
+        original_record(activity_service, **kwargs)
+        raise RuntimeError("Injected Activity recording failure")
+
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    failed_create = _create_company(client, roles["owner"], name="Rolled-back Company")
+    assert failed_create.status_code == 500
+    assert db.scalar(select(Company).where(Company.organization_id == organization_id)) is None
+    assert (
+        db.scalar(
+            select(ActivityEvent).where(ActivityEvent.organization_id == organization_id)
+        )
+        is None
+    )
+
+    monkeypatch.setattr(ActivityService, "record", original_record)
+    created = _create_company(client, roles["owner"], name="Existing Company")
+    assert created.status_code == 201
+    company_id = created.json()["id"]
+    company_path = f"/api/v1/companies/{company_id}"
+
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    failed_update = client.patch(
+        company_path,
+        json={"expected_revision": 1, "name": "Rolled-back Update"},
+        headers=_headers(roles["owner"]),
+    )
+    assert failed_update.status_code == 500
+    db.expire_all()
+    stored = db.scalar(select(Company).where(Company.id == company_id))
+    assert stored is not None
+    assert stored.name == "Existing Company"
+    assert stored.revision == 1
+    assert len(_company_activity_events(db, organization_id, company_id)) == 1
+
+    failed_archive = client.post(
+        f"{company_path}/archive",
+        json={"expected_revision": 1},
+        headers=_headers(roles["owner"]),
+    )
+    assert failed_archive.status_code == 500
+    db.expire_all()
+    stored = db.scalar(select(Company).where(Company.id == company_id))
+    assert stored is not None
+    assert stored.archived_at is None
+    assert stored.revision == 1
+    assert len(_company_activity_events(db, organization_id, company_id)) == 1
+
+    monkeypatch.setattr(ActivityService, "record", original_record)
+    archived = client.post(
+        f"{company_path}/archive",
+        json={"expected_revision": 1},
+        headers=_headers(roles["owner"]),
+    )
+    assert archived.status_code == 200
+    monkeypatch.setattr(ActivityService, "record", record_then_fail)
+    failed_restore = client.post(
+        f"{company_path}/restore",
+        json={"expected_revision": 2},
+        headers=_headers(roles["owner"]),
+    )
+    assert failed_restore.status_code == 500
+    db.expire_all()
+    stored = db.scalar(select(Company).where(Company.id == company_id))
+    assert stored is not None
+    assert stored.archived_at is not None
+    assert stored.revision == 2
+    events = _company_activity_events(db, organization_id, company_id)
+    assert len(events) == 2
+    assert {event.status for event in events} == {"CREATED", "ARCHIVED"}
 
 
 def test_all_roles_can_view_and_create_with_approved_ownership_rules(

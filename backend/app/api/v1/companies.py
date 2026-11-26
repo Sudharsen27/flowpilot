@@ -100,6 +100,7 @@ def archive_company(
         organization.id,
         company_id,
         role=membership.role,
+        actor_user_id=membership.user_id,
         expected_revision=payload.expected_revision,
     )
     return CompanyPublic.model_validate(company)
@@ -117,6 +118,7 @@ def restore_company(
         organization.id,
         company_id,
         role=membership.role,
+        actor_user_id=membership.user_id,
         expected_revision=payload.expected_revision,
     )
     return CompanyPublic.model_validate(company)

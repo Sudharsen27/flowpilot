@@ -439,6 +439,7 @@ def test_archived_company_cannot_be_assigned_but_existing_contacts_are_preserved
         organization.id,
         company.id,
         role=owner.role,
+        actor_user_id=owner.user_id,
         expected_revision=1,
     )
     db.refresh(contact)
