@@ -26,7 +26,7 @@ def test_alembic_revision_chain_is_linear() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "051_contact_lead_associations"
+    assert script.get_current_head() == "052_activity_contact_company"
     chain = {
         "022_lead_human_attention": "021_sales_agent_auto_start",
         "023_inbound_emails": "022_lead_human_attention",
@@ -46,7 +46,8 @@ def test_alembic_revision_chain_is_linear() -> None:
         # 037 is reserved for the 4C contract step. 038 revises 036, 039 revises
         # 038, 040 revises 039, 041 revises 040, 042 revises 041, 043 revises 042,
         # 044 revises 043, 045 revises 044, 046 revises 045, 047 revises 046,
-        # 048 revises 047, 049 revises 048, 050 revises 049, and 051 revises 050.
+        # 048 revises 047, 049 revises 048, 050 revises 049, 051 revises 050,
+        # and 052 revises 051.
         # When 037 ships it should revise the current head.
         "038_forecast_snapshots": "036_deal_forecast_category",
         "039_auth_login_failures": "038_forecast_snapshots",
@@ -62,6 +63,7 @@ def test_alembic_revision_chain_is_linear() -> None:
         "049_lead_follow_up_sequence": "048_company_contact_foundation",
         "050_follow_up_sequence": "049_lead_follow_up_sequence",
         "051_contact_lead_associations": "050_follow_up_sequence",
+        "052_activity_contact_company": "051_contact_lead_associations",
     }
     for revision, down_revision in chain.items():
         row = script.get_revision(revision)

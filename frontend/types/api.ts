@@ -82,10 +82,7 @@ export type GovernmentCompanyDiscoveryResponse = {
 };
 
 export type DuplicateAssessmentOutcome =
-  | "NEW"
-  | "EXACT_MATCH"
-  | "POSSIBLE_DUPLICATE"
-  | "INSUFFICIENT_DATA";
+  "NEW" | "EXACT_MATCH" | "POSSIBLE_DUPLICATE" | "INSUFFICIENT_DATA";
 
 export type CompanyDuplicateCandidateInput = {
   reference_id: string;
@@ -117,10 +114,7 @@ export type CompanyDuplicateAssessmentResponse = {
 export type CompanyProspectStatus = "IDENTIFIED" | "REVIEWED" | "ARCHIVED";
 
 export type EvidenceQuality =
-  | "SOURCE_REPORTED"
-  | "ESTIMATED"
-  | "INFERRED"
-  | "UNKNOWN";
+  "SOURCE_REPORTED" | "ESTIMATED" | "INFERRED" | "UNKNOWN";
 
 export type CompanyProspect = {
   id: string;
@@ -202,9 +196,7 @@ export type InvitationSignInResponse = {
 };
 
 export type InvitationAcceptResponse =
-  | AuthResponse
-  | InvitationAcceptedResponse
-  | InvitationSignInResponse;
+  AuthResponse | InvitationAcceptedResponse | InvitationSignInResponse;
 
 export type UserOrganizationPublic = {
   organization_id: string;
@@ -234,18 +226,10 @@ export type HealthResponse = {
   service: string;
 };
 
-export type AgentType =
-  | "SALES"
-  | "SUPPORT"
-  | "OPERATIONS"
-  | "COMMUNICATION";
+export type AgentType = "SALES" | "SUPPORT" | "OPERATIONS" | "COMMUNICATION";
 
 export type AgentStatus =
-  | "DRAFT"
-  | "READY"
-  | "ACTIVE"
-  | "PAUSED"
-  | "NEEDS_ATTENTION";
+  "DRAFT" | "READY" | "ACTIVE" | "PAUSED" | "NEEDS_ATTENTION";
 
 export type Agent = {
   id: string;
@@ -270,11 +254,7 @@ export type AgentCreateRequest = {
 export type AgentUpdateRequest = Partial<AgentCreateRequest>;
 
 export type AgentExecutionStatus =
-  | "QUEUED"
-  | "RUNNING"
-  | "COMPLETED"
-  | "FAILED"
-  | "CANCELLED";
+  "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export type AgentExecutionRequest = {
   input: string;
@@ -302,10 +282,7 @@ export type ToolOutcome =
   | "APPROVAL_REQUIRED";
 
 export type ToolSideEffectLevel =
-  | "READ"
-  | "WRITE"
-  | "SENSITIVE_WRITE"
-  | "APPROVAL_REQUIRED";
+  "READ" | "WRITE" | "SENSITIVE_WRITE" | "APPROVAL_REQUIRED";
 
 export type ToolResult = {
   call_id: string;
@@ -447,10 +424,7 @@ export type ToolRiskLevel = "LOW" | "MEDIUM" | "HIGH";
 export type ToolPolicyDecision = "ALLOW" | "REQUIRE_APPROVAL" | "DENY";
 
 export type ToolInvocationStatus =
-  | "SUCCESS"
-  | "FAILED"
-  | "REJECTED"
-  | "AWAITING_APPROVAL";
+  "SUCCESS" | "FAILED" | "REJECTED" | "AWAITING_APPROVAL";
 
 export type ToolInvocationListItem = {
   id: string;
@@ -477,19 +451,10 @@ export type ToolInvocationListResponse = {
 };
 
 export type LeadStatus =
-  | "NEW"
-  | "CONTACTED"
-  | "QUALIFIED"
-  | "UNQUALIFIED"
-  | "CONVERTED";
+  "NEW" | "CONTACTED" | "QUALIFIED" | "UNQUALIFIED" | "CONVERTED";
 
 export type LeadSource =
-  | "MANUAL"
-  | "WEBSITE"
-  | "EMAIL"
-  | "CHAT"
-  | "API"
-  | "IMPORT";
+  "MANUAL" | "WEBSITE" | "EMAIL" | "CHAT" | "API" | "IMPORT";
 
 export type AnalyticsRangeDays = 7 | 30 | 90;
 
@@ -528,11 +493,7 @@ export type AnalyticsSummary = {
 };
 
 export type LeadSalesAgentAutoStartStatus =
-  | "PENDING"
-  | "CLAIMED"
-  | "STARTED"
-  | "SKIPPED"
-  | "FAILED";
+  "PENDING" | "CLAIMED" | "STARTED" | "SKIPPED" | "FAILED";
 
 export type Lead = {
   id: string;
@@ -585,23 +546,14 @@ export type IdealCustomerProfileUpdate = {
 
 export type IdealCustomerProfile = IdealCustomerProfileUpdate & {
   available_criteria: (
-    | "company"
-    | "enquiry"
-    | "industry"
-    | "company_size"
-    | "geography"
+    "company" | "enquiry" | "industry" | "company_size" | "geography"
   )[];
   unavailable_criteria: Record<string, string>;
   configuration_valid: boolean;
 };
 
 export type LeadFitComponent = {
-  criterion:
-    | "company"
-    | "enquiry"
-    | "industry"
-    | "company_size"
-    | "geography";
+  criterion: "company" | "enquiry" | "industry" | "company_size" | "geography";
   status: "MATCHED" | "UNMATCHED" | "UNKNOWN" | "UNCONFIGURED";
   weight: number;
   matched_terms: string[];
@@ -618,9 +570,7 @@ export type LeadFitScore = {
 };
 
 export type LeadAiQualification =
-  | "QUALIFIED"
-  | "UNQUALIFIED"
-  | "NEEDS_MORE_INFORMATION";
+  "QUALIFIED" | "UNQUALIFIED" | "NEEDS_MORE_INFORMATION";
 
 export type LeadIntent =
   | "REQUEST_DEMO"
@@ -674,8 +624,7 @@ export type LeadQualificationResult = {
 };
 
 export type LeadQualifyRequest =
-  | { enquiry: string }
-  | { inbound_email_id: string };
+  { enquiry: string } | { inbound_email_id: string };
 
 export type LeadResponseDraftSummary = {
   id: string;
@@ -685,10 +634,7 @@ export type LeadResponseDraftSummary = {
 };
 
 export type LeadResponseReviewStatus =
-  | "GENERATED"
-  | "EDITED"
-  | "APPROVED"
-  | "REJECTED";
+  "GENERATED" | "EDITED" | "APPROVED" | "REJECTED";
 
 export type LeadEmailSendStatus = "PENDING" | "SENT" | "FAILED";
 
@@ -805,10 +751,7 @@ export type LeadFollowUpLifecycleRequest = {
 };
 
 export type LeadFollowUpExecutionStatus =
-  | "PENDING"
-  | "RUNNING"
-  | "SENT"
-  | "FAILED";
+  "PENDING" | "RUNNING" | "SENT" | "FAILED";
 
 /**
  * Safe execution fields only. The API never returns provider payloads,
@@ -999,19 +942,10 @@ export type LeadCreateRequest = {
 export type LeadUpdateRequest = Partial<LeadCreateRequest>;
 
 export type SalesRunStatus =
-  | "RUNNING"
-  | "WAITING_APPROVAL"
-  | "COMPLETED"
-  | "FAILED"
-  | "CANCELLED";
+  "RUNNING" | "WAITING_APPROVAL" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export type SalesRunStage =
-  | "MATCH_LEAD"
-  | "QUALIFY"
-  | "DRAFT"
-  | "AWAIT_APPROVAL"
-  | "SEND"
-  | "DONE";
+  "MATCH_LEAD" | "QUALIFY" | "DRAFT" | "AWAIT_APPROVAL" | "SEND" | "DONE";
 
 export type SalesRunLeadSummary = {
   id: string;
@@ -1171,16 +1105,9 @@ export type PublicEnquiryCreateRequest = {
 };
 
 export type ActivityEventType =
-  | "AI_ACTION"
-  | "APPROVAL"
-  | "HUMAN_ACTION"
-  | "SYSTEM_EVENT";
+  "AI_ACTION" | "APPROVAL" | "HUMAN_ACTION" | "SYSTEM_EVENT";
 
-export type ActivityActorType =
-  | "USER"
-  | "AGENT"
-  | "SYSTEM"
-  | "PUBLIC_VISITOR";
+export type ActivityActorType = "USER" | "AGENT" | "SYSTEM" | "PUBLIC_VISITOR";
 
 export type ActivityEntityType =
   | "LEAD"
@@ -1194,7 +1121,9 @@ export type ActivityEntityType =
   | "KNOWLEDGE_ENTRY"
   | "WORKFLOW_RULE"
   | "WEBHOOK_ENDPOINT"
-  | "COMPANY_PROSPECT";
+  | "COMPANY_PROSPECT"
+  | "CONTACT"
+  | "COMPANY";
 
 export type WebhookEventType =
   | "lead.created"
@@ -1203,7 +1132,8 @@ export type WebhookEventType =
   | "email.sent"
   | "webhook.test";
 
-export type WebhookDeliveryStatus = "PENDING" | "SENDING" | "DELIVERED" | "FAILED";
+export type WebhookDeliveryStatus =
+  "PENDING" | "SENDING" | "DELIVERED" | "FAILED";
 
 export type WebhookEndpoint = {
   id: string;
@@ -1252,13 +1182,13 @@ export type WebhookDeliveryListResponse = {
 };
 
 export type WorkflowTrigger =
-  | "LEAD_CREATED"
-  | "INBOUND_REPLY_RECEIVED"
-  | "HUMAN_ATTENTION_REQUIRED";
+  "LEAD_CREATED" | "INBOUND_REPLY_RECEIVED" | "HUMAN_ATTENTION_REQUIRED";
 
-export type WorkflowAction = "ANALYZE_LEAD" | "DRAFT_RESPONSE" | "CREATE_FOLLOW_UP";
+export type WorkflowAction =
+  "ANALYZE_LEAD" | "DRAFT_RESPONSE" | "CREATE_FOLLOW_UP";
 
-export type WorkflowRunStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "SKIPPED" | "FAILED";
+export type WorkflowRunStatus =
+  "PENDING" | "RUNNING" | "SUCCEEDED" | "SKIPPED" | "FAILED";
 
 export type WorkflowRule = {
   id: string;
@@ -1271,7 +1201,12 @@ export type WorkflowRule = {
   revision: number;
   created_at: string;
   updated_at: string;
-  run_counts: { pending: number; succeeded: number; skipped: number; failed: number };
+  run_counts: {
+    pending: number;
+    succeeded: number;
+    skipped: number;
+    failed: number;
+  };
   last_run_at: string | null;
 };
 
@@ -1304,7 +1239,8 @@ export type WorkflowRunListResponse = {
   offset: number;
 };
 
-export type KnowledgeCategory = "FAQ" | "PRODUCT" | "POLICY" | "COMPANY" | "OTHER";
+export type KnowledgeCategory =
+  "FAQ" | "PRODUCT" | "POLICY" | "COMPANY" | "OTHER";
 
 export type KnowledgeEntryStatus = "ACTIVE" | "ARCHIVED";
 
@@ -1803,7 +1739,8 @@ export type ForecastOpenTotals = PipelineTotals & {
  */
 export type ForecastTargetStatus = "FULL" | "PARTIAL" | "NONE";
 
-export type ForecastTargetBasis = "WON" | "COMMIT_SCENARIO" | "BEST_CASE_SCENARIO" | "PROJECTED";
+export type ForecastTargetBasis =
+  "WON" | "COMMIT_SCENARIO" | "BEST_CASE_SCENARIO" | "PROJECTED";
 
 /** One forecast figure against a FULL target, computed by the API. */
 export type ForecastTargetComparison = {
@@ -1941,7 +1878,8 @@ export type ForecastCategoryDeals = {
 };
 
 /** Forecast figures compared with actual won revenue (Phase 8 Slice 4E-3). */
-export type ForecastAccuracyBasis = "PROJECTED" | "COMMIT_SCENARIO" | "BEST_CASE_SCENARIO";
+export type ForecastAccuracyBasis =
+  "PROJECTED" | "COMMIT_SCENARIO" | "BEST_CASE_SCENARIO";
 
 /** CLOSED months are scored; the IN_PROGRESS month (containing as_of) is not. */
 export type ForecastAccuracyMonthStatus = "CLOSED" | "IN_PROGRESS";
@@ -1956,14 +1894,13 @@ export type ForecastCutoffRule = "BEFORE" | "ON_OR_BEFORE";
  * CURRENCY_MISMATCH: the selected snapshot is in another currency; not compared.
  */
 export type ForecastSnapshotStatus =
-  | "AVAILABLE"
-  | "MISSING"
-  | "BEFORE_FIRST_SNAPSHOT"
-  | "CURRENCY_MISMATCH";
+  "AVAILABLE" | "MISSING" | "BEFORE_FIRST_SNAPSHOT" | "CURRENCY_MISMATCH";
 
-export type ForecastAccuracyStatus = "COMPUTED" | "NO_ACTUAL_REVENUE" | "MONTH_IN_PROGRESS";
+export type ForecastAccuracyStatus =
+  "COMPUTED" | "NO_ACTUAL_REVENUE" | "MONTH_IN_PROGRESS";
 
-export type ForecastAccuracySummaryStatus = "COMPUTED" | "NO_ACTUAL_REVENUE" | "NO_COMPARABLE_MONTHS";
+export type ForecastAccuracySummaryStatus =
+  "COMPUTED" | "NO_ACTUAL_REVENUE" | "NO_COMPARABLE_MONTHS";
 
 export type ForecastAccuracyAssumptionCode =
   | "SNAPSHOT_FIGURES"

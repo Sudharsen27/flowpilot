@@ -114,7 +114,9 @@ describe("activityDestination", () => {
       ["approved", "/approvals?status=approved&approval=draft-1"],
       ["rejected", "/approvals?status=rejected&approval=draft-1"],
     ] as const)("opens the %s queue the draft is in now", (queue, href) => {
-      expect(activityDestination(draftEvent({ draft_approval_status: queue }))).toEqual({
+      expect(
+        activityDestination(draftEvent({ draft_approval_status: queue })),
+      ).toEqual({
         href,
         label: "Open approval",
       });
@@ -123,7 +125,10 @@ describe("activityDestination", () => {
     it("follows the current queue, not the status recorded on the event", () => {
       expect(
         activityDestination(
-          draftEvent({ status: "GENERATED", draft_approval_status: "approved" }),
+          draftEvent({
+            status: "GENERATED",
+            draft_approval_status: "approved",
+          }),
         )?.href,
       ).toBe("/approvals?status=approved&approval=draft-1");
       expect(
@@ -134,19 +139,23 @@ describe("activityDestination", () => {
     });
 
     it("falls back to the lead when no queue lists the draft (missing, failed or other organization)", () => {
-      expect(activityDestination(draftEvent({ draft_approval_status: null }))).toEqual({
+      expect(
+        activityDestination(draftEvent({ draft_approval_status: null })),
+      ).toEqual({
         href: "/leads/lead-1",
         label: "Open lead",
       });
       expect(
-        activityDestination(draftEvent({ draft_approval_status: null, lead_id: null })),
+        activityDestination(
+          draftEvent({ draft_approval_status: null, lead_id: null }),
+        ),
       ).toBeNull();
     });
 
     it("keeps the recorded-status mapping when the API omits the current queue", () => {
-      expect(activityDestination(draftEvent({ status: "REJECTED" }))?.href).toBe(
-        "/approvals?status=rejected&approval=draft-1",
-      );
+      expect(
+        activityDestination(draftEvent({ status: "REJECTED" }))?.href,
+      ).toBe("/approvals?status=rejected&approval=draft-1");
     });
   });
 
@@ -170,7 +179,11 @@ describe("activityDestination", () => {
   it("falls back to the lead when a Sales Run event has no agent, and to nothing without a lead", () => {
     expect(
       activityDestination(
-        event({ entity_type: "SALES_RUN", entity_id: "run-1", sales_run_id: "run-1" }),
+        event({
+          entity_type: "SALES_RUN",
+          entity_id: "run-1",
+          sales_run_id: "run-1",
+        }),
       ),
     ).toEqual({ href: "/leads/lead-1", label: "Open lead" });
     expect(
@@ -193,7 +206,9 @@ describe("activityDestination", () => {
     "LEAD_QUALIFICATION",
   ] as const)("falls back to lead details for %s events", (entityType) => {
     expect(
-      activityDestination(event({ entity_type: entityType, entity_id: "other-1" })),
+      activityDestination(
+        event({ entity_type: entityType, entity_id: "other-1" }),
+      ),
     ).toEqual({ href: "/leads/lead-1", label: "Open lead" });
   });
 
@@ -204,13 +219,30 @@ describe("activityDestination", () => {
     "COMPANY_PROSPECT",
   ] as const)("does not link %s events", (entityType) => {
     expect(
-      activityDestination(event({ entity_type: entityType, entity_id: "other-1" })),
+      activityDestination(
+        event({ entity_type: entityType, entity_id: "other-1" }),
+      ),
     ).toBeNull();
   });
 
+  it.each(["CONTACT", "COMPANY"] as const)(
+    "uses the associated Lead as the destination for %s events",
+    (entityType) => {
+      expect(activityDestination(event({ entity_type: entityType }))).toEqual({
+        href: "/leads/lead-1",
+        label: "Open lead",
+      });
+      expect(
+        activityDestination(event({ entity_type: entityType, lead_id: null })),
+      ).toBeNull();
+    },
+  );
+
   it("does not link events without any usable identifier", () => {
     expect(
-      activityDestination(event({ entity_type: "LEAD_EMAIL_SEND", lead_id: null })),
+      activityDestination(
+        event({ entity_type: "LEAD_EMAIL_SEND", lead_id: null }),
+      ),
     ).toBeNull();
     expect(activityDestination(event({ lead_id: "x".repeat(37) }))).toBeNull();
   });

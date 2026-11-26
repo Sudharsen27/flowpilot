@@ -38,4 +38,17 @@ describe("activity url helpers", () => {
     });
     expect(hasActivityFilters(parsed)).toBe(false);
   });
+
+  it.each(["CONTACT", "COMPANY"] as const)(
+    "parses and serializes the %s entity filter",
+    (entityType) => {
+      const parsed = parseActivitySearchParams(
+        new URLSearchParams(`entity_type=${entityType}`),
+      );
+      expect(parsed.entityType).toBe(entityType);
+      expect(serializeActivitySearchParams(parsed)).toBe(
+        `entity_type=${entityType}`,
+      );
+    },
+  );
 });

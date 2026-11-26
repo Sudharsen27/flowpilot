@@ -124,6 +124,78 @@ def test_activity_list_filter_search_and_pagination(client: TestClient) -> None:
     assert invalid.status_code == 422
 
 
+def test_contact_and_company_activity_filters_are_tenant_scoped(
+    client: TestClient, db: Session
+) -> None:
+    org_a = _auth(client, email="activity-entities-a@example.com", organization_name="Entity A")
+    org_b = _auth(client, email="activity-entities-b@example.com", organization_name="Entity B")
+    entity_id = "shared-crm-entity-id"
+    recorded: dict[ActivityEntityType, str] = {}
+
+    for entity_type in (ActivityEntityType.CONTACT, ActivityEntityType.COMPANY):
+        event = ActivityService(db).record(
+            organization_id=org_a["organization"]["id"],
+            event_type=ActivityEventType.HUMAN_ACTION,
+            actor_type=ActivityActorType.SYSTEM,
+            title=f"{entity_type.value.title()} activity",
+            summary="CRM entity activity retrieval test.",
+            entity_type=entity_type,
+            entity_id=entity_id,
+            dedupe_key=f"test:{entity_type.value.lower()}:{entity_id}",
+        )
+        recorded[entity_type] = event.id
+    db.commit()
+
+    for entity_type, event_id in recorded.items():
+        listed = _activity(
+            client,
+            org_a["access_token"],
+            entity_type=entity_type.value,
+            entity_id=entity_id,
+        )
+        assert listed.status_code == 200
+        body = listed.json()
+        assert body["total"] == 1
+        assert body["items"][0]["id"] == event_id
+        assert body["items"][0]["entity_type"] == entity_type.value
+        assert body["items"][0]["entity_id"] == entity_id
+
+        own_detail = client.get(
+            f"/api/v1/activity/{event_id}",
+            headers=_headers(org_a["access_token"]),
+        )
+        assert own_detail.status_code == 200
+        assert own_detail.json()["entity_type"] == entity_type.value
+        assert own_detail.json()["entity_id"] == entity_id
+
+        foreign_list = _activity(
+            client,
+            org_b["access_token"],
+            entity_type=entity_type.value,
+            entity_id=entity_id,
+        )
+        assert foreign_list.status_code == 200
+        assert foreign_list.json()["total"] == 0
+        assert foreign_list.json()["items"] == []
+
+        foreign_detail = client.get(
+            f"/api/v1/activity/{event_id}",
+            headers=_headers(org_b["access_token"]),
+        )
+        assert foreign_detail.status_code == 404
+
+    lead = _create(client, org_a["access_token"], name="Existing Lead activity").json()
+    existing_type = _activity(
+        client,
+        org_a["access_token"],
+        entity_type=ActivityEntityType.LEAD.value,
+        entity_id=lead["id"],
+    )
+    assert existing_type.status_code == 200
+    assert existing_type.json()["total"] == 1
+    assert existing_type.json()["items"][0]["entity_type"] == "LEAD"
+
+
 def test_activity_detail_and_cross_tenant_isolation(client: TestClient) -> None:
     org_a = _auth(client, email="a@example.com", organization_name="Org A")
     org_b = _auth(client, email="b@example.com", organization_name="Org B")

@@ -79,6 +79,8 @@ export function ActivityToolbar({
         >
           <option value="">All entities</option>
           <option value="LEAD">Lead</option>
+          <option value="CONTACT">Contact</option>
+          <option value="COMPANY">Company</option>
           <option value="SALES_RUN">Sales Run</option>
           <option value="LEAD_EMAIL_SEND">Email</option>
           <option value="LEAD_FOLLOW_UP">Follow-up</option>

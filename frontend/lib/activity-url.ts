@@ -31,6 +31,8 @@ const ENTITY_TYPES = new Set<ActivityEntityType>([
   "WORKFLOW_RULE",
   "WEBHOOK_ENDPOINT",
   "COMPANY_PROSPECT",
+  "CONTACT",
+  "COMPANY",
 ]);
 
 function parseId(raw: string | null): string | null {
@@ -42,7 +44,8 @@ export function parseActivitySearchParams(
   searchParams: URLSearchParams,
 ): ActivityUrlState {
   const type = searchParams.get("type")?.trim().toUpperCase() ?? "";
-  const entityType = searchParams.get("entity_type")?.trim().toUpperCase() ?? "";
+  const entityType =
+    searchParams.get("entity_type")?.trim().toUpperCase() ?? "";
   const offsetRaw = searchParams.get("offset")?.trim() ?? "";
   const offset = /^\d+$/.test(offsetRaw) ? Number.parseInt(offsetRaw, 10) : 0;
   return {

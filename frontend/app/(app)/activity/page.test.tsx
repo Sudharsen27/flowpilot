@@ -72,7 +72,10 @@ const event: ActivityEvent = {
   qualification_id: "qual-1",
 };
 
-function pageOf(items: ActivityEvent[], total = items.length): ActivityListResponse {
+function pageOf(
+  items: ActivityEvent[],
+  total = items.length,
+): ActivityListResponse {
   return {
     items,
     limit: 20,
@@ -99,8 +102,12 @@ describe("Activity page", () => {
 
   it("renders loading then empty state without fabricated events", async () => {
     render(<ActivityPage />);
-    expect(screen.getByRole("heading", { level: 1, name: "Activity" })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: "No activity yet" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Activity" }),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "No activity yet" }),
+    ).toBeVisible();
     expect(screen.queryByText("Example event")).not.toBeInTheDocument();
     expect(listActivityMock).toHaveBeenCalled();
   });
@@ -109,11 +116,15 @@ describe("Activity page", () => {
     listActivityMock.mockRejectedValueOnce(new Error("network"));
     render(<ActivityPage />);
     expect(
-      await screen.findByRole("heading", { name: "Activity could not be loaded" }),
+      await screen.findByRole("heading", {
+        name: "Activity could not be loaded",
+      }),
     ).toBeVisible();
     listActivityMock.mockResolvedValueOnce(pageOf([]));
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("heading", { name: "No activity yet" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "No activity yet" }),
+    ).toBeVisible();
   });
 
   it("renders populated activity and loads detail on select", async () => {
@@ -121,8 +132,12 @@ describe("Activity page", () => {
     render(<ActivityPage />);
     expect(await screen.findByText("Lead qualified")).toBeVisible();
     expect(screen.getByText("AI actions")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: /Lead qualified/ }));
-    await waitFor(() => expect(getActivityMock).toHaveBeenCalledWith("event-1"));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Lead qualified/ }),
+    );
+    await waitFor(() =>
+      expect(getActivityMock).toHaveBeenCalledWith("event-1"),
+    );
     const detail = screen.getByRole("region", { name: "Event detail" });
     expect(within(detail).getByText(event.summary!)).toBeVisible();
     expect(screen.getByRole("link", { name: "Open lead" })).toHaveAttribute(
@@ -130,8 +145,11 @@ describe("Activity page", () => {
       "/leads/lead-1",
     );
     expect(within(detail).getByText("Completed")).toBeVisible();
-    expect(screen.getByRole("list", { name: "Activity timeline" }).querySelector("time"))
-      .toHaveAttribute("datetime", event.occurred_at);
+    expect(
+      screen
+        .getByRole("list", { name: "Activity timeline" })
+        .querySelector("time"),
+    ).toHaveAttribute("datetime", event.occurred_at);
   });
 
   it("clears selected detail when filters replace the result set", async () => {
@@ -141,9 +159,16 @@ describe("Activity page", () => {
       .mockResolvedValue(pageOf([]));
     render(<ActivityPage />);
 
-    await user.click(await screen.findByRole("button", { name: /Lead qualified/ }));
-    expect(await screen.findByRole("link", { name: "Open lead" })).toBeVisible();
-    await user.type(screen.getByRole("searchbox", { name: "Search activity" }), "missing");
+    await user.click(
+      await screen.findByRole("button", { name: /Lead qualified/ }),
+    );
+    expect(
+      await screen.findByRole("link", { name: "Open lead" }),
+    ).toBeVisible();
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search activity" }),
+      "missing",
+    );
 
     await waitFor(() =>
       expect(listActivityMock).toHaveBeenLastCalledWith(
@@ -154,7 +179,9 @@ describe("Activity page", () => {
       name: "No matching activity",
     });
     expect(emptyState).toBeVisible();
-    expect(screen.queryByRole("link", { name: "Open lead" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Open lead" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: "Clear filters" }).length,
     ).toBeGreaterThan(0);
@@ -165,14 +192,18 @@ describe("Activity page", () => {
     listActivityMock.mockResolvedValue(pageOf([event]));
     render(<ActivityPage />);
 
-    await user.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Lead qualified/ }),
+    );
     await waitFor(() =>
       expect(mockReplace).toHaveBeenCalledWith(
         expect.stringContaining("event=event-1"),
         expect.objectContaining({ scroll: false }),
       ),
     );
-    await waitFor(() => expect(getActivityMock).toHaveBeenCalledWith("event-1"));
+    await waitFor(() =>
+      expect(getActivityMock).toHaveBeenCalledWith("event-1"),
+    );
   });
 
   it("clears selected detail when moving to another page", async () => {
@@ -181,8 +212,12 @@ describe("Activity page", () => {
       .mockResolvedValueOnce(pageOf([], 21));
     render(<ActivityPage />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /Lead qualified/ }));
-    expect(await screen.findByRole("link", { name: "Open lead" })).toBeVisible();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Lead qualified/ }),
+    );
+    expect(
+      await screen.findByRole("link", { name: "Open lead" }),
+    ).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
     await waitFor(() =>
@@ -190,7 +225,9 @@ describe("Activity page", () => {
         expect.objectContaining({ offset: 20, limit: 20 }),
       ),
     );
-    expect(screen.queryByRole("link", { name: "Open lead" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Open lead" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows detail errors and retries the detail request", async () => {
@@ -199,12 +236,18 @@ describe("Activity page", () => {
     listActivityMock.mockResolvedValue(pageOf([event]));
     render(<ActivityPage />);
 
-    await user.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Lead qualified/ }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Event details could not be loaded",
     );
     await user.click(screen.getByRole("button", { name: "Retry detail" }));
-    expect(await within(screen.getByRole("region", { name: "Event detail" })).findByText(event.summary!)).toBeVisible();
+    expect(
+      await within(
+        screen.getByRole("region", { name: "Event detail" }),
+      ).findByText(event.summary!),
+    ).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -221,9 +264,13 @@ describe("Activity page", () => {
     listActivityMock.mockResolvedValue(pageOf([event]));
     render(<ActivityPage />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /Lead qualified/ }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Lead qualified/ }),
+    );
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Event detail" })).toHaveFocus(),
+      expect(
+        screen.getByRole("heading", { name: "Event detail" }),
+      ).toHaveFocus(),
     );
   });
 
@@ -231,9 +278,18 @@ describe("Activity page", () => {
     const user = userEvent.setup();
     render(<ActivityPage />);
     await screen.findByRole("heading", { name: "No activity yet" });
-    await user.type(screen.getByRole("searchbox", { name: "Search activity" }), "qualified");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Event type" }), "AI_ACTION");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Entity type" }), "LEAD");
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search activity" }),
+      "qualified",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Event type" }),
+      "AI_ACTION",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Entity type" }),
+      "LEAD",
+    );
     await waitFor(() => {
       expect(listActivityMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -244,6 +300,32 @@ describe("Activity page", () => {
       );
     });
   });
+
+  it.each([
+    { entityType: "CONTACT", label: "Contact" },
+    { entityType: "COMPANY", label: "Company" },
+  ] as const)(
+    "filters by the $label entity type",
+    async ({ entityType, label }) => {
+      const user = userEvent.setup();
+      render(<ActivityPage />);
+      await screen.findByRole("heading", { name: "No activity yet" });
+
+      expect(screen.getByRole("option", { name: label })).toHaveValue(
+        entityType,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Entity type" }),
+        entityType,
+      );
+
+      await waitFor(() =>
+        expect(listActivityMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ entity_type: entityType }),
+        ),
+      );
+    },
+  );
 
   it("paginates with next", async () => {
     listActivityMock.mockResolvedValue({
@@ -269,7 +351,9 @@ describe("Activity page", () => {
     expect(timelineButton).toHaveAttribute("aria-pressed", "true");
     await user.click(detailButton);
     expect(detailButton).toHaveAttribute("aria-pressed", "true");
-    await user.click(screen.getByRole("button", { name: "Back to activity timeline" }));
+    await user.click(
+      screen.getByRole("button", { name: "Back to activity timeline" }),
+    );
     expect(timelineButton).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -292,15 +376,16 @@ describe("Activity page", () => {
     const detail = await screen.findByRole("region", { name: "Event detail" });
     expect(
       await within(detail).findByRole("link", { name: "Open execution" }),
-    ).toHaveAttribute("href", "/agents/executions?agent_id=agent-1&execution=exec-1");
-    expect(within(detail).getByRole("link", { name: "Open lead" })).toHaveAttribute(
+    ).toHaveAttribute(
       "href",
-      "/leads/lead-1",
+      "/agents/executions?agent_id=agent-1&execution=exec-1",
     );
-    expect(within(detail).getByRole("link", { name: "Open agent" })).toHaveAttribute(
-      "href",
-      "/agents/agent-1",
-    );
+    expect(
+      within(detail).getByRole("link", { name: "Open lead" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
+    expect(
+      within(detail).getByRole("link", { name: "Open agent" }),
+    ).toHaveAttribute("href", "/agents/agent-1");
   });
 
   it("shows no destination link for events without one and labels company prospects", async () => {
@@ -326,4 +411,41 @@ describe("Activity page", () => {
     expect(await within(detail).findByText("Company prospect")).toBeVisible();
     expect(within(detail).queryByRole("link")).not.toBeInTheDocument();
   });
+
+  it.each([
+    { entityType: "CONTACT", label: "Contact", title: "Contact updated" },
+    { entityType: "COMPANY", label: "Company", title: "Company updated" },
+  ] as const)(
+    "labels $entityType events without inventing a CRM destination",
+    async ({ entityType, label, title }) => {
+      const crmEvent: ActivityEvent = {
+        ...event,
+        id: `event-${entityType.toLowerCase()}`,
+        type: "HUMAN_ACTION",
+        title,
+        actor_type: "USER",
+        agent_id: null,
+        entity_type: entityType,
+        entity_id: `${entityType.toLowerCase()}-1`,
+        lead_id: null,
+        qualification_id: null,
+      };
+      listActivityMock.mockResolvedValue(pageOf([crmEvent]));
+      getActivityMock.mockResolvedValue(crmEvent);
+      render(<ActivityPage />);
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: new RegExp(title) }),
+      );
+      const timeline = screen.getByRole("list", {
+        name: "Activity timeline",
+      });
+      expect(within(timeline).getByText(label)).toBeVisible();
+      const detail = await screen.findByRole("region", {
+        name: "Event detail",
+      });
+      expect(within(detail).getByText(label)).toBeVisible();
+      expect(within(detail).queryByRole("link")).not.toBeInTheDocument();
+    },
+  );
 });

@@ -89,9 +89,7 @@ def test_already_linked_google_login_ignores_password(
     assert again.json()["access_token"]
 
 
-def test_google_sign_in_is_idempotent(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_google_sign_in_is_idempotent(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
     _stub_profile(monkeypatch)
     first = client.post(PATH, json={"code": "auth-code-1"})
@@ -156,12 +154,7 @@ def test_google_link_does_not_overwrite_an_existing_verification_time(
 
 
 def _membership_rows(db: Session, user_id: str) -> list[tuple[str, str, str, str]]:
-    rows = (
-        db.query(Membership)
-        .filter_by(user_id=user_id)
-        .order_by(Membership.id)
-        .all()
-    )
+    rows = db.query(Membership).filter_by(user_id=user_id).order_by(Membership.id).all()
     return [(row.id, row.organization_id, row.user_id, row.role) for row in rows]
 
 
@@ -294,9 +287,7 @@ def test_email_match_cannot_replace_a_different_google_subject(
     assert _membership_rows(db, user_id) == memberships
 
 
-def test_password_login_rejected_for_google_only_user(
-    client: TestClient, db: Session
-) -> None:
+def test_password_login_rejected_for_google_only_user(client: TestClient, db: Session) -> None:
     org = Organization(name="Ada workspace", slug="ada-workspace")
     user = User(
         email="ada@gmail.com",
@@ -314,9 +305,7 @@ def test_password_login_rejected_for_google_only_user(
     assert response.status_code == 401
 
 
-def test_google_not_configured(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_google_not_configured(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "google_oauth_client_id", None)
     monkeypatch.setattr(settings, "google_oauth_client_secret", None)
     response = client.post(PATH, json={"code": "auth-code"})
@@ -337,9 +326,7 @@ def test_google_unverified_email_is_rejected() -> None:
         )
 
 
-def test_google_http_error_is_safe(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_google_http_error_is_safe(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
 
     def boom(_request: object, timeout: float) -> object:
@@ -405,5 +392,5 @@ def test_alembic_head_includes_google_oauth() -> None:
     config = Config(str(ini))
     config.set_main_option("script_location", str(ini.parent / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "051_contact_lead_associations"
+    assert script.get_current_head() == "052_activity_contact_company"
     assert script.get_revision("030_user_google_oauth") is not None

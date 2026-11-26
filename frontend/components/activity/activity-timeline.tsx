@@ -30,6 +30,8 @@ export const entityLabels: Record<ActivityEvent["entity_type"], string> = {
   WORKFLOW_RULE: "Workflow",
   WEBHOOK_ENDPOINT: "Webhook",
   COMPANY_PROSPECT: "Company prospect",
+  CONTACT: "Contact",
+  COMPANY: "Company",
 };
 
 type ActivityTimelineProps = {
@@ -89,7 +91,7 @@ export function ActivityTimeline({
                 </span>
                 <RelativeTime value={event.occurred_at} />
               </span>
-              <span className="mt-3 block text-sm font-medium leading-6">
+              <span className="mt-3 block text-sm leading-6 font-medium">
                 {event.title}
               </span>
               {event.summary ? (
