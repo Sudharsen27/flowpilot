@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DealCrmProjection } from "@/components/deals/deal-crm-projection";
-import { getCrmCompany, type CrmCompanySummary } from "@/lib/api/crm-companies";
+import { getCrmCompany, type CrmCompanyDetail } from "@/lib/api/crm-companies";
 import {
   listCrmContacts,
   type CrmContact,
@@ -46,14 +46,29 @@ function contact(overrides: Partial<CrmContact> = {}): CrmContact {
   };
 }
 
-function company(
-  overrides: Partial<CrmCompanySummary> = {},
-): CrmCompanySummary {
+function company(overrides: Partial<CrmCompanyDetail> = {}): CrmCompanyDetail {
   return {
     id: "company-1",
     name: "Acme CRM",
     website_domain: "acme.example",
+    industry: null,
+    employee_count: null,
+    phone: null,
+    email: null,
+    address_line1: null,
+    address_line2: null,
+    city: null,
+    region: null,
+    postal_code: null,
+    country: null,
+    description: null,
+    lifecycle_status: "PROSPECT",
+    source: "MANUAL",
+    owner_user_id: null,
+    revision: 1,
     archived_at: null,
+    created_at: "2026-09-01T10:00:00Z",
+    updated_at: "2026-09-10T10:00:00Z",
     ...overrides,
   };
 }
@@ -198,7 +213,7 @@ describe("Deal CRM projection", () => {
 
   it("aborts pending Company requests and ignores stale results after a Lead change", async () => {
     let companySignal: AbortSignal | undefined;
-    let resolveCompany!: (response: CrmCompanySummary) => void;
+    let resolveCompany!: (response: CrmCompanyDetail) => void;
     listCrmContactsMock.mockImplementation(async ({ leadId } = {}) =>
       page([
         leadId === "lead-1"
@@ -321,7 +336,7 @@ describe("Deal CRM projection", () => {
         company_id: `company-${index + 1}`,
       }),
     );
-    const resolvers = new Map<string, (response: CrmCompanySummary) => void>();
+    const resolvers = new Map<string, (response: CrmCompanyDetail) => void>();
     listCrmContactsMock.mockResolvedValue(page(contacts));
     getCrmCompanyMock.mockImplementation(
       (companyId) =>

@@ -39,6 +39,16 @@ export type CrmContactListParams = {
   offset?: number;
 };
 
+export function getCrmContact(
+  contactId: string,
+  options: { signal?: AbortSignal } = {},
+) {
+  return apiGet<CrmContact>(
+    `/api/v1/contacts/${encodeURIComponent(contactId)}`,
+    options,
+  );
+}
+
 export type CrmContactLeadLinkRequest = {
   expected_revision: number;
   lead_id: string;
