@@ -1,10 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  archiveCrmContact,
+  createCrmContact,
   getCrmContact,
+  listCrmContactLeads,
   listCrmContacts,
+  restoreCrmContact,
+  updateCrmContact,
   updateCrmContactLeadLink,
 } from "@/lib/api/crm-contacts";
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 describe("CRM Contact API client", () => {
   beforeEach(() => {
@@ -62,6 +74,9 @@ describe("CRM Contact API client", () => {
 
     await listCrmContacts({
       q: "Ada / Co",
+      companyId: "company/1",
+      status: "ACTIVE",
+      ownerUserId: "user/1",
       leadId: "lead/1",
       includeArchived: true,
       limit: 101,
@@ -69,8 +84,112 @@ describe("CRM Contact API client", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/contacts?q=Ada+%2F+Co&lead_id=lead%2F1&include_archived=true&limit=100&offset=0",
+      "http://localhost:8000/api/v1/contacts?q=Ada+%2F+Co&company_id=company%2F1&status=ACTIVE&owner_user_id=user%2F1&lead_id=lead%2F1&include_archived=true&limit=100&offset=0",
       expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("forwards an abort signal when listing Contacts", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        jsonResponse({ items: [], limit: 20, offset: 0, total: 0 }),
+      );
+    const controller = new AbortController();
+
+    await listCrmContacts({}, { signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/contacts",
+      expect.objectContaining({
+        method: "GET",
+        signal: controller.signal,
+      }),
+    );
+  });
+
+  it("creates a Contact with the backend request fields", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ id: "contact-1" }, 201));
+    const input = {
+      display_name: "Grace Hopper",
+      email: "grace@example.com",
+      company_id: "company-1",
+      status: "ACTIVE" as const,
+      owner_user_id: "user-1",
+    };
+
+    await createCrmContact(input);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/contacts",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
+  });
+
+  it("updates a Contact with an encoded ID and expected revision", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ id: "contact/1", revision: 2 }));
+    const input = { expected_revision: 1, display_name: "Grace Hopper" };
+
+    await updateCrmContact("contact/1", input);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/contacts/contact%2F1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    );
+  });
+
+  it.each([
+    ["archives", archiveCrmContact, "archive"],
+    ["restores", restoreCrmContact, "restore"],
+  ] as const)(
+    "%s a Contact using the expected revision",
+    async (_description, mutate, action) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(jsonResponse({ id: "contact/1", revision: 2 }));
+
+      await mutate("contact/1", 1);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        `http://localhost:8000/api/v1/contacts/contact%2F1/${action}`,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ expected_revision: 1 }),
+        }),
+      );
+    },
+  );
+
+  it("lists a Contact's Leads with encoded ID, pagination, and an abort signal", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        jsonResponse({ items: [], limit: 100, offset: 5, total: 0 }),
+      );
+    const controller = new AbortController();
+
+    await listCrmContactLeads(
+      "contact/1",
+      { limit: 101, offset: 5 },
+      { signal: controller.signal },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/contacts/contact%2F1/leads?limit=100&offset=5",
+      expect.objectContaining({
+        method: "GET",
+        signal: controller.signal,
+      }),
     );
   });
 
@@ -104,5 +223,17 @@ describe("CRM Contact API client", () => {
         }),
       }),
     );
+  });
+
+  it("propagates API errors from Contact requests", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ detail: "Contact not found" }, 404),
+    );
+
+    await expect(listCrmContactLeads("missing-contact")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      body: { detail: "Contact not found" },
+    });
   });
 });
