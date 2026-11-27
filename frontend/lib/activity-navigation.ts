@@ -9,7 +9,10 @@ export type ActivityDestination = {
   label: string;
 };
 
-/** Entity types that never navigate from activity in this phase. */
+const MAX_ENTITY_ID_LENGTH = 36;
+const ENTITY_ID_PATTERN = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+
+/** Entity types without a navigable detail route. */
 const UNLINKED_ENTITY_TYPES = new Set<ActivityEvent["entity_type"]>([
   "KNOWLEDGE_ENTRY",
   "WORKFLOW_RULE",
@@ -31,6 +34,27 @@ function leadDestination(event: ActivityEvent): ActivityDestination | null {
   if (!event.lead_id) return null;
   const href = buildLeadHref(event.lead_id);
   return href ? { href, label: "Open lead" } : null;
+}
+
+function crmEntityDestination(
+  event: ActivityEvent,
+  entityType: "CONTACT" | "COMPANY",
+): ActivityDestination | null {
+  const entityId = event.entity_id;
+  if (
+    entityId.length > MAX_ENTITY_ID_LENGTH ||
+    !ENTITY_ID_PATTERN.test(entityId)
+  ) {
+    return null;
+  }
+
+  const isContact = entityType === "CONTACT";
+  const route = isContact ? "contacts" : "companies";
+  const label = isContact ? "Contact" : "Company";
+  return {
+    href: `/${route}/${encodeURIComponent(entityId)}`,
+    label: `Open ${label}`,
+  };
 }
 
 /**
@@ -84,6 +108,16 @@ export function activityDestination(
           return { href, label: "Open sales run" };
         }
       }
+      break;
+    }
+    case "CONTACT": {
+      const destination = crmEntityDestination(event, "CONTACT");
+      if (destination) return destination;
+      break;
+    }
+    case "COMPANY": {
+      const destination = crmEntityDestination(event, "COMPANY");
+      if (destination) return destination;
       break;
     }
     default:

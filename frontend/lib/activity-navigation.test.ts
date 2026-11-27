@@ -225,18 +225,72 @@ describe("activityDestination", () => {
     ).toBeNull();
   });
 
-  it.each(["CONTACT", "COMPANY"] as const)(
-    "uses the associated Lead as the destination for %s events",
-    (entityType) => {
-      expect(activityDestination(event({ entity_type: entityType }))).toEqual({
-        href: "/leads/lead-1",
-        label: "Open lead",
-      });
-      expect(
-        activityDestination(event({ entity_type: entityType, lead_id: null })),
-      ).toBeNull();
-    },
-  );
+  it("opens a Contact event's Contact record", () => {
+    expect(
+      activityDestination(
+        event({
+          entity_type: "CONTACT",
+          entity_id: "contact-1",
+          lead_id: null,
+        }),
+      ),
+    ).toEqual({ href: "/contacts/contact-1", label: "Open Contact" });
+  });
+
+  it("opens a Company event's Company record", () => {
+    expect(
+      activityDestination(
+        event({
+          entity_type: "COMPANY",
+          entity_id: "company-1",
+          lead_id: null,
+        }),
+      ),
+    ).toEqual({ href: "/companies/company-1", label: "Open Company" });
+  });
+
+  it("falls back to a valid Lead when the Contact ID is missing or invalid", () => {
+    expect(
+      activityDestination(
+        event({ entity_type: "CONTACT", entity_id: "", lead_id: "lead-1" }),
+      ),
+    ).toEqual({ href: "/leads/lead-1", label: "Open lead" });
+    expect(
+      activityDestination(
+        event({
+          entity_type: "CONTACT",
+          entity_id: "c".repeat(37),
+          lead_id: "lead-1",
+        }),
+      ),
+    ).toEqual({ href: "/leads/lead-1", label: "Open lead" });
+  });
+
+  it.each([
+    ["leading", " contact-1"],
+    ["trailing", "contact-1 "],
+    ["internal", "contact 1"],
+    ["unexpected", "contact?1"],
+  ])("rejects Contact IDs with %s whitespace or characters", (_, entityId) => {
+    expect(
+      activityDestination(
+        event({ entity_type: "CONTACT", entity_id: entityId, lead_id: null }),
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["missing", ""],
+    ["oversized", "c".repeat(37)],
+    ["whitespace", " company-1"],
+    ["unexpected characters", "company?1"],
+  ])("does not create a Company destination for a %s ID", (_, entityId) => {
+    expect(
+      activityDestination(
+        event({ entity_type: "COMPANY", entity_id: entityId, lead_id: null }),
+      ),
+    ).toBeNull();
+  });
 
   it("does not link events without any usable identifier", () => {
     expect(
@@ -251,6 +305,24 @@ describe("activityDestination", () => {
     expect(activityDestination(event({ lead_id: "lead/1" }))?.href).toBe(
       "/leads/lead%2F1",
     );
+    expect(
+      activityDestination(
+        event({
+          entity_type: "CONTACT",
+          entity_id: "contact/1",
+          lead_id: null,
+        }),
+      )?.href,
+    ).toBe("/contacts/contact%2F1");
+    expect(
+      activityDestination(
+        event({
+          entity_type: "COMPANY",
+          entity_id: "company/1",
+          lead_id: null,
+        }),
+      )?.href,
+    ).toBe("/companies/company%2F1");
     expect(
       activityDestination(
         event({

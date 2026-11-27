@@ -416,7 +416,7 @@ describe("Activity page", () => {
     { entityType: "CONTACT", label: "Contact", title: "Contact updated" },
     { entityType: "COMPANY", label: "Company", title: "Company updated" },
   ] as const)(
-    "labels $entityType events without inventing a CRM destination",
+    "opens the $entityType record from its Activity detail",
     async ({ entityType, label, title }) => {
       const crmEvent: ActivityEvent = {
         ...event,
@@ -445,7 +445,72 @@ describe("Activity page", () => {
         name: "Event detail",
       });
       expect(within(detail).getByText(label)).toBeVisible();
-      expect(within(detail).queryByRole("link")).not.toBeInTheDocument();
+      const route = entityType === "CONTACT" ? "contacts" : "companies";
+      expect(
+        within(detail).getByRole("link", { name: `Open ${label}` }),
+      ).toHaveAttribute("href", `/${route}/${entityType.toLowerCase()}-1`);
     },
   );
+
+  it("shows both Contact and Lead destinations for a Contact–Lead association event", async () => {
+    const associationEvent: ActivityEvent = {
+      ...event,
+      id: "event-contact-linked",
+      type: "HUMAN_ACTION",
+      title: "Contact linked to Lead",
+      actor_type: "USER",
+      agent_id: null,
+      entity_type: "CONTACT",
+      entity_id: "contact-1",
+      lead_id: "lead-1",
+      status: "LINKED",
+      qualification_id: null,
+    };
+    listActivityMock.mockResolvedValue(pageOf([associationEvent]));
+    getActivityMock.mockResolvedValue(associationEvent);
+    render(<ActivityPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Contact linked to Lead/ }),
+    );
+    const detail = await screen.findByRole("region", { name: "Event detail" });
+    expect(
+      within(detail).getByRole("link", { name: "Open Contact" }),
+    ).toHaveAttribute("href", "/contacts/contact-1");
+    expect(
+      within(detail).getByRole("link", { name: "Open lead" }),
+    ).toHaveAttribute("href", "/leads/lead-1");
+  });
+
+  it("shows only one Open lead link when an invalid Contact ID falls back to its Lead", async () => {
+    const invalidContactEvent: ActivityEvent = {
+      ...event,
+      id: "event-contact-invalid",
+      type: "HUMAN_ACTION",
+      title: "Contact association changed",
+      actor_type: "USER",
+      agent_id: null,
+      entity_type: "CONTACT",
+      entity_id: "",
+      lead_id: "lead-1",
+      status: "LINKED",
+      qualification_id: null,
+    };
+    listActivityMock.mockResolvedValue(pageOf([invalidContactEvent]));
+    getActivityMock.mockResolvedValue(invalidContactEvent);
+    render(<ActivityPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: /Contact association changed/,
+      }),
+    );
+    const detail = await screen.findByRole("region", { name: "Event detail" });
+    expect(
+      within(detail).getAllByRole("link", { name: "Open lead" }),
+    ).toHaveLength(1);
+    expect(
+      within(detail).queryByRole("link", { name: "Open Contact" }),
+    ).not.toBeInTheDocument();
+  });
 });
